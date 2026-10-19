@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Egret EQ app icon: the dark EQ screen in the Egret chassis, a bass boost,
+       a dip and an air shelf drawn as the amber curve with three band dots.
+       Used for 256 px and up; icon-small.svg covers 16-48 px. -->
+  <defs>
+    <linearGradient id="chassis" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2ecd9"/>
+      <stop offset="1" stop-color="#ddd2b5"/>
+    </linearGradient>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0a830" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#f0a830" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <clipPath id="screen"><rect x="128" y="168" width="768" height="688" rx="56"/></clipPath>
+  </defs>
+  <rect x="40" y="40" width="944" height="944" rx="210" fill="url(#chassis)" stroke="#a99c79" stroke-width="8"/>
+  <rect x="112" y="152" width="800" height="720" rx="70" fill="#a99c79"/>
+  <rect x="128" y="168" width="768" height="688" rx="56" fill="#171308"/>
+  <g clip-path="url(#screen)">
+    <g stroke="#f0a830" stroke-opacity="0.14" stroke-width="6">
+      <line x1="320" y1="168" x2="320" y2="856"/><line x1="512" y1="168" x2="512" y2="856"/><line x1="704" y1="168" x2="704" y2="856"/>
+      <line x1="128" y1="340" x2="896" y2="340"/><line x1="128" y1="684" x2="896" y2="684"/>
+    </g>
+    <line x1="128" y1="512" x2="896" y2="512" stroke="#f0a830" stroke-opacity="0.35" stroke-width="6"/>
+    <path d="M128 330 C 230 330 260 340 310 420 C 360 500 400 512 440 540 C 490 610 540 620 580 560 C 620 512 660 505 720 470 C 780 430 820 300 896 290 L896 856 L128 856 Z" fill="url(#fill)"/>
+    <path d="M128 330 C 230 330 260 340 310 420 C 360 500 400 512 440 540 C 490 610 540 620 580 560 C 620 512 660 505 720 470 C 780 430 820 300 896 290"
+          fill="none" stroke="#f0a830" stroke-width="34" stroke-linecap="round" opacity="0.8" filter="url(#glow)"/>
+    <path d="M128 330 C 230 330 260 340 310 420 C 360 500 400 512 440 540 C 490 610 540 620 580 560 C 620 512 660 505 720 470 C 780 430 820 300 896 290"
+          fill="none" stroke="#f2ecd9" stroke-width="22" stroke-linecap="round"/>
+  </g>
+  <circle cx="232" cy="334" r="46" fill="#7ec4be" stroke="#171308" stroke-width="12"/>
+  <circle cx="515" cy="598" r="46" fill="#e8846a" stroke="#171308" stroke-width="12"/>
+  <circle cx="812" cy="350" r="46" fill="#f0a830" stroke="#171308" stroke-width="12"/>
+</svg>

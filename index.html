@@ -1,0 +1,1764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Egret EQ</title>
+<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22 width=%2264%22 height=%2264%22%3E %3Crect x=%221%22 y=%221%22 width=%2262%22 height=%2262%22 rx=%2214%22 fill=%22%23efe7d2%22 stroke=%22%23a99c79%22 stroke-width=%222%22/%3E %3Crect x=%226%22 y=%229%22 width=%2252%22 height=%2246%22 rx=%226%22 fill=%22%23171308%22/%3E %3Cpath d=%22M7 22 C 14 22 16 23 20 28 C 24 33 26 34 29 36 C 32 41 35 41 37 37 C 40 33 42 33 46 31 C 50 28 53 20 57 19%22 fill=%22none%22 stroke=%22%23f0a830%22 stroke-width=%224%22 stroke-linecap=%22round%22/%3E %3Ccircle cx=%2214%22 cy=%2222%22 r=%224%22 fill=%22%237ec4be%22/%3E %3Ccircle cx=%2233%22 cy=%2240%22 r=%224%22 fill=%22%23e8846a%22/%3E %3Ccircle cx=%2251%22 cy=%2223%22 r=%224%22 fill=%22%23f2ecd9%22/%3E %3C/svg%3E'>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Inclined:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+JP:wght@500&display=swap">
+<style>
+  :root{
+    --page-bg:#cdc2a4;
+    --panel:#e9e1cc;
+    --panel-raised:#f2ecd9;
+    --groove:#c7bb9c;
+    --groove-dark:#a99c79;
+    --ink:#2a241d;
+    --ink-soft:rgba(42,36,29,.62);
+    --mustard:#c08f17;
+    --teal:#336f6b;
+    --coral:#b85540;
+    --lavender:#8a78a3;
+    --sage:#5f7344;
+    --readout-bg:#171308;
+    --readout-ink:#f0a830;
+    --focus:#2a7f90;
+    --shadow:rgba(30,25,15,.35);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --page-bg:#121110; --panel:#ddd3ba; --panel-raised:#e8dec2;
+      --groove:#b9ac8a; --groove-dark:#948666; --shadow:rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --page-bg:#121110; --panel:#ddd3ba; --panel-raised:#e8dec2;
+    --groove:#b9ac8a; --groove-dark:#948666; --shadow:rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--page-bg); color:var(--ink);
+    font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;
+    min-height:100vh; display:flex; padding:32px 16px;
+  }
+  kbd{
+    font-family:'IBM Plex Mono',monospace; background:var(--panel-raised);
+    border:1px solid var(--groove-dark); border-radius:4px; padding:1px 5px; font-size:11px;
+  }
+  button{font-family:inherit;}
+  button:focus-visible{outline:2px solid var(--focus); outline-offset:2px;}
+
+  .chassis{
+    zoom:.9; margin:auto; width:100%; max-width:900px;
+    background-color:var(--panel);
+    background-image:repeating-linear-gradient(135deg, rgba(0,0,0,.015) 0 2px, transparent 2px 4px);
+    border-radius:18px; padding:24px 26px 22px;
+    box-shadow:0 30px 60px -20px var(--shadow), inset 0 1px 0 rgba(255,255,255,.3);
+    display:flex; flex-direction:column; gap:16px;
+  }
+
+  /* ---------- header ---------- */
+  .top-rail{display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;}
+  .brand{display:flex; flex-direction:column; gap:2px;}
+  .brand-title{display:flex; align-items:baseline; gap:8px;}
+  .brand-name, .brand-model{
+    font-family:'Big Shoulders Inclined','Arial Narrow',sans-serif; font-weight:800;
+    font-size:30px; line-height:1; letter-spacing:.01em;
+  }
+  .brand-model{color:var(--teal);}
+  .brand-sub-row{display:flex; align-items:center; gap:6px; min-height:22px;}
+  .brand-sub{
+    font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.14em;
+    color:var(--ink-soft); text-transform:uppercase;
+  }
+  .brand-sub .jp{font-family:'Noto Sans JP',sans-serif; letter-spacing:.08em; font-size:11px; text-transform:none;}
+  /* Easter egg: the kingfisher (kawasemi), a flash of blue over the water. */
+  .bird{width:24px; height:24px; padding:0; border:none; background:none; cursor:pointer; transform-origin:50% 90%;}
+  .bird:hover{transform:rotate(-6deg);}
+  .bird.is-diving{animation:bird-dive .6s ease-in-out;}
+  @keyframes bird-dive{ 0%{transform:translateY(0)} 35%{transform:translateY(6px) rotate(25deg)} 70%{transform:translateY(-3px) rotate(-8deg)} 100%{transform:translateY(0)} }
+  @media (prefers-reduced-motion:reduce){ .bird.is-diving{animation:none;} }
+
+  .status-group{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .readout-window{
+    background:var(--readout-bg); border-radius:6px; padding:4px 10px;
+    display:flex; align-items:baseline; gap:6px; box-shadow:inset 0 1px 3px rgba(0,0,0,.6);
+  }
+  .readout-label{font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.1em; color:rgba(240,168,48,.55);}
+  .readout-value{
+    font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--readout-ink);
+    font-variant-numeric:tabular-nums; text-shadow:0 0 6px rgba(240,168,48,.5); min-width:2.2em; display:inline-block;
+  }
+  .readout-value.is-hot{color:#ff6a4a; text-shadow:0 0 6px rgba(255,106,74,.6);}
+  .power-switch{
+    display:flex; align-items:center; gap:8px; background:var(--panel-raised);
+    border:1px solid var(--groove-dark); border-radius:999px; padding:7px 14px; cursor:pointer;
+    font-weight:600; font-size:11px; letter-spacing:.08em; color:var(--ink);
+  }
+  .power-switch .led{width:10px; height:10px; border-radius:50%; background:var(--groove-dark); display:inline-block;}
+  body.powered .power-switch .led{background:var(--coral); box-shadow:0 0 8px var(--coral);}
+
+  /* ---------- modules ---------- */
+  .module{
+    min-width:0;
+    background:var(--panel-raised); border-radius:12px; padding:12px 12px 14px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.4), 0 1px 3px var(--groove-dark);
+    border-top:3px solid var(--accent); display:flex; flex-direction:column; gap:10px;
+  }
+  .module-title{
+    font-family:'Big Shoulders Inclined','Arial Narrow',sans-serif; font-weight:700; font-size:13px;
+    letter-spacing:.12em; text-transform:uppercase; color:var(--accent); margin:0;
+  }
+  .module-head{display:flex; align-items:center; gap:10px; min-height:22px;}
+  .chip-btn{
+    font-weight:600; font-size:11px; letter-spacing:.04em; padding:6px 10px; border-radius:6px;
+    border:1px solid var(--groove-dark); background:var(--panel); color:var(--ink); cursor:pointer;
+  }
+  .chip-btn.is-active{background:var(--accent); color:var(--panel-raised); border-color:var(--accent);}
+  .chip-btn:disabled{opacity:.45; cursor:default;}
+  .chip-row{display:flex; gap:4px; align-items:center; flex-wrap:wrap;}
+  .chip-row .chip-btn{padding:5px 0; flex:1 1 0; min-width:34px;}
+  .row-label{font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.12em; color:var(--ink-soft); flex:none; width:44px;}
+  .is-disabled{opacity:.42; pointer-events:none;}
+
+  .preset-bar{display:flex; flex-wrap:wrap; align-items:center; gap:8px 8px;}
+  .preset-select, .preset-name{
+    font-family:'IBM Plex Sans',sans-serif; font-weight:600; font-size:12px; padding:7px 10px; border-radius:6px;
+    border:1px solid var(--groove-dark); background:var(--panel); color:var(--ink);
+  }
+  .preset-select{min-width:180px; cursor:pointer;}
+  .preset-name{width:130px; font-weight:500;}
+  .preset-name::placeholder{color:var(--ink-soft);}
+  .preset-status{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--ink-soft); margin:0 0 0 auto; min-height:1.3em;}
+  .bar-gap{width:6px;}
+
+  /* ---------- the display ---------- */
+  .screen-bay{background:var(--groove-dark); border-radius:10px; padding:10px; box-shadow:inset 0 2px 6px var(--shadow);}
+  .screen-row{display:flex; gap:8px;}
+  .eq-wrap{position:relative; flex:1; min-width:0;}
+  #eq{width:100%; height:380px; display:block; border-radius:6px; background:var(--readout-bg); cursor:crosshair; touch-action:none; outline:none;}
+  #eq.is-over{outline:2px dashed var(--teal); outline-offset:2px;}
+  #eq:focus-visible{outline:2px solid var(--focus); outline-offset:2px;}
+  #meter{width:44px; height:380px; display:block; border-radius:6px; background:var(--readout-bg); flex:none;}
+  .screen-caption{
+    display:flex; justify-content:space-between; gap:12px;
+    font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.15em; color:var(--ink); opacity:.75; margin-top:4px;
+    white-space:nowrap; overflow:hidden;
+  }
+
+  /* ---------- band ---------- */
+  .band-strip{display:flex; gap:4px; flex-wrap:wrap; align-items:center; flex:1;}
+  .band-chip{
+    min-width:28px; padding:3px 6px; border-radius:6px; border:1px solid var(--groove-dark);
+    background:var(--panel); color:var(--ink); cursor:pointer; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:500;
+    display:inline-flex; align-items:center; gap:4px;
+  }
+  .band-chip .dot{width:8px; height:8px; border-radius:50%; background:var(--c);}
+  .band-chip.is-active{background:var(--readout-bg); color:var(--c); border-color:var(--readout-bg);}
+  .band-chip.is-off .dot{background:transparent; box-shadow:inset 0 0 0 1.5px var(--c);}
+  .band-body{display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;}
+  .band-left{flex:1 1 440px; display:flex; flex-direction:column; gap:7px; min-width:0;}
+  .band-right{flex:0 0 auto; display:flex; gap:12px; align-items:flex-start;}
+  .band-actions{display:flex; flex-direction:column; gap:5px; width:76px;}
+  .band-actions .chip-btn{padding:5px 0;}
+  .band-actions .chip-btn.is-solo{--accent:var(--mustard);}
+  #shape-chips{display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:4px;}
+  #shape-chips .chip-btn{white-space:nowrap; font-size:10.5px; padding:5px 2px;}
+  .band-empty{font-size:12px; color:var(--ink-soft); margin:2px 0 0;}
+
+  /* ---------- bottom row ---------- */
+  .lower{display:grid; grid-template-columns:1fr 1.45fr 1fr; gap:12px;}
+  @media (max-width:860px){ .lower{grid-template-columns:1fr;} }
+  .src-status{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--ink); margin:0; min-height:1.3em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .toggle-btn{flex:none !important; padding:5px 10px !important;}
+
+  /* ---------- knobs ---------- */
+  .knob-row{display:flex; gap:8px; flex-wrap:wrap;}
+  .knob{display:flex; flex-direction:column; align-items:center; gap:4px; width:52px; user-select:none;}
+  .knob:focus-visible{outline:2px solid var(--focus); outline-offset:3px; border-radius:10px;}
+  .knob-dial{
+    width:48px; height:48px; border-radius:50%;
+    background:conic-gradient(from 225deg, var(--groove-dark) 0deg 270deg, transparent 270deg 360deg);
+    display:flex; align-items:center; justify-content:center; box-shadow:inset 0 2px 4px var(--shadow);
+  }
+  .knob-cap{
+    width:36px; height:36px; border-radius:50%; position:relative; cursor:grab; touch-action:none;
+    background:radial-gradient(circle at 50% 22%, var(--panel-raised), var(--groove) 85%);
+    box-shadow:0 2px 3px var(--shadow), inset 0 1px 1px rgba(255,255,255,.5);
+  }
+  .knob-pointer{
+    position:absolute; left:50%; top:10%; width:3px; height:36%; border-radius:2px;
+    background:var(--accent); transform-origin:50% 100%;
+    transform:translateX(-50%) rotate(var(--angle,-135deg)); box-shadow:0 0 4px var(--accent);
+  }
+  .knob-label{font-size:9px; font-weight:600; letter-spacing:.05em; color:var(--ink-soft); text-transform:uppercase; white-space:nowrap;}
+  .knob-readout{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; cursor:text; border-radius:3px; padding:0 2px;}
+  .knob-readout:hover{background:rgba(42,36,29,.08);}
+  .knob-input{
+    width:58px; padding:0 2px; margin:0; text-align:center; border-radius:3px;
+    font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink);
+    background:var(--panel); border:1px solid var(--focus); outline:none;
+  }
+
+  .instructions{font-size:12px; color:var(--ink-soft); margin:2px 0 0;}
+  .no-worklet{font-size:12px; color:var(--coral); margin:0;}
+  @media (max-width:480px){ .brand-name, .brand-model{font-size:22px;} #eq, #meter{height:280px;} }
+</style>
+</head>
+<body>
+<div class="chassis" role="group" aria-label="Egret EQ parametric equalizer">
+  <header class="top-rail">
+    <div class="brand">
+      <div class="brand-title"><span class="brand-name">EGRET</span><span class="brand-model">EQ</span></div>
+      <div class="brand-sub-row">
+        <span class="brand-sub" id="brand-sub"><span class="jp" lang="ja">翡翠</span> · Parametric Equalizer</span>
+        <button class="bird" id="bird" type="button" aria-label="Kawasemi, the kingfisher" title="翡翠">
+          <!-- A kingfisher: blue back, orange breast, white throat, long dark bill. -->
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M6 9.5c0-2.6 2.1-4.5 4.7-4.5 2.3 0 4 1.5 4.4 3.5l.4 2.3c.4 2.2 1.9 3.6 3.9 4.6l-1.2.9c-1.1-.2-2.2-.6-3.1-1.2-.9 2.3-3.3 3.6-6 3.1-2.4-.5-3.9-2.6-3.6-5z"
+                  fill="#2a8fc4" stroke="#2a241d" stroke-width=".7" stroke-linejoin="round"/>
+            <path d="M7.4 11.4c.6 2.6 2.6 4.3 5.4 3.9 1-.2 1.8-.6 2.4-1.3-1.9.2-4.4-.6-5.9-2.7z" fill="#e07b2a"/>
+            <path d="M6.6 9.6c.6.6 1.6.8 2.4.5-.2.7-.9 1.2-1.7 1.2-.5-.4-.7-1-.7-1.7z" fill="#fbf8ef"/>
+            <path d="M6.2 8.4L1 9.3l5.4.5z" fill="#2a241d"/>
+            <circle cx="8.2" cy="7.6" r=".55" fill="#2a241d"/>
+            <path d="M11 17.6l-.4 2.6M12.6 17.7l.2 2.5" stroke="#d9452f" stroke-width=".9" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="status-group">
+      <div class="readout-window"><span class="readout-label">BANDS</span><span class="readout-value" id="bands-readout">0</span></div>
+      <div class="readout-window"><span class="readout-label">PEAK</span><span class="readout-value" id="peak-readout">&mdash;</span></div>
+      <button id="power" class="power-switch" type="button" aria-pressed="false"><span class="led" aria-hidden="true"></span><span>POWER</span></button>
+    </div>
+  </header>
+
+  <section class="module" style="--accent:var(--sage);">
+    <h2 class="module-title">Presets</h2>
+    <div class="preset-bar">
+      <button class="chip-btn" id="preset-prev" type="button" aria-label="Previous preset">&lsaquo;</button>
+      <select id="preset-select" class="preset-select" aria-label="Preset"></select>
+      <button class="chip-btn" id="preset-next" type="button" aria-label="Next preset">&rsaquo;</button>
+      <input id="preset-name" class="preset-name" type="text" maxlength="32" placeholder="Preset name" autocomplete="off" aria-label="Name for your preset">
+      <button class="chip-btn" id="preset-save" type="button">SAVE</button>
+      <button class="chip-btn" id="preset-delete" type="button">DELETE</button>
+      <span class="bar-gap"></span>
+      <button class="chip-btn" id="undo" type="button" title="Undo (Ctrl+Z)">UNDO</button>
+      <button class="chip-btn" id="redo" type="button" title="Redo (Ctrl+Shift+Z)">REDO</button>
+      <span class="bar-gap"></span>
+      <span class="chip-row" style="--accent:var(--sage)">
+        <button class="chip-btn" id="ab-a" type="button" title="Setting A">A</button>
+        <button class="chip-btn" id="ab-b" type="button" title="Setting B">B</button>
+        <button class="chip-btn" id="ab-copy" type="button" title="Copy this setting to the other one">A&rarr;B</button>
+      </span>
+      <p class="preset-status" id="preset-status" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <div class="screen-bay">
+    <div class="screen-row">
+      <div class="eq-wrap"><canvas id="eq" tabindex="0" aria-label="The EQ curve. Double-click to add a band, drag a dot to move it, scroll on it to change Q."></canvas></div>
+      <canvas id="meter" aria-hidden="true"></canvas>
+    </div>
+    <div class="screen-caption"><span id="eq-info">DOUBLE-CLICK TO ADD A BAND</span><span id="eq-mode">ZERO LATENCY</span></div>
+  </div>
+
+  <section class="module" style="--accent:var(--teal);" id="band-module">
+    <div class="module-head">
+      <h2 class="module-title" id="band-title">Band</h2>
+      <div class="band-strip" id="band-strip"></div>
+    </div>
+    <p class="band-empty" id="band-empty">No band selected. Double-click the display to add one, or click a dot.</p>
+    <div class="band-body" id="band-body">
+      <div class="band-left">
+        <div class="chip-row"><span class="row-label">SHAPE</span><span class="chip-row" id="shape-chips" style="flex:1" role="group" aria-label="Shape"></span></div>
+        <div class="chip-row" id="slope-row"><span class="row-label">SLOPE</span><span class="chip-row" id="slope-chips" style="flex:1" role="group" aria-label="Slope, dB per octave"></span></div>
+        <div class="chip-row"><span class="row-label">STEREO</span><span class="chip-row" id="place-chips" style="flex:1" role="group" aria-label="Stereo placement"></span></div>
+      </div>
+      <div class="band-right">
+        <div class="knob-row" id="band-knobs"></div>
+        <div class="band-actions">
+          <button class="chip-btn" id="band-bypass" type="button" title="Switch the band off (or double-click its dot)">BYPASS</button>
+          <button class="chip-btn" id="band-solo" type="button" title="Hear only what this band works on">SOLO</button>
+          <button class="chip-btn" id="band-delete" type="button" title="Remove the band (Delete, or Alt-click its dot)">DELETE</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="lower">
+    <section class="module" style="--accent:var(--coral);" id="source-module">
+      <h2 class="module-title">Source</h2>
+      <div class="chip-row" id="src-chips" role="group" aria-label="What plays through the EQ"></div>
+      <div class="chip-row">
+        <button class="chip-btn toggle-btn" id="src-play" type="button" title="Play or stop (Space)">PLAY</button>
+        <button class="chip-btn toggle-btn" id="src-load" type="button">LOAD FILE</button>
+        <input type="file" id="src-file" accept="audio/*" hidden>
+      </div>
+      <p class="src-status" id="src-status" aria-live="polite"></p>
+    </section>
+
+    <section class="module" style="--accent:var(--lavender);">
+      <h2 class="module-title">Analyzer</h2>
+      <div class="chip-row"><span class="row-label">SHOW</span><span class="chip-row" id="ana-mode" style="flex:1" role="group" aria-label="Analyzer"></span></div>
+      <div class="chip-row"><span class="row-label">RES</span><span class="chip-row" id="ana-res" style="flex:1" role="group" aria-label="Resolution"></span></div>
+      <div class="chip-row"><span class="row-label">SPEED</span><span class="chip-row" id="ana-speed" style="flex:1" role="group" aria-label="Speed"></span></div>
+      <div class="chip-row"><span class="row-label">RANGE</span><span class="chip-row" id="ana-range" style="flex:1" role="group" aria-label="Analyzer range, dB"></span></div>
+      <div class="chip-row"><span class="row-label">EQ &plusmn;</span><span class="chip-row" id="disp-range" style="flex:1" role="group" aria-label="Display range, dB"></span>
+        <button class="chip-btn toggle-btn" id="ana-tilt" type="button" title="Tilt the spectrum 4.5 dB per octave, so music looks flat">TILT</button>
+        <button class="chip-btn toggle-btn" id="ana-freeze" type="button" title="Hold the spectrum still">FREEZE</button></div>
+    </section>
+
+    <section class="module" style="--accent:var(--mustard);">
+      <h2 class="module-title">Output</h2>
+      <div class="knob-row" id="out-knobs"></div>
+      <div class="chip-row">
+        <button class="chip-btn toggle-btn" id="auto-gain" type="button" title="Keep the loudness the same while you EQ">AUTO GAIN</button>
+        <span class="src-status" id="auto-readout"></span>
+      </div>
+    </section>
+  </div>
+
+  <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
+  <p class="instructions">Press POWER and PLAY to hear the demo loop, or load a file (or drop one on the display), use your microphone or pink noise. Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q, double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Click a value to type it.</p>
+</div>
+
+<!-- Shared by the page (curves, presets) and the audio engine: the filter design.
+     The VST uses the same formulas. -->
+<script id="dsp-shared">
+// ---------- filter design ----------
+// Every band is an analog prototype (normalised to the band frequency) made
+// digital so that its magnitude matches the analog curve: poles by the
+// matched z-transform, zeros fitted at DC, at Nyquist and at the section's
+// own frequency (after M. Vicanek, "Matched Second Order Digital Filters").
+// Bells and shelves keep their analog shape right up to the top of the
+// spectrum instead of squeezing towards Nyquist. The VST uses the same code.
+var MAX_BANDS = 24, MAX_SECTIONS = 8;
+var SHAPES = ['bell', 'lowshelf', 'lowcut', 'highshelf', 'highcut', 'notch', 'bandpass', 'tiltshelf', 'flattilt', 'allpass'];
+var SHAPE_LABELS = ['BELL', 'LO SHELF', 'LO CUT', 'HI SHELF', 'HI CUT', 'NOTCH', 'BAND PASS', 'TILT', 'FLAT TILT', 'ALL PASS'];
+var SLOPES = [6, 12, 18, 24, 30, 36, 48, 72, 96];
+var PLACEMENTS = ['stereo', 'left', 'right', 'mid', 'side'];
+var PLACEMENT_LABELS = ['STEREO', 'L', 'R', 'MID', 'SIDE'];
+var FREQ_MIN = 10, FREQ_MAX = 30000, GAIN_MAX = 30, Q_MIN = 0.025, Q_MAX = 40;
+var FLAT_TILT_LO = 20, FLAT_TILT_HI = 20000;
+
+function shapeHasGain(s){ return s === 'bell' || s === 'lowshelf' || s === 'highshelf' || s === 'tiltshelf' || s === 'flattilt'; }
+function shapeHasQ(s){ return s !== 'flattilt'; }
+function shapeHasSlope(s){ return s !== 'bell' && s !== 'flattilt'; }
+function shapeCanSolo(s){ return s !== 'tiltshelf' && s !== 'flattilt' && s !== 'allpass'; }
+
+// Butterworth section Qs for each order, the most resonant last.
+var BUTTER_Q = [];
+for (var bo = 0; bo <= 16; bo++) {
+  BUTTER_Q[bo] = [];
+  for (var bk = 1; bk <= Math.floor(bo / 2); bk++) BUTTER_Q[bo].push(1 / (2 * Math.cos((2 * bk - 1) * Math.PI / (2 * bo))));
+}
+
+// |N(jx)|^2 / |D(jx)|^2 of an analog section c = [n2, n1, n0, d2, d1, d0], x in units of its frequency.
+function analogMag2(c, x){
+  var nr = c[2] - c[0] * x * x, ni = c[1] * x, dr = c[5] - c[3] * x * x, di = c[4] * x;
+  return (nr * nr + ni * ni) / (dr * dr + di * di);
+}
+
+function setSection(s, b0, b1, b2, a1, a2){ s[0] = b0; s[1] = b1; s[2] = b2; s[3] = a1; s[4] = a2; }
+function scaleSection(s, k){ s[0] *= k; s[1] *= k; s[2] *= k; }
+function invertSection(s){ var b0 = s[0]; setSection(s, 1 / b0, s[3] / b0, s[4] / b0, s[1] / b0, s[2] / b0); }
+
+// First order (n2 = d2 = 0): the pole matched, the zero fitted at DC and Nyquist.
+function firstOrderSection(c, w0, out){
+  var a1 = -Math.exp(-c[5] / c[4] * w0);
+  var g0 = Math.sqrt(analogMag2(c, 0)), gn = Math.sqrt(analogMag2(c, Math.PI / w0));
+  var sB0 = (1 + a1) * g0, sB1 = (1 - a1) * gn;
+  setSection(out, (sB0 + sB1) / 2, (sB0 - sB1) / 2, 0, a1, 0);
+}
+
+// Analog section c to digital out = [b0, b1, b2, a1, a2] (a0 = 1); w0 in radians per sample.
+var FO_C = new Float64Array(6), FO_A = new Float64Array(5), FO_B = new Float64Array(5);
+function matchSection(c, w0, out){
+  if (c[3] === 0) { firstOrderSection(c, w0, out); return; }
+  // Real poles and real zeros: two first-order sections, each fitted on its
+  // own (more accurate), multiplied back into one biquad.
+  var dDisc = c[4] * c[4] - 4 * c[3] * c[5], nDisc = c[1] * c[1] - 4 * c[0] * c[2];
+  if (c[0] > 0 && dDisc >= 0 && nDisc >= 0) {
+    var dq = Math.sqrt(dDisc), nq = Math.sqrt(nDisc), k = c[0] / c[3];
+    FO_C[0] = 0; FO_C[1] = k; FO_C[2] = k * (c[1] - nq) / (2 * c[0]); FO_C[3] = 0; FO_C[4] = 1; FO_C[5] = (c[4] - dq) / (2 * c[3]);
+    firstOrderSection(FO_C, w0, FO_A);
+    FO_C[1] = 1; FO_C[2] = (c[1] + nq) / (2 * c[0]); FO_C[5] = (c[4] + dq) / (2 * c[3]);
+    firstOrderSection(FO_C, w0, FO_B);
+    setSection(out, FO_A[0] * FO_B[0], FO_A[0] * FO_B[1] + FO_A[1] * FO_B[0], FO_A[1] * FO_B[1],
+               FO_A[3] + FO_B[3], FO_A[3] * FO_B[3]);
+    return;
+  }
+  var wn = Math.sqrt(c[5] / c[3]), zeta = c[4] / c[3] / (2 * wn), W = wn * w0;
+  var r = Math.exp(-zeta * W), a2 = r * r, a1;
+  if (zeta < 1) a1 = -2 * r * Math.cos(Math.min(Math.PI, W * Math.sqrt(1 - zeta * zeta)));
+  else a1 = -2 * r * Math.cosh(W * Math.sqrt(zeta * zeta - 1));
+  var x = Math.PI / w0;   // Nyquist, in units of the band frequency
+  if (c[1] === 0 && c[2] === 0) {
+    // Highpass: both zeros at DC, the level fitted at Nyquist.
+    var bh = Math.abs(1 - a1 + a2) * Math.sqrt(analogMag2(c, x)) / 4;
+    setSection(out, bh, -2 * bh, bh, a1, a2);
+    return;
+  }
+  var A0 = (1 + a1 + a2) * (1 + a1 + a2), A1 = (1 - a1 + a2) * (1 - a1 + a2), A2 = -4 * a2;
+  var B0 = A0 * analogMag2(c, 0), B1 = A1 * analogMag2(c, x);
+  var wm = Math.min(W, 0.9 * Math.PI), sm = Math.sin(wm / 2), phi1 = sm * sm, phi0 = 1 - phi1, phi2 = 4 * phi0 * phi1;
+  var B2 = ((A0 * phi0 + A1 * phi1 + A2 * phi2) * analogMag2(c, wm / w0) - B0 * phi0 - B1 * phi1) / phi2;
+  var sq0 = Math.sqrt(B0), sq1 = Math.sqrt(B1), Wv = (sq0 + sq1) / 2;
+  if (Wv * Wv + B2 < 0) B2 = -Wv * Wv;   // as close as these poles allow
+  var b0 = (Wv + Math.sqrt(Wv * Wv + B2)) / 2;
+  setSection(out, b0, (sq0 - sq1) / 2, b0 > 0 ? -B2 / (4 * b0) : 0, a1, a2);
+}
+
+// Notch: zeros right on the unit circle (a true null), matched poles, unity at DC.
+function notchSection(w0, q, out){
+  var zeta = 1 / (2 * q), r = Math.exp(-zeta * w0), a2 = r * r, a1;
+  if (zeta < 1) a1 = -2 * r * Math.cos(w0 * Math.sqrt(1 - zeta * zeta));
+  else a1 = -2 * r * Math.cosh(w0 * Math.sqrt(zeta * zeta - 1));
+  var cw = Math.cos(w0), k = (1 + a1 + a2) / (2 - 2 * cw);
+  setSection(out, k, -2 * cw * k, k, a1, a2);
+}
+
+// The analog bell's level in dB at x times its frequency.
+var BELL_C = new Float64Array(6);
+function bellProto(g, q){
+  var A = Math.pow(10, Math.abs(g) / 40);
+  BELL_C[0] = 1; BELL_C[1] = A / q; BELL_C[2] = 1; BELL_C[3] = 1; BELL_C[4] = 1 / (A * q); BELL_C[5] = 1;
+  return BELL_C;
+}
+function bellDb(x, g, q){
+  var d = 10 * Math.log10(analogMag2(bellProto(g, q), x));
+  return g < 0 ? -d : d;
+}
+
+// |H(e^jw)| of one digital section.
+function sectionMag(s, w){
+  var c1 = Math.cos(w), c2 = Math.cos(2 * w), s1 = Math.sin(w), s2 = Math.sin(2 * w);
+  var nr = s[0] + s[1] * c1 + s[2] * c2, ni = -(s[1] * s1 + s[2] * s2);
+  var dr = 1 + s[3] * c1 + s[4] * c2, di = -(s[3] * s1 + s[4] * s2);
+  return Math.sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
+}
+
+// A band's biquads. band: { shape, freq, gain (after GAIN SCALE), q, slope }.
+// secs: MAX_SECTIONS arrays of 5. Returns how many it wrote.
+var PC = new Float64Array(6);
+function proto(n2, n1, n0, d2, d1, d0){ PC[0] = n2; PC[1] = n1; PC[2] = n0; PC[3] = d2; PC[4] = d1; PC[5] = d0; return PC; }
+function designBand(band, fs, secs){
+  var shape = band.shape, f = Math.min(band.freq, FREQ_MAX), g = band.gain, q = band.q;
+  var w0 = 2 * Math.PI * f / fs, n = 0, i;
+  var order = Math.max(1, Math.round(band.slope / 6)), pairs = Math.max(1, Math.round(band.slope / 12));
+  var fLim = 0.45 * fs;   // a resonance above this can't sit at its own frequency
+  if (shape === 'bell') {
+    if (f > fLim) {
+      // Up there only the bell's lower skirt is heard: a bell at the limit with
+      // the analog level there, as wide as the skirt (same level an octave down).
+      var gl = bellDb(fLim / f, g, q), want = Math.abs(bellDb(fLim / f / 2, g, q)), qlo = Q_MIN, qhi = Q_MAX;
+      for (i = 0; i < 40; i++) {
+        var qm = Math.sqrt(qlo * qhi);
+        if (Math.abs(bellDb(0.5, gl, qm)) > want) qlo = qm; else qhi = qm;
+      }
+      g = gl; q = Math.sqrt(qlo * qhi); w0 = 2 * Math.PI * fLim / fs;
+    }
+    // A cut is the boost turned upside down: cuts and boosts stay mirror images.
+    matchSection(bellProto(g, q), w0, secs[n]);
+    if (g < 0) invertSection(secs[n]);
+    n++;
+  } else if (shape === 'lowshelf' || shape === 'highshelf' || shape === 'tiltshelf') {
+    // A Butterworth shelf of the slope's order (Holters & Zoelzer): second-order
+    // shelves with the Butterworth Qs (Q sets the resonance of the last one), a
+    // first-order one for odd orders, sharing the gain. Each is designed as a
+    // low-shelf boost, which fits well: a cut is its inverse, and a high shelf
+    // is a low shelf turned over, H_high(s; G) = G / H_low(s; G).
+    var high = shape !== 'lowshelf', flip = high === (g > 0), qs = BUTTER_Q[order];
+    var As = Math.pow(10, Math.abs(g) * 2 / order / 40), G2 = As * As;
+    for (i = 0; i < qs.length; i++) {
+      var qk = i === qs.length - 1 ? qs[i] * q / Math.SQRT1_2 : qs[i], k = Math.sqrt(As) / qk;
+      matchSection(proto(As, As * k, G2, As, k, 1), w0, secs[n]);
+      if (flip) invertSection(secs[n]);
+      if (high) scaleSection(secs[n], g > 0 ? G2 : 1 / G2);
+      n++;
+    }
+    if (order % 2) {
+      var G1 = Math.pow(10, Math.abs(g) / order / 20), r1 = Math.sqrt(G1);
+      matchSection(proto(0, 1, r1, 0, 1, 1 / r1), w0, secs[n]);
+      if (flip) invertSection(secs[n]);
+      if (high) scaleSection(secs[n], g > 0 ? G1 : 1 / G1);
+      n++;
+    }
+    if (shape === 'tiltshelf') scaleSection(secs[0], Math.pow(10, -g / 40));   // pivots at 0 dB: -g/2 below, +g/2 above
+  } else if (shape === 'lowcut' || shape === 'highcut') {
+    var hp = shape === 'lowcut', qc = BUTTER_Q[order];
+    for (i = 0; i < qc.length; i++) {
+      var qn = i === qc.length - 1 ? qc[i] * q / Math.SQRT1_2 : qc[i];
+      matchSection(hp ? proto(1, 0, 0, 1, 1 / qn, 1) : proto(0, 0, 1, 1, 1 / qn, 1), w0, secs[n++]);
+    }
+    if (order % 2) matchSection(hp ? proto(0, 1, 0, 0, 1, 1) : proto(0, 0, 1, 0, 1, 1), w0, secs[n++]);
+  } else if (shape === 'notch' || shape === 'bandpass') {
+    w0 = 2 * Math.PI * Math.min(f, fLim) / fs;
+    for (i = 0; i < pairs; i++) {
+      if (shape === 'bandpass') matchSection(proto(0, 1 / q, 0, 1, 1 / q, 1), w0, secs[n++]);
+      else notchSection(w0, q, secs[n++]);
+    }
+  } else if (shape === 'flattilt') {
+    // A constant slope in dB per octave (GAIN is the tilt from 20 Hz to 20 kHz):
+    // first-order high shelves spread evenly in log frequency, pinned to 0 dB
+    // at the band frequency.
+    var lo = Math.log2(FLAT_TILT_LO / 2), step = (Math.log2(FLAT_TILT_HI * 2) - lo) / MAX_SECTIONS;
+    var Gt = Math.pow(10, g / Math.log2(FLAT_TILT_HI / FLAT_TILT_LO) * step / 20), rt = Math.sqrt(Gt);
+    for (i = 0; i < MAX_SECTIONS; i++) {
+      var fc = Math.pow(2, lo + (i + 0.5) * step);
+      matchSection(proto(0, Gt, rt, 0, 1, rt), 2 * Math.PI * fc / fs, secs[n++]);
+    }
+    var at = 1;
+    for (i = 0; i < n; i++) at *= sectionMag(secs[i], Math.min(w0, Math.PI));
+    scaleSection(secs[0], 1 / at);
+  } else if (shape === 'allpass') {
+    // Phase only, so the plain bilinear transform is exact.
+    var wa = Math.min(w0, 0.98 * Math.PI);
+    if (order === 1) {
+      var tn = Math.tan(wa / 2), ca = (tn - 1) / (tn + 1);
+      setSection(secs[n++], ca, 1, 0, ca, 0);
+    } else {
+      var al = Math.sin(wa) / (2 * q), cs = Math.cos(wa), a0 = 1 + al;
+      for (i = 0; i < pairs; i++) setSection(secs[n++], (1 - al) / a0, -2 * cs / a0, 1, -2 * cs / a0, (1 - al) / a0);
+    }
+  }
+  return n;
+}
+
+// What SOLO plays: the part of the spectrum the band works on.
+function designSolo(shape, freq, q, fs, out){
+  var w0 = 2 * Math.PI * Math.min(freq, 0.45 * fs) / fs;
+  if (shape === 'lowshelf' || shape === 'lowcut') matchSection(proto(0, 0, 1, 1, Math.SQRT2, 1), w0, out);
+  else if (shape === 'highshelf' || shape === 'highcut') matchSection(proto(1, 0, 0, 1, Math.SQRT2, 1), w0, out);
+  else { var qq = Math.max(0.3, q); matchSection(proto(0, 1 / qq, 0, 1, 1 / qq, 1), w0, out); }
+}
+
+// ---------- parameters ----------
+// Flat ids, the same in the web page, the presets and the VST.
+function bandKey(i, name){ return 'b' + (i + 1) + name; }
+function bandOf(p, i){
+  var shape = p[bandKey(i, 'Shape')];
+  return {
+    used: !!p[bandKey(i, 'Used')], on: !!p[bandKey(i, 'On')], shape: shape,
+    freq: p[bandKey(i, 'Freq')], gain: shapeHasGain(shape) ? p[bandKey(i, 'Gain')] * p.gainScale / 100 : 0,
+    q: p[bandKey(i, 'Q')], slope: p[bandKey(i, 'Slope')], place: p[bandKey(i, 'Place')]
+  };
+}
+
+// AUTO GAIN: the level change the EQ makes on music-like (pink, A-weighted)
+// sound, measured on the curve, turned around. Only stereo/mid bands count.
+var AUTO_POINTS = 64, AUTO_F = [], AUTO_W = [];
+(function(){
+  var sum = 0;
+  for (var i = 0; i < AUTO_POINTS; i++) {
+    var f = 20 * Math.pow(1000, (i + 0.5) / AUTO_POINTS), f2 = f * f;
+    var ra = 12194 * 12194 * f2 * f2 / ((f2 + 20.6 * 20.6) * Math.sqrt((f2 + 107.7 * 107.7) * (f2 + 737.9 * 737.9)) * (f2 + 12194 * 12194));
+    AUTO_F.push(f); AUTO_W.push(ra * ra); sum += ra * ra;
+  }
+  for (i = 0; i < AUTO_POINTS; i++) AUTO_W[i] /= sum;
+})();
+var AUTO_SECS = [];
+for (var as = 0; as < MAX_SECTIONS; as++) AUTO_SECS.push(new Float64Array(5));
+var AUTO_POW = new Float64Array(AUTO_POINTS);
+function autoGainDb(p, fs){
+  var pow = AUTO_POW;
+  pow.fill(1);
+  for (var i = 0; i < MAX_BANDS; i++) {
+    var b = bandOf(p, i);
+    if (!b.used || !b.on || b.place === 'side') continue;
+    var n = designBand(b, fs, AUTO_SECS), w = b.place === 'stereo' || b.place === 'mid' ? 1 : 0.5;
+    for (var k = 0; k < AUTO_POINTS; k++) {
+      if (AUTO_F[k] >= fs / 2) continue;
+      var m = 1;
+      for (var s = 0; s < n; s++) m *= sectionMag(AUTO_SECS[s], 2 * Math.PI * AUTO_F[k] / fs);
+      pow[k] *= w === 1 ? m * m : (1 + m * m) / 2;
+    }
+  }
+  var tot = 0;
+  for (k = 0; k < AUTO_POINTS; k++) tot += AUTO_W[k] * pow[k];
+  return Math.max(-24, Math.min(24, -10 * Math.log10(tot)));
+}
+
+// ---------- parameters and factory presets ----------
+function makeDefaults(){
+  var p = { outGain: 0, outPan: 0, gainScale: 100, autoGain: false };
+  for (var i = 0; i < MAX_BANDS; i++) {
+    p[bandKey(i, 'Used')] = false; p[bandKey(i, 'On')] = true; p[bandKey(i, 'Shape')] = 'bell';
+    p[bandKey(i, 'Freq')] = 1000; p[bandKey(i, 'Gain')] = 0; p[bandKey(i, 'Q')] = 1;
+    p[bandKey(i, 'Slope')] = 12; p[bandKey(i, 'Place')] = 'stereo';
+  }
+  return p;
+}
+
+// "key=value; ..." with bands as "bN=shape freq gain q [slope] [placement] [off]".
+// The VST reads the same strings.
+var FACTORY_PRESETS = [
+  ['Flat', ''],
+  ['Vocal Presence', 'b1=lowcut 90 0 0.71 24; b2=bell 280 -2.5 1.2; b3=bell 3200 2.5 0.9; b4=highshelf 11000 2 0.71 12'],
+  ['Vocal De-Harsh', 'b1=lowcut 80 0 0.71 18; b2=bell 2800 -2 2.5; b3=bell 6500 -3 4; b4=highshelf 12000 1.5 0.71 6'],
+  ['Kick Punch', 'b1=lowcut 28 0 0.71 24; b2=bell 60 3 1.4; b3=bell 380 -4 1.6; b4=bell 3500 3 1.2'],
+  ['Snare Crack', 'b1=lowcut 70 0 0.71 24; b2=bell 200 2 1.5; b3=bell 900 -3 1.8; b4=bell 5000 3 1'],
+  ['Bass Tighten', 'b1=lowcut 35 0 0.9 18; b2=lowshelf 100 2 0.71 12; b3=bell 250 -3 1.5; b4=highcut 6000 0 0.71 12'],
+  ['Guitar Fit', 'b1=lowcut 90 0 0.71 24; b2=bell 220 -2 1.2; b3=bell 2500 2 1; b4=highcut 12000 0 0.71 12'],
+  ['Drum Bus', 'b1=lowshelf 80 2 0.71 12; b2=bell 400 -2.5 1; b3=highshelf 8000 2.5 0.71 6'],
+  ['De-Mud', 'b1=bell 300 -3.5 1.1; b2=bell 550 -1.5 1.8'],
+  ['Air Lift', 'b1=highshelf 9000 3.5 0.6 6; b2=bell 4000 -1 2'],
+  ['Smile', 'b1=lowshelf 120 4 0.71 12; b2=bell 1000 -2 0.6; b3=highshelf 6000 4 0.71 12'],
+  ['Warm Tilt', 'b1=flattilt 1000 -4 1'],
+  ['Bright Tilt', 'b1=tiltshelf 1500 4 0.6 6'],
+  ['Telephone', 'b1=lowcut 400 0 0.9 48; b2=highcut 3000 0 1.2 48; b3=bell 1500 4 1'],
+  ['Hum Remover', 'b1=notch 50 0 12 12; b2=notch 100 0 12 12; b3=notch 150 0 12 12; b4=notch 200 0 12 12'],
+  ['Wide Sides', 'b1=lowcut 180 0 0.71 24 side; b2=highshelf 8000 3 0.71 12 side; b3=bell 200 1 1 12 mid'],
+  ['Master Polish', 'b1=lowcut 20 0 0.71 36; b2=lowshelf 90 1 0.71 12; b3=bell 300 -1 0.8; b4=highshelf 12000 1.5 0.71 6']
+];
+
+function presetParams(spec){
+  var p = makeDefaults();
+  spec.split(';').forEach(function(item){
+    var kv = item.split('=');
+    if (kv.length !== 2) return;
+    var key = kv[0].trim(), v = kv[1].trim().split(/\s+/);
+    var m = key.match(/^b(\d+)$/);
+    if (m) {
+      var i = parseInt(m[1], 10) - 1;
+      if (i < 0 || i >= MAX_BANDS || SHAPES.indexOf(v[0]) < 0) return;
+      p[bandKey(i, 'Used')] = true; p[bandKey(i, 'Shape')] = v[0];
+      p[bandKey(i, 'Freq')] = parseFloat(v[1]); p[bandKey(i, 'Gain')] = parseFloat(v[2]); p[bandKey(i, 'Q')] = parseFloat(v[3]);
+      if (v[4]) p[bandKey(i, 'Slope')] = parseInt(v[4], 10);
+      if (v[5] && PLACEMENTS.indexOf(v[5]) >= 0) p[bandKey(i, 'Place')] = v[5];
+      if (v[6] === 'off') p[bandKey(i, 'On')] = false;
+    } else if (key === 'scale') p.gainScale = parseFloat(v[0]);
+    else if (key === 'gain') p.outGain = parseFloat(v[0]);
+    else if (key === 'pan') p.outPan = parseFloat(v[0]);
+    else if (key === 'auto') p.autoGain = v[0] === '1';
+  });
+  return p;
+}
+</script>
+
+<!-- The audio engine, loaded into an AudioWorklet. -->
+<script id="dsp-engine" type="text/plain">
+// ---------- the audio engine (runs in the AudioWorklet; the VST has the same in C++) ----------
+// Bands run in series, 1 to 24. Every 32 samples each band glides its
+// frequency, gain and Q towards the knobs and redesigns its biquads; a change
+// of shape, slope or stereo placement (or switching a band on or off) fades
+// the band out, swaps, and fades it back in, so nothing clicks.
+var SUB_BLOCK = 32, FADE_SECONDS = 0.01, GLIDE_SECONDS = 0.015;
+
+function EqBand(){
+  this.secs = [];
+  for (var i = 0; i < MAX_SECTIONS; i++) this.secs.push(new Float64Array(5));
+  this.z = new Float64Array(MAX_SECTIONS * 4);   // per section: left s1 s2, right s1 s2
+  this.n = 0;
+  this.design = { shape: 'bell', freq: 1000, gain: 0, q: 1, slope: 12 };
+  // playing now
+  this.shape = 'bell'; this.slope = 12; this.place = 'stereo';
+  this.f = 1000; this.g = 0; this.q = 1; this.mix = 0; this.mixTarget = 0;
+  // wanted
+  this.tShape = 'bell'; this.tSlope = 12; this.tPlace = 'stereo'; this.tActive = false;
+  this.tf = 1000; this.tg = 0; this.tq = 1;
+  this.dirty = true;
+}
+
+// One sample through a band's sections (transposed direct form II), channel ch.
+function runSections(secs, n, z, ch, x){
+  for (var s = 0; s < n; s++) {
+    var c = secs[s], o = s * 4 + ch * 2;
+    var y = c[0] * x + z[o];
+    z[o] = c[1] * x - c[3] * y + z[o + 1];
+    z[o + 1] = c[2] * x - c[4] * y;
+    x = y;
+  }
+  return x;
+}
+
+function EqEngine(fs){
+  this.fs = fs;
+  this.bands = [];
+  for (var i = 0; i < MAX_BANDS; i++) this.bands.push(new EqBand());
+  this.fadeStep = 1 / (FADE_SECONDS * fs);
+  this.glide = 1 - Math.exp(-SUB_BLOCK / (GLIDE_SECONDS * fs));
+  this.solo = -1; this.tSolo = -1; this.soloMix = 0;
+  this.soloSec = new Float64Array(5); this.soloSecs = [this.soloSec]; this.soloZ = new Float64Array(4);
+  this.gain = 1; this.tGain = 1; this.pan = 0; this.tPan = 0;
+  this.power = 1; this.tPower = 1;
+  this.autoDb = 0;
+  this.meter = new Float64Array(4);   // peaks since the last read: in L, in R, out L, out R
+  this.started = false;
+}
+
+// p: the flat parameters; solo: the soloed band (0-based) or -1.
+EqEngine.prototype.setParams = function(p, solo){
+  for (var i = 0; i < MAX_BANDS; i++) {
+    var b = this.bands[i], shape = p[bandKey(i, 'Shape')];
+    b.tShape = shape; b.tSlope = p[bandKey(i, 'Slope')]; b.tPlace = p[bandKey(i, 'Place')];
+    b.tActive = !!p[bandKey(i, 'Used')] && !!p[bandKey(i, 'On')];
+    b.tf = p[bandKey(i, 'Freq')]; b.tq = p[bandKey(i, 'Q')];
+    b.tg = shapeHasGain(shape) ? p[bandKey(i, 'Gain')] * p.gainScale / 100 : 0;
+  }
+  var s = solo === undefined ? -1 : solo;
+  this.tSolo = s >= 0 && p[bandKey(s, 'Used')] && shapeCanSolo(p[bandKey(s, 'Shape')]) ? s : -1;
+  this.autoDb = p.autoGain ? autoGainDb(p, this.fs) : 0;
+  this.tGain = Math.pow(10, (p.outGain + this.autoDb) / 20);
+  this.tPan = p.outPan / 100;
+  this.tPower = p.power === false ? 0 : 1;
+  if (!this.started) {
+    // The first settings are where we start, not something to glide to.
+    this.started = true;
+    for (i = 0; i < MAX_BANDS; i++) {
+      var bb = this.bands[i];
+      bb.shape = bb.tShape; bb.slope = bb.tSlope; bb.place = bb.tPlace;
+      bb.f = bb.tf; bb.g = bb.tg; bb.q = bb.tq; bb.mix = bb.mixTarget = bb.tActive ? 1 : 0; bb.dirty = true;
+    }
+    this.gain = this.tGain; this.pan = this.tPan; this.power = this.tPower;
+  }
+};
+
+EqEngine.prototype.updateBand = function(b){
+  var changing = b.tShape !== b.shape || b.tSlope !== b.slope || b.tPlace !== b.place;
+  b.mixTarget = changing ? 0 : b.tActive ? 1 : 0;
+  if (b.mix === 0) {
+    if (changing) { b.shape = b.tShape; b.slope = b.tSlope; b.place = b.tPlace; b.mixTarget = b.tActive ? 1 : 0; b.dirty = true; }
+    if (b.f !== b.tf || b.g !== b.tg || b.q !== b.tq) { b.f = b.tf; b.g = b.tg; b.q = b.tq; b.dirty = true; }
+    if (b.mixTarget === 0) return;
+    b.z.fill(0);   // fading in from silence: start clean
+  } else {
+    var k = this.glide, moved = false;
+    if (b.f !== b.tf) { b.f *= Math.pow(b.tf / b.f, k); if (Math.abs(Math.log(b.tf / b.f)) < 1e-4) b.f = b.tf; moved = true; }
+    if (b.q !== b.tq) { b.q *= Math.pow(b.tq / b.q, k); if (Math.abs(Math.log(b.tq / b.q)) < 1e-4) b.q = b.tq; moved = true; }
+    if (b.g !== b.tg) { b.g += (b.tg - b.g) * k; if (Math.abs(b.tg - b.g) < 1e-3) b.g = b.tg; moved = true; }
+    if (moved) b.dirty = true;
+  }
+  if (b.dirty) {
+    var d = b.design;
+    d.shape = b.shape; d.freq = b.f; d.gain = b.g; d.q = b.q; d.slope = b.slope;
+    b.n = designBand(d, this.fs, b.secs);
+    b.dirty = false;
+  }
+};
+
+// One band over len samples of L/R, in place.
+EqEngine.prototype.runBand = function(b, L, R, len){
+  var mix = b.mix, target = b.mixTarget, step = this.fadeStep, secs = b.secs, n = b.n, z = b.z, place = b.place;
+  for (var i = 0; i < len; i++) {
+    if (mix !== target) mix = mix < target ? Math.min(target, mix + step) : Math.max(target, mix - step);
+    var l = L[i], r = R[i], y;
+    if (place === 'stereo') {
+      y = runSections(secs, n, z, 0, l); L[i] = l + mix * (y - l);
+      y = runSections(secs, n, z, 1, r); R[i] = r + mix * (y - r);
+    } else if (place === 'left') {
+      y = runSections(secs, n, z, 0, l); L[i] = l + mix * (y - l);
+    } else if (place === 'right') {
+      y = runSections(secs, n, z, 0, r); R[i] = r + mix * (y - r);
+    } else {
+      var m = (l + r) * 0.5, sd = (l - r) * 0.5;
+      if (place === 'mid') { y = runSections(secs, n, z, 0, m); m += mix * (y - m); }
+      else { y = runSections(secs, n, z, 0, sd); sd += mix * (y - sd); }
+      L[i] = m + sd; R[i] = m - sd;
+    }
+  }
+  b.mix = mix;
+};
+
+// inL/inR: input (Float32Array); outL/outR: output; n samples.
+EqEngine.prototype.process = function(inL, inR, outL, outR, n){
+  var fs = this.fs, meter = this.meter;
+  for (var off = 0; off < n; off += SUB_BLOCK) {
+    var len = Math.min(SUB_BLOCK, n - off), i, j;
+    var L = outL.subarray(off, off + len), R = outR.subarray(off, off + len);
+    var dl = inL.subarray(off, off + len), dr = inR.subarray(off, off + len);
+    for (i = 0; i < len; i++) {
+      L[i] = dl[i]; R[i] = dr[i];
+      if (Math.abs(dl[i]) > meter[0]) meter[0] = Math.abs(dl[i]);
+      if (Math.abs(dr[i]) > meter[1]) meter[1] = Math.abs(dr[i]);
+    }
+    for (j = 0; j < MAX_BANDS; j++) {
+      var b = this.bands[j];
+      this.updateBand(b);
+      if (b.mix > 0 || b.mixTarget > 0) this.runBand(b, L, R, len);
+    }
+    // SOLO: the soloed band's part of the spectrum, from the input.
+    var soloTarget = this.tSolo >= 0 && this.tSolo === this.solo ? 1 : 0;
+    if (this.soloMix === 0 && this.tSolo !== this.solo) { this.solo = this.tSolo; this.soloZ.fill(0); soloTarget = this.solo >= 0 ? 1 : 0; }
+    if (this.soloMix > 0 || soloTarget > 0) {
+      var sb = this.bands[this.solo];
+      designSolo(sb.tShape, sb.f, sb.q, fs, this.soloSec);
+      var sm = this.soloMix, st = this.fadeStep, sc = this.soloSecs, sz = this.soloZ;
+      for (i = 0; i < len; i++) {
+        if (sm !== soloTarget) sm = sm < soloTarget ? Math.min(1, sm + st) : Math.max(0, sm - st);
+        var yl = runSections(sc, 1, sz, 0, dl[i]), yr = runSections(sc, 1, sz, 1, dr[i]);
+        L[i] += sm * (yl - L[i]); R[i] += sm * (yr - R[i]);
+      }
+      this.soloMix = sm;
+    }
+    // Output: gain (with AUTO GAIN), balance, and the power switch (bypass).
+    var g0 = this.gain, p0 = this.pan, w0 = this.power, k = this.glide;
+    this.gain += (this.tGain - this.gain) * k; this.pan += (this.tPan - this.pan) * k;
+    if (Math.abs(this.tGain - this.gain) < 1e-6) this.gain = this.tGain;
+    if (Math.abs(this.tPan - this.pan) < 1e-6) this.pan = this.tPan;
+    var w1 = this.power === this.tPower ? this.power : this.power < this.tPower ? Math.min(1, this.power + len * this.fadeStep) : Math.max(0, this.power - len * this.fadeStep);
+    this.power = w1;
+    for (i = 0; i < len; i++) {
+      var t = (i + 1) / len, g = g0 + (this.gain - g0) * t, pn = p0 + (this.pan - p0) * t, w = w0 + (w1 - w0) * t;
+      var ol = L[i] * g * (pn > 0 ? 1 - pn : 1), or = R[i] * g * (pn < 0 ? 1 + pn : 1);
+      ol = dl[i] + w * (ol - dl[i]); or = dr[i] + w * (or - dr[i]);
+      L[i] = ol; R[i] = or;
+      if (Math.abs(ol) > meter[2]) meter[2] = Math.abs(ol);
+      if (Math.abs(or) > meter[3]) meter[3] = Math.abs(or);
+    }
+  }
+};
+
+if (typeof registerProcessor === 'function') {
+  registerProcessor('egret-eq', class extends AudioWorkletProcessor {
+    constructor(){
+      super();
+      this.engine = new EqEngine(sampleRate);
+      this.ready = false; this.frames = 0;
+      this.silence = new Float32Array(128);
+      this.port.onmessage = (e) => {
+        var m = e.data;
+        if (m.type === 'params') { this.engine.setParams(m.p, m.solo); this.ready = true; }
+      };
+    }
+    process(inputs, outputs){
+      var out = outputs[0], input = inputs[0], n = out[0].length;
+      if (this.silence.length < n) this.silence = new Float32Array(n);
+      var il = input && input[0] ? input[0] : this.silence, ir = input && input[1] ? input[1] : il;
+      if (!this.ready) { out[0].set(il); out[1].set(ir); return true; }
+      this.engine.process(il, ir, out[0], out[1], n);
+      // Meters about 30 times a second.
+      this.frames += n;
+      if (this.frames >= sampleRate / 30) {
+        this.frames = 0;
+        var mt = this.engine.meter;
+        this.port.postMessage({ type: 'meter', m: [mt[0], mt[1], mt[2], mt[3]], auto: this.engine.autoDb });
+        mt.fill(0);
+      }
+      return true;
+    }
+  });
+}
+</script>
+
+<script>
+(function(){
+  'use strict';
+  function $(id){ return document.getElementById(id); }
+  function clone(p){ return JSON.parse(JSON.stringify(p)); }
+  function same(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
+
+  // Band colours on the dark screen, as in the VST.
+  var BAND_COLORS = ['#f0a830', '#7ec4be', '#e8846a', '#b6a5d0', '#a9c27e', '#e6cf5a', '#6fb7d6', '#e793b6', '#d2a77c', '#93d493', '#c9c39a', '#f08a7a'];
+  function bandColor(i){ return BAND_COLORS[i % BAND_COLORS.length]; }
+
+  // ---------- state ----------
+  var DEFAULTS = makeDefaults();
+  var UI_DEFAULTS = { anaMode: 'both', anaRes: 'high', anaSpeed: 'med', anaRange: 90, anaTilt: true, dispRange: 12, source: 'demo' };
+  var STATE_KEY = 'egret-eq/state/v1', USER_KEY = 'egret-eq/presets/v1', UI_KEY = 'egret-eq/ui/v1';
+  var params = clone(DEFAULTS), presetName = 'Flat', ab = { cur: 'A', A: null, B: null };
+  var ui = Object.assign({}, UI_DEFAULTS);
+  var userPresets = {};
+  try { userPresets = JSON.parse(localStorage.getItem(USER_KEY) || '{}') || {}; } catch (err) { userPresets = {}; }
+  try {
+    var saved = JSON.parse(localStorage.getItem(STATE_KEY) || 'null');
+    if (saved && saved.params) {
+      params = Object.assign(clone(DEFAULTS), saved.params); presetName = saved.preset || '';
+      if (saved.ab) ab = saved.ab;
+    }
+    ui = Object.assign(ui, JSON.parse(localStorage.getItem(UI_KEY) || '{}'));
+  } catch (err) { /* storage unavailable: start fresh */ }
+  var selected = -1, solo = -1;
+  for (var si = 0; si < MAX_BANDS && selected < 0; si++) if (params[bandKey(si, 'Used')]) selected = si;
+
+  var saveTimer = null;
+  function saveNow(){
+    clearTimeout(saveTimer); saveTimer = null;
+    try {
+      localStorage.setItem(STATE_KEY, JSON.stringify({ params: params, preset: presetName, ab: ab }));
+      localStorage.setItem(UI_KEY, JSON.stringify(ui));
+    } catch (err) {}
+  }
+  function save(){ clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 300); }
+  window.addEventListener('pagehide', function(){ if (saveTimer) saveNow(); });
+
+  // ---------- audio ----------
+  var ctx = null, node = null, inputBus = null, preAna = null, postAna = null, preBuf = null, postBuf = null;
+  function sampleRateNow(){ return ctx ? ctx.sampleRate : 48000; }
+  function sendParams(){ if (node) node.port.postMessage({ type: 'params', p: params, solo: solo }); }
+
+  function initAudio(){
+    if (ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    inputBus = ctx.createGain();
+    preAna = ctx.createAnalyser(); postAna = ctx.createAnalyser();
+    inputBus.connect(preAna);
+    applyAnalyzer();
+    invalidateCurves();
+    if (!ctx.audioWorklet) { $('no-worklet').hidden = false; return; }
+    var source = $('dsp-shared').textContent + $('dsp-engine').textContent;
+    // A data: URL rather than a blob: Chrome refuses blob worklets on pages opened from a file.
+    var url = 'data:application/javascript;charset=utf-8,' + encodeURIComponent(source);
+    ctx.audioWorklet.addModule(url).then(function(){
+      node = new AudioWorkletNode(ctx, 'egret-eq', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+                                                    channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
+      inputBus.connect(node);
+      node.connect(postAna);
+      node.connect(ctx.destination);
+      node.port.onmessage = function(e){ if (e.data.type === 'meter') onMeter(e.data.m); };
+      sendParams();
+      if (src.playing) startSource();
+    }, function(){ $('no-worklet').hidden = false; });
+  }
+
+  function setPower(on){
+    document.body.classList.toggle('powered', on);
+    $('power').setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (on) { initAudio(); if (ctx.state === 'suspended') ctx.resume(); requestDraw(); }
+    else if (ctx) ctx.suspend();
+  }
+  function ensurePower(){
+    if (!document.body.classList.contains('powered')) setPower(true);
+    else if (ctx && ctx.state === 'suspended') ctx.resume();
+  }
+  $('power').addEventListener('click', function(){ setPower(!document.body.classList.contains('powered')); });
+
+  // ---------- sources: demo loop, a file, the microphone, pink noise ----------
+  var SOURCES = ['demo', 'file', 'input', 'noise'], SOURCE_LABELS = ['DEMO', 'FILE', 'INPUT', 'NOISE'];
+  var src = { playing: false, node: null, stream: null, file: null, fileName: '', demo: null, noise: null };
+
+  // The demo: two bars of drums, bass and chords, made here so there's
+  // something to EQ straight away (the VST's standalone app makes the same).
+  function makeDemo(fs){
+    var bpm = 112, beat = 60 / bpm, len = Math.round(beat * 8 * fs);
+    var L = new Float32Array(len), R = new Float32Array(len), seed = 22222;
+    function rnd(){ seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 2147483648 - 1; }
+    function mtof(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+    function add(start, dur, fn){
+      var s0 = Math.round(start * fs), n = Math.min(len - s0, Math.round(dur * fs));
+      for (var i = 0; i < n; i++) { var v = fn(i / fs, i); L[s0 + i] += v[0]; R[s0 + i] += v[1]; }
+    }
+    // A band-limited (polyBLEP) saw.
+    function Saw(f){ this.ph = 0; this.dt = f / fs; }
+    Saw.prototype.next = function(){
+      var t = this.ph, dt = this.dt, v = 2 * t - 1;
+      if (t < dt) { var a = t / dt; v -= a + a - a * a - 1; }
+      else if (t > 1 - dt) { var b = (t - 1) / dt; v -= b * b + b + b + 1; }
+      this.ph += dt; if (this.ph >= 1) this.ph -= 1;
+      return v;
+    };
+    var out = [0, 0];
+    for (var bt = 0; bt < 8; bt++) {
+      var t0 = bt * beat;
+      // kick on every beat, plus one on the "and" of the last
+      (function(){ var ph = 0; add(t0, 0.45, function(t){ ph += (45 + 75 * Math.exp(-t * 30)) / fs; var v = Math.sin(2 * Math.PI * ph) * Math.exp(-t * 7) * 0.8; out[0] = v; out[1] = v; return out; }); })();
+      // snare on 2 and 4
+      if (bt % 2 === 1) (function(){ var hp = 0, prev = 0; add(t0, 0.3, function(t){
+        var w = rnd(); hp = 0.85 * (hp + w - prev); prev = w;
+        var v = Math.sin(2 * Math.PI * 185 * t) * Math.exp(-t * 20) * 0.28 + hp * Math.exp(-t * 14) * 0.3; out[0] = v; out[1] = v; return out; }); })();
+      // hats on the eighths, the last one open
+      for (var h = 0; h < 2; h++) (function(open){ var lp = 0; add(t0 + h * beat / 2, open ? 0.35 : 0.08, function(t){
+        var w = rnd(); lp += 0.35 * (w - lp); var v = (w - lp) * Math.exp(-t * (open ? 11 : 60)) * 0.16;
+        out[0] = v * 0.8; out[1] = v; return out; }); })(bt === 7 && h === 1);
+      // bass, a note per beat
+      (function(note){ var s = new Saw(mtof(note)), lp = 0; add(t0, beat * 0.9, function(t){
+        var env = Math.min(1, t / 0.005) * (t > beat * 0.8 ? Math.max(0, 1 - (t - beat * 0.8) / (beat * 0.1)) : 1);
+        lp += 0.05 * (s.next() - lp); var v = lp * env * 0.55; out[0] = v; out[1] = v; return out; }); })([33, 33, 36, 36, 29, 29, 31, 31][bt]);
+    }
+    // chords, a bar each, saws a little apart left and right
+    [[57, 60, 64, 67], [53, 57, 60, 64]].forEach(function(chord, bar){
+      chord.forEach(function(m){
+        var sl = new Saw(mtof(m) * 1.0035), sr = new Saw(mtof(m) / 1.0035), ll = 0, lr = 0;
+        add(bar * beat * 4, beat * 4, function(t){
+          var env = Math.min(1, t / 0.25) * Math.min(1, (beat * 4 - t) / 0.05);
+          ll += 0.12 * (sl.next() - ll); lr += 0.12 * (sr.next() - lr);
+          out[0] = ll * env * 0.07; out[1] = lr * env * 0.07; return out; });
+      });
+    });
+    var peak = 0;
+    for (var i = 0; i < len; i++) peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
+    for (i = 0; i < len; i++) { L[i] *= 0.7 / peak; R[i] *= 0.7 / peak; }
+    return [L, R];
+  }
+  // Pink noise (Paul Kellet's filter), 4 seconds, different left and right.
+  function makeNoise(fs){
+    var len = fs * 4, chans = [], seed = 777;
+    function rnd(){ seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 2147483648 - 1; }
+    for (var c = 0; c < 2; c++) {
+      var x = new Float32Array(len), b0 = 0, b1 = 0, b2 = 0;
+      for (var i = 0; i < len; i++) {
+        var w = rnd();
+        b0 = 0.99765 * b0 + w * 0.0990460; b1 = 0.96300 * b1 + w * 0.2965164; b2 = 0.57000 * b2 + w * 1.0526913;
+        x[i] = (b0 + b1 + b2 + w * 0.1848) * 0.06;
+      }
+      chans.push(x);
+    }
+    return chans;
+  }
+  function toBuffer(chans){
+    var b = ctx.createBuffer(2, chans[0].length, ctx.sampleRate);
+    b.copyToChannel(chans[0], 0); b.copyToChannel(chans[1], 1);
+    return b;
+  }
+  function stopSource(){
+    if (src.node) { try { src.node.stop && src.node.stop(); } catch (err) {} src.node.disconnect(); src.node = null; }
+    if (src.stream) { src.stream.getTracks().forEach(function(t){ t.stop(); }); src.stream = null; }
+  }
+  function startSource(){
+    stopSource();
+    if (!ctx || !node) return;
+    if (ui.source === 'input') {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setSrcStatus('No audio input in this browser'); return; }
+      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }).then(function(stream){
+        if (!src.playing || ui.source !== 'input') { stream.getTracks().forEach(function(t){ t.stop(); }); return; }
+        src.stream = stream; src.node = ctx.createMediaStreamSource(stream); src.node.connect(inputBus);
+        setSrcStatus('Listening to your input — use headphones');
+      }, function(){ setSrcStatus('The browser didn’t allow the input'); });
+      return;
+    }
+    var buf;
+    if (ui.source === 'demo') buf = src.demo || (src.demo = toBuffer(makeDemo(ctx.sampleRate)));
+    else if (ui.source === 'noise') buf = src.noise || (src.noise = toBuffer(makeNoise(ctx.sampleRate)));
+    else buf = src.file;
+    if (!buf) { setSrcStatus('Load a file first'); return; }
+    var s = ctx.createBufferSource();
+    s.buffer = buf; s.loop = true; s.connect(inputBus); s.start();
+    src.node = s;
+    renderSource();
+  }
+  function setPlaying(on){
+    src.playing = on;
+    if (on) { ensurePower(); startSource(); } else stopSource();
+    renderSource();
+  }
+  function setSrcStatus(text){ $('src-status').textContent = text; }
+  function renderSource(){
+    srcButtons.forEach(function(b, i){ var on = SOURCES[i] === ui.source; b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    var play = $('src-play');
+    play.classList.toggle('is-active', src.playing); play.textContent = src.playing ? 'STOP' : 'PLAY';
+    play.setAttribute('aria-pressed', src.playing ? 'true' : 'false');
+    setSrcStatus(ui.source === 'demo' ? 'Demo loop, 112 BPM' : ui.source === 'noise' ? 'Pink noise' :
+                 ui.source === 'file' ? (src.fileName || 'No file yet') : 'Microphone or line in');
+  }
+  var srcButtons = SOURCES.map(function(s, i){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip-btn'; b.textContent = SOURCE_LABELS[i];
+    b.addEventListener('click', function(){ ui.source = s; save(); if (s === 'file' && !src.file) $('src-file').click(); if (src.playing) startSource(); renderSource(); });
+    $('src-chips').appendChild(b);
+    return b;
+  });
+  $('src-play').addEventListener('click', function(){ setPlaying(!src.playing); });
+  $('src-load').addEventListener('click', function(){ $('src-file').click(); });
+  $('src-file').addEventListener('change', function(e){ if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; });
+  function loadFile(file){
+    ensurePower();
+    setSrcStatus('Loading ' + file.name + '…');
+    file.arrayBuffer().then(function(data){ return ctx.decodeAudioData(data); }).then(function(buf){
+      if (buf.numberOfChannels === 1) { var st = ctx.createBuffer(2, buf.length, buf.sampleRate); st.copyToChannel(buf.getChannelData(0), 0); st.copyToChannel(buf.getChannelData(0), 1); buf = st; }
+      src.file = buf; src.fileName = file.name; ui.source = 'file';
+      setPlaying(true);
+    }, function(){ setSrcStatus('Couldn’t read ' + file.name); });
+  }
+  renderSource();
+
+  // ---------- knobs ----------
+  var KNOB_DEFS = {
+    freq:      { label: 'Freq',  min: FREQ_MIN, max: FREQ_MAX, unit: 'Hz', log: true, def: 1000 },
+    gain:      { label: 'Gain',  min: -GAIN_MAX, max: GAIN_MAX, unit: 'dB', def: 0 },
+    q:         { label: 'Q',     min: Q_MIN, max: Q_MAX, unit: 'q', log: true, def: 1 },
+    gainScale: { label: 'Scale', min: 0, max: 200, unit: '%', def: 100 },
+    outGain:   { label: 'Gain',  min: -36, max: 36, unit: 'dB', def: 0 },
+    outPan:    { label: 'Pan',   min: -100, max: 100, unit: 'pan', def: 0 }
+  };
+  function fmt(def, v){
+    if (def.unit === 'Hz') return fmtHz(v);
+    if (def.unit === 'dB') { var r = Math.round(v * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r).toFixed(1) + 'dB'; }
+    if (def.unit === 'q') return v < 10 ? v.toFixed(2) : v.toFixed(1);
+    if (def.unit === 'pan') return Math.abs(v) < 0.5 ? 'C' : (v < 0 ? 'L' : 'R') + Math.round(Math.abs(v));
+    return Math.round(v) + def.unit;
+  }
+  function fmtHz(v){ return v >= 10000 ? (v / 1000).toFixed(1) + 'k' : v >= 1000 ? (v / 1000).toFixed(2) + 'k' : v >= 100 ? Math.round(v) + 'Hz' : v.toFixed(1) + 'Hz'; }
+  function toT(def, v){ return def.log ? Math.log(v / def.min) / Math.log(def.max / def.min) : (v - def.min) / (def.max - def.min); }
+  function fromT(def, t){
+    t = Math.min(1, Math.max(0, t));
+    return def.log ? def.min * Math.pow(def.max / def.min, t) : def.min + t * (def.max - def.min);
+  }
+  // A typed value: a number with an optional unit -- 2.5k, 250, -3, 0.7, L20 -- clamped to the range.
+  function parseKnobValue(def, text){
+    var s = String(text).trim().toLowerCase().replace(',', '.').replace('−', '-');
+    if (def.unit === 'pan') {
+      if (s === 'c') return 0;
+      var pm = s.match(/^([lr])\s*(\d*\.?\d+)$/);
+      if (pm) return Math.min(100, Math.max(-100, (pm[1] === 'l' ? -1 : 1) * parseFloat(pm[2])));
+    }
+    var m = s.match(/^([+-]?\d*\.?\d+)\s*(khz|k|hz|db|%)?$/);
+    if (!m) return null;
+    var v = parseFloat(m[1]);
+    if (m[2] === 'k' || m[2] === 'khz') v *= 1000;
+    return Math.min(def.max, Math.max(def.min, v));
+  }
+  // get/set: the value the knob shows and moves (the band knobs follow the selected band).
+  function buildKnob(def, get, set){
+    var el = document.createElement('div');
+    el.className = 'knob'; el.tabIndex = 0; el.setAttribute('role', 'slider'); el.setAttribute('aria-label', def.label);
+    el.innerHTML = '<div class="knob-dial"><div class="knob-cap"><div class="knob-pointer"></div></div></div>' +
+                   '<div class="knob-label"></div><div class="knob-readout"></div>';
+    el.querySelector('.knob-label').textContent = def.label;
+    var cap = el.querySelector('.knob-cap'), readout = el.querySelector('.knob-readout');
+    function render(){
+      var v = get();
+      el.style.setProperty('--angle', (-135 + toT(def, v) * 270) + 'deg');
+      readout.textContent = fmt(def, v); el.setAttribute('aria-valuetext', fmt(def, v));
+    }
+    readout.addEventListener('click', function(e){
+      e.stopPropagation();
+      if (el.querySelector('.knob-input')) return;
+      var input = document.createElement('input'), done = false;
+      input.className = 'knob-input'; input.type = 'text'; input.setAttribute('aria-label', def.label + ' value');
+      input.value = def.unit === 'pan' ? fmt(def, get()) : String(Math.round(get() * 100) / 100);
+      readout.hidden = true; readout.parentNode.insertBefore(input, readout.nextSibling);
+      input.focus(); input.select();
+      function finish(apply){
+        if (done) return;
+        done = true;
+        var v = apply ? parseKnobValue(def, input.value) : null;
+        input.remove(); readout.hidden = false;
+        if (v !== null) { set(v); render(); }
+      }
+      input.addEventListener('keydown', function(ev){
+        ev.stopPropagation();
+        if (ev.key === 'Enter') finish(true);
+        else if (ev.key === 'Escape') finish(false);
+      });
+      input.addEventListener('blur', function(){ finish(true); });
+    });
+    var drag = null;
+    cap.addEventListener('pointerdown', function(e){ drag = { y: e.clientY, t: toT(def, get()) }; cap.setPointerCapture(e.pointerId); });
+    cap.addEventListener('pointermove', function(e){
+      if (!drag) return;
+      var fine = e.shiftKey ? 0.2 : 1;
+      drag.t += (drag.y - e.clientY) / 150 * fine; drag.y = e.clientY;
+      set(fromT(def, drag.t)); render();
+    });
+    cap.addEventListener('pointerup', function(){ drag = null; });
+    cap.addEventListener('dblclick', function(){ set(def.def); render(); });
+    el.addEventListener('keydown', function(e){
+      var d = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      e.preventDefault(); e.stopPropagation();
+      set(fromT(def, toT(def, get()) + d * (e.shiftKey ? 0.004 : 0.02))); render();
+    });
+    render();
+    return { el: el, render: render };
+  }
+  var knobRenders = [];
+  function bandParam(name){ return bandKey(selected, name); }
+  [['freq', 'Freq'], ['gain', 'Gain'], ['q', 'Q']].forEach(function(k){
+    var def = KNOB_DEFS[k[0]];
+    var kn = buildKnob(def, function(){ return selected < 0 ? def.def : params[bandParam(k[1])]; },
+                            function(v){ if (selected >= 0) { params[bandParam(k[1])] = v; changed(); } });
+    kn.el.style.setProperty('--accent', 'var(--teal)');
+    kn.el.dataset.knob = k[0];
+    $('band-knobs').appendChild(kn.el); knobRenders.push(kn.render);
+  });
+  ['gainScale', 'outGain', 'outPan'].forEach(function(id){
+    var kn = buildKnob(KNOB_DEFS[id], function(){ return params[id]; }, function(v){ params[id] = v; changed(); });
+    kn.el.style.setProperty('--accent', 'var(--mustard)');
+    $('out-knobs').appendChild(kn.el); knobRenders.push(kn.render);
+  });
+
+  // ---------- chip rows ----------
+  function chipRow(boxId, values, labels, isOn, pick){
+    var buttons = values.map(function(v, i){
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip-btn'; b.textContent = labels[i];
+      b.addEventListener('click', function(){ pick(v); });
+      $(boxId).appendChild(b);
+      return b;
+    });
+    return function(){ buttons.forEach(function(b, i){ var on = isOn(values[i]); b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }); };
+  }
+  function setBand(name, v){ if (selected < 0) return; params[bandParam(name)] = v; changed(); }
+  var chipRenders = [
+    chipRow('shape-chips', SHAPES, SHAPE_LABELS, function(v){ return selected >= 0 && params[bandParam('Shape')] === v; }, function(v){ setBand('Shape', v); }),
+    chipRow('slope-chips', SLOPES, SLOPES.map(String), function(v){ return selected >= 0 && params[bandParam('Slope')] === v; }, function(v){ setBand('Slope', v); }),
+    chipRow('place-chips', PLACEMENTS, PLACEMENT_LABELS, function(v){ return selected >= 0 && params[bandParam('Place')] === v; }, function(v){ setBand('Place', v); }),
+    chipRow('ana-mode', ['off', 'pre', 'post', 'both'], ['OFF', 'PRE', 'POST', 'BOTH'], function(v){ return ui.anaMode === v; }, function(v){ ui.anaMode = v; uiChanged(); }),
+    chipRow('ana-res', ['low', 'med', 'high', 'max'], ['LOW', 'MED', 'HIGH', 'MAX'], function(v){ return ui.anaRes === v; }, function(v){ ui.anaRes = v; uiChanged(); }),
+    chipRow('ana-speed', ['vfast', 'fast', 'med', 'slow', 'vslow'], ['V.FAST', 'FAST', 'MED', 'SLOW', 'V.SLOW'], function(v){ return ui.anaSpeed === v; }, function(v){ ui.anaSpeed = v; uiChanged(); }),
+    chipRow('ana-range', [60, 90, 120], ['60', '90', '120'], function(v){ return ui.anaRange === v; }, function(v){ ui.anaRange = v; uiChanged(); }),
+    chipRow('disp-range', [3, 6, 12, 30], ['3', '6', '12', '30'], function(v){ return ui.dispRange === v; }, function(v){ ui.dispRange = v; uiChanged(); })
+  ];
+  var freeze = false;
+  $('ana-tilt').addEventListener('click', function(){ ui.anaTilt = !ui.anaTilt; uiChanged(); });
+  $('ana-freeze').addEventListener('click', function(){ freeze = !freeze; renderToggles(); });
+  $('auto-gain').addEventListener('click', function(){ params.autoGain = !params.autoGain; changed(); });
+  $('band-bypass').addEventListener('click', function(){ if (selected >= 0) setBand('On', !params[bandParam('On')]); });
+  $('band-solo').addEventListener('click', function(){ if (selected >= 0) { solo = solo === selected ? -1 : selected; sendParams(); renderAll(); } });
+  $('band-delete').addEventListener('click', function(){ deleteBand(selected); });
+  function renderToggles(){
+    [['ana-tilt', ui.anaTilt], ['ana-freeze', freeze], ['auto-gain', params.autoGain]].forEach(function(t){
+      var b = $(t[0]); b.classList.toggle('is-active', !!t[1]); b.setAttribute('aria-pressed', t[1] ? 'true' : 'false');
+    });
+    $('ana-tilt').style.setProperty('--accent', 'var(--lavender)'); $('ana-freeze').style.setProperty('--accent', 'var(--lavender)');
+    $('auto-gain').style.setProperty('--accent', 'var(--mustard)');
+    $('auto-readout').textContent = params.autoGain ? fmt(KNOB_DEFS.outGain, autoGainDb(params, sampleRateNow())) : '';
+  }
+  function uiChanged(){ applyAnalyzer(); save(); renderAll(); }
+
+  // ---------- bands ----------
+  function usedCount(){ var n = 0; for (var i = 0; i < MAX_BANDS; i++) if (params[bandKey(i, 'Used')]) n++; return n; }
+  function addBand(freq, gain, shape){
+    for (var i = 0; i < MAX_BANDS; i++) if (!params[bandKey(i, 'Used')]) break;
+    if (i === MAX_BANDS) { setStatus('All 24 bands are in use'); return -1; }
+    params[bandKey(i, 'Used')] = true; params[bandKey(i, 'On')] = true; params[bandKey(i, 'Shape')] = shape;
+    params[bandKey(i, 'Freq')] = freq; params[bandKey(i, 'Gain')] = shapeHasGain(shape) ? gain : 0;
+    params[bandKey(i, 'Q')] = shape === 'bell' ? 1 : 0.71; params[bandKey(i, 'Slope')] = shape === 'lowcut' || shape === 'highcut' ? 24 : 12;
+    params[bandKey(i, 'Place')] = 'stereo';
+    selected = i; changed();
+    return i;
+  }
+  function deleteBand(i){
+    if (i < 0 || !params[bandKey(i, 'Used')]) return;
+    ['Used', 'On', 'Shape', 'Freq', 'Gain', 'Q', 'Slope', 'Place'].forEach(function(n){ params[bandKey(i, n)] = DEFAULTS[bandKey(i, n)]; });
+    if (solo === i) solo = -1;
+    if (selected === i) { selected = -1; for (var k = 0; k < MAX_BANDS; k++) if (params[bandKey(k, 'Used')]) { selected = k; break; } }
+    changed();
+  }
+  function select(i){ selected = i; if (solo >= 0 && solo !== i) solo = -1; sendParams(); renderAll(); }
+
+  var stripEl = $('band-strip');
+  function renderStrip(){
+    stripEl.textContent = '';
+    for (var i = 0; i < MAX_BANDS; i++) {
+      if (!params[bandKey(i, 'Used')]) continue;
+      (function(i){
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'band-chip'; b.style.setProperty('--c', bandColor(i));
+        b.innerHTML = '<span class="dot"></span>' + (i + 1);
+        b.classList.toggle('is-active', i === selected);
+        b.classList.toggle('is-off', !params[bandKey(i, 'On')]);
+        b.setAttribute('aria-label', 'Band ' + (i + 1));
+        b.addEventListener('click', function(){ select(i); });
+        stripEl.appendChild(b);
+      })(i);
+    }
+    var add = document.createElement('button');
+    add.type = 'button'; add.className = 'band-chip'; add.textContent = '+'; add.title = 'Add a band';
+    add.style.setProperty('--c', 'var(--teal)');
+    add.addEventListener('click', function(){ addBand(1000, 0, 'bell'); });
+    stripEl.appendChild(add);
+  }
+  function renderBand(){
+    var has = selected >= 0 && params[bandKey(selected, 'Used')];
+    $('band-empty').hidden = has; $('band-body').hidden = !has;
+    $('band-title').textContent = has ? 'Band ' + (selected + 1) : 'Band';
+    $('band-module').style.setProperty('--accent', has ? bandColorInk(selected) : 'var(--teal)');
+    if (!has) return;
+    var shape = params[bandParam('Shape')];
+    $('slope-row').classList.toggle('is-disabled', !shapeHasSlope(shape));
+    document.querySelector('[data-knob="gain"]').classList.toggle('is-disabled', !shapeHasGain(shape));
+    document.querySelector('[data-knob="q"]').classList.toggle('is-disabled', !shapeHasQ(shape));
+    var on = params[bandParam('On')];
+    $('band-bypass').classList.toggle('is-active', !on); $('band-bypass').setAttribute('aria-pressed', on ? 'false' : 'true');
+    $('band-solo').classList.toggle('is-active', solo === selected); $('band-solo').disabled = !shapeCanSolo(shape);
+    $('band-solo').setAttribute('aria-pressed', solo === selected ? 'true' : 'false');
+  }
+  // The band colours are for the dark screen; on the light panel a darker one reads better.
+  function bandColorInk(i){
+    var c = bandColor(i), r = parseInt(c.substr(1, 2), 16), g = parseInt(c.substr(3, 2), 16), b = parseInt(c.substr(5, 2), 16);
+    return 'rgb(' + Math.round(r * 0.62) + ',' + Math.round(g * 0.62) + ',' + Math.round(b * 0.62) + ')';
+  }
+
+  function renderAll(){
+    knobRenders.forEach(function(r){ r(); });
+    chipRenders.forEach(function(r){ r(); });
+    renderToggles(); renderStrip(); renderBand();
+    $('bands-readout').textContent = usedCount();
+    renderUndo(); renderAB();
+    invalidateCurves(); requestDraw();
+  }
+
+  // Every change: tell the engine, mark the preset edited, remember it for UNDO.
+  function changed(){
+    sendParams(); save(); scheduleCommit();
+    if (presetName && presetName.slice(-9) !== ' (edited)') { presetName += ' (edited)'; renderPresetSelect(); }
+    renderAll();
+  }
+
+  // ---------- undo / redo ----------
+  var undoStack = [], redoStack = [], committed = clone(params), undoTimer = null, dragging = false;
+  function scheduleCommit(){ clearTimeout(undoTimer); undoTimer = setTimeout(commitUndo, 400); }
+  function commitUndo(){
+    clearTimeout(undoTimer); undoTimer = null;
+    if (dragging) { scheduleCommit(); return; }
+    if (same(committed, params)) return;
+    undoStack.push(committed); if (undoStack.length > 100) undoStack.shift();
+    redoStack = []; committed = clone(params); renderUndo();
+  }
+  function restore(p){ params = clone(p); committed = clone(p); if (selected >= 0 && !params[bandKey(selected, 'Used')]) selected = -1; if (solo >= 0 && !params[bandKey(solo, 'Used')]) solo = -1; sendParams(); save(); renderAll(); }
+  function undo(){ if (undoTimer) commitUndo(); if (!undoStack.length) return; redoStack.push(clone(params)); restore(undoStack.pop()); }
+  function redo(){ if (undoTimer) commitUndo(); if (!redoStack.length) return; undoStack.push(clone(params)); restore(redoStack.pop()); }
+  function renderUndo(){ $('undo').disabled = !undoStack.length && !undoTimer; $('redo').disabled = !redoStack.length; }
+  $('undo').addEventListener('click', undo); $('redo').addEventListener('click', redo);
+
+  // ---------- A / B ----------
+  function renderAB(){
+    var other = ab.cur === 'A' ? 'B' : 'A';
+    $('ab-a').classList.toggle('is-active', ab.cur === 'A'); $('ab-b').classList.toggle('is-active', ab.cur === 'B');
+    $('ab-a').setAttribute('aria-pressed', ab.cur === 'A' ? 'true' : 'false'); $('ab-b').setAttribute('aria-pressed', ab.cur === 'B' ? 'true' : 'false');
+    $('ab-copy').innerHTML = ab.cur + '&rarr;' + other;
+  }
+  function switchAB(to){
+    if (ab.cur === to) return;
+    if (undoTimer) commitUndo();
+    ab[ab.cur] = clone(params);
+    ab.cur = to;
+    var next = ab[to] || clone(params);
+    undoStack.push(clone(params)); redoStack = [];
+    restore(next);
+  }
+  $('ab-a').addEventListener('click', function(){ switchAB('A'); });
+  $('ab-b').addEventListener('click', function(){ switchAB('B'); });
+  $('ab-copy').addEventListener('click', function(){ var other = ab.cur === 'A' ? 'B' : 'A'; ab[other] = clone(params); save(); setStatus('Copied ' + ab.cur + ' to ' + other); });
+
+  // ---------- presets ----------
+  var presetSelect = $('preset-select'), presetNameInput = $('preset-name');
+  function setStatus(text){ $('preset-status').textContent = text; }
+  function storeUser(){ try { localStorage.setItem(USER_KEY, JSON.stringify(userPresets)); return true; } catch (err) { return false; } }
+  function allPresetKeys(){
+    return FACTORY_PRESETS.map(function(p){ return 'f:' + p[0]; }).concat(Object.keys(userPresets).sort().map(function(n){ return 'u:' + n; }));
+  }
+  function renderPresetSelect(){
+    presetSelect.textContent = '';
+    var factory = document.createElement('optgroup'); factory.label = 'Factory';
+    FACTORY_PRESETS.forEach(function(p){ factory.appendChild(new Option(p[0], 'f:' + p[0])); });
+    presetSelect.appendChild(factory);
+    var names = Object.keys(userPresets).sort();
+    if (names.length) {
+      var mine = document.createElement('optgroup'); mine.label = 'Your presets';
+      names.forEach(function(n){ mine.appendChild(new Option(n, 'u:' + n)); });
+      presetSelect.appendChild(mine);
+    }
+    var value = userPresets[presetName] ? 'u:' + presetName
+              : FACTORY_PRESETS.some(function(p){ return p[0] === presetName; }) ? 'f:' + presetName : '';
+    if (!value) { presetSelect.appendChild(new Option(presetName || '—', 'x:')); value = 'x:'; }
+    presetSelect.value = value;
+    $('preset-delete').disabled = !userPresets[presetName];
+  }
+  function loadPreset(key){
+    var name = key.slice(2), p;
+    if (key.indexOf('f:') === 0) { var f = FACTORY_PRESETS.filter(function(x){ return x[0] === name; })[0]; if (f) p = presetParams(f[1]); }
+    else if (userPresets[name]) p = Object.assign(clone(DEFAULTS), userPresets[name]);
+    if (!p) return;
+    if (undoTimer) commitUndo();
+    undoStack.push(clone(params)); redoStack = [];
+    presetName = name; solo = -1; selected = -1;
+    for (var i = 0; i < MAX_BANDS; i++) if (p[bandKey(i, 'Used')]) { selected = i; break; }
+    restore(p); renderPresetSelect(); saveNow(); setStatus('');
+  }
+  presetSelect.addEventListener('change', function(){ if (presetSelect.value !== 'x:') loadPreset(presetSelect.value); });
+  function stepPreset(d){
+    var keys = allPresetKeys(), i = keys.indexOf(presetSelect.value);
+    loadPreset(keys[((i < 0 ? 0 : i + d) % keys.length + keys.length) % keys.length]);
+  }
+  $('preset-prev').addEventListener('click', function(){ stepPreset(-1); });
+  $('preset-next').addEventListener('click', function(){ stepPreset(1); });
+  function savePreset(){
+    var base = presetName.replace(/ \(edited\)$/, '');
+    var name = presetNameInput.value.trim() || (userPresets[base] ? base : 'My preset ' + (Object.keys(userPresets).length + 1));
+    if (FACTORY_PRESETS.some(function(p){ return p[0] === name; })) name += ' (mine)';
+    var existed = !!userPresets[name];
+    userPresets[name] = clone(params);
+    var stored = storeUser();
+    presetName = name; presetNameInput.value = '';
+    renderPresetSelect(); saveNow();
+    setStatus(!stored ? 'Saved for this session only (browser storage is unavailable)' : (existed ? 'Updated “' : 'Saved “') + name + '”');
+  }
+  $('preset-save').addEventListener('click', savePreset);
+  presetNameInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); savePreset(); } });
+  $('preset-delete').addEventListener('click', function(){
+    var name = presetName;
+    if (!userPresets[name] || !window.confirm('Delete your preset “' + name + '”?')) return;
+    delete userPresets[name]; storeUser();
+    loadPreset('f:Flat');
+    setStatus('Deleted “' + name + '”');
+  });
+
+  // ---------- the display ----------
+  var eqCanvas = $('eq'), eg = eqCanvas.getContext('2d');
+  var view = { w: 0, h: 0, dpr: 1, top: 8, bottom: 18 };
+  var LOG_MIN = Math.log(FREQ_MIN), LOG_SPAN = Math.log(FREQ_MAX / FREQ_MIN);
+  function fx(f){ return (Math.log(f) - LOG_MIN) / LOG_SPAN * view.w; }
+  function xf(x){ return Math.exp(LOG_MIN + x / view.w * LOG_SPAN); }
+  function plotH(){ return view.h - view.top - view.bottom; }
+  function gy(db){ var R = ui.dispRange; return view.top + (R - db) / (2 * R) * plotH(); }
+  function yg(y){ var R = ui.dispRange; return R - (y - view.top) / plotH() * 2 * R; }
+  function ay(db){ return view.top + (-db / ui.anaRange) * plotH(); }
+  // Cut, notch, band and all-pass dots have no gain: their height is Q, half the screen each way.
+  function qNorm(q){ return q >= Math.SQRT1_2 ? Math.log(q / Math.SQRT1_2) / Math.log(Q_MAX / Math.SQRT1_2) : -Math.log(Math.SQRT1_2 / q) / Math.log(Math.SQRT1_2 / Q_MIN); }
+  function qFromNorm(t){ t = Math.max(-1, Math.min(1, t)); return t >= 0 ? Math.SQRT1_2 * Math.pow(Q_MAX / Math.SQRT1_2, t) : Math.SQRT1_2 * Math.pow(Q_MIN / Math.SQRT1_2, -t); }
+  function nodePos(i){
+    var b = bandOf(params, i), x = fx(Math.min(FREQ_MAX, Math.max(FREQ_MIN, b.freq)));
+    var R = ui.dispRange, y = shapeHasGain(b.shape) ? gy(Math.max(-R, Math.min(R, b.gain))) : gy(qNorm(b.q) * R * 0.5);
+    return { x: x, y: y };
+  }
+
+  var cols = 0, colCos = null, colSin = null, colCos2 = null, colSin2 = null, colFs = 0;
+  var curveCache = [], totalCurve = null, curvesValid = false;
+  function invalidateCurves(){ curvesValid = false; }
+  function fitEq(){
+    var dpr = window.devicePixelRatio || 1, r = eqCanvas.getBoundingClientRect();
+    if (!r.width) return;
+    view.dpr = dpr; view.w = r.width; view.h = r.height;
+    eqCanvas.width = Math.round(r.width * dpr); eqCanvas.height = Math.round(r.height * dpr);
+    var mr = meterCanvas.getBoundingClientRect();
+    meterCanvas.width = Math.round(mr.width * dpr); meterCanvas.height = Math.round(mr.height * dpr);
+    colFs = 0; invalidateCurves(); requestDraw();
+  }
+  function prepareColumns(){
+    var fs = sampleRateNow(), n = Math.max(2, Math.round(view.w));
+    if (n === cols && fs === colFs) return;
+    cols = n; colFs = fs;
+    colCos = new Float64Array(n); colSin = new Float64Array(n); colCos2 = new Float64Array(n); colSin2 = new Float64Array(n);
+    for (var i = 0; i < n; i++) {
+      var w = 2 * Math.PI * Math.min(xf(i), fs / 2) / fs;
+      colCos[i] = Math.cos(w); colSin[i] = Math.sin(w); colCos2[i] = Math.cos(2 * w); colSin2[i] = Math.sin(2 * w);
+    }
+    curveCache = [];
+  }
+  var CURVE_SECS = [];
+  for (var cs = 0; cs < MAX_SECTIONS; cs++) CURVE_SECS.push(new Float64Array(5));
+  function bandCurve(i){
+    var b = bandOf(params, i);
+    if (!b.used) return null;
+    var key = b.shape + '|' + b.freq + '|' + b.gain + '|' + b.q + '|' + b.slope;
+    var c = curveCache[i];
+    if (c && c.key === key) return c.db;
+    var n = designBand(b, colFs, CURVE_SECS), db = new Float32Array(cols);
+    for (var k = 0; k < cols; k++) {
+      var m2 = 1;
+      for (var s = 0; s < n; s++) {
+        var q = CURVE_SECS[s];
+        var nr = q[0] + q[1] * colCos[k] + q[2] * colCos2[k], ni = -(q[1] * colSin[k] + q[2] * colSin2[k]);
+        var dr = 1 + q[3] * colCos[k] + q[4] * colCos2[k], di = -(q[3] * colSin[k] + q[4] * colSin2[k]);
+        m2 *= (nr * nr + ni * ni) / (dr * dr + di * di);
+      }
+      db[k] = 10 * Math.log10(Math.max(m2, 1e-30));
+    }
+    curveCache[i] = { key: key, db: db };
+    return db;
+  }
+  function computeCurves(){
+    prepareColumns();
+    totalCurve = new Float32Array(cols);
+    for (var i = 0; i < MAX_BANDS; i++) {
+      var db = bandCurve(i);
+      if (!db || !params[bandKey(i, 'On')]) continue;
+      for (var k = 0; k < cols; k++) totalCurve[k] += db[k];
+    }
+    curvesValid = true;
+  }
+
+  // Analyzer: Web Audio's analysers (the VST copies their maths: Blackman
+  // window, smoothing, 1/N magnitudes), shown so a full-scale sine peaks at 0 dB.
+  var ANA_SIZES = { low: 2048, med: 4096, high: 8192, max: 16384 };
+  var ANA_SMOOTH = { vfast: 0.3, fast: 0.55, med: 0.75, slow: 0.88, vslow: 0.95 };
+  var ANA_CAL = 20 * Math.log10(1 / 0.21);
+  function applyAnalyzer(){
+    if (!preAna) return;
+    [preAna, postAna].forEach(function(a){ a.fftSize = ANA_SIZES[ui.anaRes]; a.smoothingTimeConstant = ANA_SMOOTH[ui.anaSpeed]; });
+    preBuf = new Float32Array(preAna.frequencyBinCount); postBuf = new Float32Array(postAna.frequencyBinCount);
+    preBuf.fill(-200); postBuf.fill(-200);
+  }
+  function spectrumPath(buf, close){
+    var fs = sampleRateNow(), binHz = fs / (buf.length * 2), step = 2, pts = [];
+    for (var x = 0; x <= view.w; x += step) {
+      var f0 = xf(x - step / 2), f1 = xf(x + step / 2), k0 = f0 / binHz, k1 = f1 / binHz, v;
+      if (f0 >= fs / 2) break;
+      if (k1 - k0 < 1) { var kc = Math.min(buf.length - 2, (k0 + k1) / 2), i0 = Math.floor(kc), fr = kc - i0; v = buf[i0] * (1 - fr) + buf[i0 + 1] * fr; }
+      else { v = -200; for (var k = Math.ceil(k0); k <= Math.min(buf.length - 1, Math.floor(k1)); k++) if (buf[k] > v) v = buf[k]; }
+      v += ANA_CAL + (ui.anaTilt ? 4.5 * Math.log2(xf(x) / 1000) : 0);
+      pts.push(x, Math.min(view.h - view.bottom, Math.max(view.top, ay(v))));
+    }
+    eg.beginPath();
+    eg.moveTo(pts[0], view.h - view.bottom);
+    for (var j = 0; j < pts.length; j += 2) eg.lineTo(pts[j], pts[j + 1]);
+    eg.lineTo(pts[pts.length - 2], view.h - view.bottom);
+    if (close) eg.closePath();
+  }
+
+  var hover = -1, hoverPos = null, drag = null;
+  function drawEq(){
+    if (!view.w) return;
+    if (!curvesValid) computeCurves();
+    var dpr = view.dpr, W = view.w, H = view.h, fs = sampleRateNow(), R = ui.dispRange;
+    eg.setTransform(dpr, 0, 0, dpr, 0, 0);
+    eg.fillStyle = '#171308'; eg.fillRect(0, 0, W, H);
+    // above Nyquist: nothing to hear
+    var xn = fx(fs / 2);
+    if (xn < W) { eg.fillStyle = 'rgba(0,0,0,0.45)'; eg.fillRect(xn, 0, W - xn, H); }
+    // grid
+    eg.lineWidth = 1;
+    [20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000].forEach(function(f){
+      var major = [100, 1000, 10000].indexOf(f) >= 0, x = Math.round(fx(f)) + 0.5;
+      eg.strokeStyle = major ? 'rgba(240,168,48,0.16)' : 'rgba(240,168,48,0.07)';
+      eg.beginPath(); eg.moveTo(x, view.top); eg.lineTo(x, H - view.bottom); eg.stroke();
+    });
+    var step = { 3: 1, 6: 2, 12: 3, 30: 6 }[R];
+    for (var d = -R; d <= R + 1e-9; d += step) {
+      var y = Math.round(gy(d)) + 0.5;
+      eg.strokeStyle = d === 0 ? 'rgba(240,168,48,0.32)' : 'rgba(240,168,48,0.08)';
+      eg.beginPath(); eg.moveTo(0, y); eg.lineTo(W, y); eg.stroke();
+    }
+    eg.font = '500 9px "IBM Plex Mono", monospace'; eg.textBaseline = 'middle';
+    eg.fillStyle = 'rgba(240,168,48,0.5)'; eg.textAlign = 'right';
+    for (d = -R; d <= R + 1e-9; d += step) if (d !== -R && d !== R) eg.fillText((d > 0 ? '+' : '') + d, W - 4, gy(d));
+    if (ui.anaMode !== 'off') {
+      eg.textAlign = 'left'; eg.fillStyle = 'rgba(126,196,190,0.4)';
+      for (var a = -30; a > -ui.anaRange; a -= 30) eg.fillText(String(a), 4, ay(a));
+    }
+    eg.textAlign = 'center'; eg.textBaseline = 'alphabetic'; eg.fillStyle = 'rgba(240,168,48,0.55)';
+    [[20, '20'], [50, '50'], [100, '100'], [200, '200'], [500, '500'], [1000, '1k'], [2000, '2k'], [5000, '5k'], [10000, '10k'], [20000, '20k']].forEach(function(l){
+      eg.fillText(l[1], fx(l[0]), H - 5);
+    });
+    // spectrum
+    if (preBuf && ui.anaMode !== 'off') {
+      if (ui.anaMode === 'pre' || ui.anaMode === 'both') { spectrumPath(preBuf, true); eg.fillStyle = 'rgba(126,196,190,0.16)'; eg.fill(); }
+      if (ui.anaMode === 'post' || ui.anaMode === 'both') {
+        spectrumPath(postBuf, true); eg.fillStyle = 'rgba(240,168,48,0.14)'; eg.fill();
+        spectrumPath(postBuf, false); eg.strokeStyle = 'rgba(240,168,48,0.45)'; eg.lineWidth = 1; eg.stroke();
+      }
+    }
+    // each band's own curve, filled to 0 dB
+    var y0 = gy(0), clip = function(v){ return Math.max(view.top - 2, Math.min(H - view.bottom + 2, gy(v))); };
+    for (var i = 0; i < MAX_BANDS; i++) {
+      var db = curveCache[i] && params[bandKey(i, 'Used')] ? curveCache[i].db : null;
+      if (!db) continue;
+      var on = params[bandKey(i, 'On')], col = bandColor(i), sel = i === selected;
+      eg.beginPath(); eg.moveTo(0, y0);
+      for (var k = 0; k < cols; k++) eg.lineTo(k, clip(db[k]));
+      eg.lineTo(cols - 1, y0); eg.closePath();
+      eg.globalAlpha = on ? (sel ? 0.24 : 0.11) : 0.05; eg.fillStyle = col; eg.fill();
+      if (sel) {
+        eg.globalAlpha = on ? 0.9 : 0.4; eg.strokeStyle = col; eg.lineWidth = 1.2;
+        eg.beginPath(); for (k = 0; k < cols; k++) { if (k) eg.lineTo(k, clip(db[k])); else eg.moveTo(k, clip(db[k])); } eg.stroke();
+      }
+      eg.globalAlpha = 1;
+    }
+    // the sum
+    eg.beginPath();
+    for (k = 0; k < cols; k++) { var yy = clip(totalCurve[k]); if (k) eg.lineTo(k, yy); else eg.moveTo(k, yy); }
+    eg.strokeStyle = '#f2ecd9'; eg.lineWidth = 2; eg.shadowColor = 'rgba(242,236,217,0.5)'; eg.shadowBlur = 6; eg.stroke(); eg.shadowBlur = 0;
+    // dots
+    eg.textAlign = 'center'; eg.textBaseline = 'middle';
+    for (i = 0; i < MAX_BANDS; i++) {
+      if (!params[bandKey(i, 'Used')]) continue;
+      var p = nodePos(i), c = bandColor(i), active = params[bandKey(i, 'On')];
+      if (i === selected) { eg.beginPath(); eg.arc(p.x, p.y, 11, 0, 2 * Math.PI); eg.strokeStyle = '#f2ecd9'; eg.lineWidth = 1.5; eg.stroke(); }
+      else if (i === hover) { eg.beginPath(); eg.arc(p.x, p.y, 10.5, 0, 2 * Math.PI); eg.strokeStyle = 'rgba(242,236,217,0.45)'; eg.lineWidth = 1; eg.stroke(); }
+      eg.beginPath(); eg.arc(p.x, p.y, 7.5, 0, 2 * Math.PI);
+      if (active) { eg.fillStyle = c; eg.fill(); }
+      else { eg.fillStyle = '#171308'; eg.fill(); eg.strokeStyle = c; eg.lineWidth = 1.5; eg.stroke(); }
+      eg.fillStyle = active ? '#171308' : c; eg.font = '600 9px "IBM Plex Mono", monospace';
+      eg.fillText(String(i + 1), p.x, p.y + 0.5);
+      var place = params[bandKey(i, 'Place')];
+      if (place !== 'stereo') { eg.fillStyle = c; eg.font = '600 8px "IBM Plex Mono", monospace'; eg.fillText({ left: 'L', right: 'R', mid: 'M', side: 'S' }[place], p.x, p.y + 16); }
+      if (solo === i) { eg.fillStyle = '#c08f17'; eg.font = '600 8px "IBM Plex Mono", monospace'; eg.fillText('SOLO', p.x, p.y - 17); }
+    }
+    // the hovered or dragged band's numbers
+    var show = drag ? drag.band : hover;
+    if (show >= 0) {
+      var bb = bandOf(params, show), pp = nodePos(show);
+      var text = (show + 1) + ' ' + SHAPE_LABELS[SHAPES.indexOf(bb.shape)] + '  ' + fmtHz(bb.freq) + '  ' + noteName(bb.freq) +
+                 (shapeHasGain(bb.shape) ? '  ' + fmt(KNOB_DEFS.gain, bb.gain) : '') + (shapeHasQ(bb.shape) ? '  Q ' + fmt(KNOB_DEFS.q, bb.q) : '');
+      eg.font = '500 10px "IBM Plex Mono", monospace';
+      var tw = eg.measureText(text).width + 12, tx = Math.max(2, Math.min(W - tw - 2, pp.x - tw / 2)), ty = pp.y > 40 ? pp.y - 36 : pp.y + 20;
+      eg.fillStyle = 'rgba(23,19,8,0.88)'; eg.strokeStyle = bandColor(show); eg.lineWidth = 1;
+      roundRect(eg, tx, ty, tw, 17, 4); eg.fill(); eg.stroke();
+      eg.fillStyle = '#f2ecd9'; eg.textAlign = 'left'; eg.textBaseline = 'middle';
+      eg.fillText(text, tx + 6, ty + 9);
+    }
+  }
+  function roundRect(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  var NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  function noteName(f){
+    var m = 69 + 12 * Math.log2(f / 440), r = Math.round(m), cents = Math.round((m - r) * 100);
+    return NOTE_NAMES[((r % 12) + 12) % 12] + (Math.floor(r / 12) - 1) + (cents ? (cents > 0 ? '+' : '') + cents : '');
+  }
+
+  // ---------- meters ----------
+  var meterCanvas = $('meter'), mg = meterCanvas.getContext('2d');
+  var meterShown = [0, 0, 0, 0], meterHold = [0, 0, 0, 0], holdTime = [0, 0, 0, 0], peakHold = 0, peakTime = 0;
+  function onMeter(m){
+    var now = performance.now();
+    for (var i = 0; i < 4; i++) {
+      meterShown[i] = Math.max(m[i], meterShown[i] * 0.84);
+      if (m[i] >= meterHold[i] || now - holdTime[i] > 1500) { meterHold[i] = m[i]; holdTime[i] = now; }
+    }
+    var pk = Math.max(m[2], m[3]);
+    if (pk >= peakHold || now - peakTime > 1500) { peakHold = pk; peakTime = now; }
+    var pr = $('peak-readout');
+    pr.textContent = peakHold > 1e-5 ? (20 * Math.log10(peakHold)).toFixed(1) : '—';
+    pr.classList.toggle('is-hot', peakHold >= 1);
+  }
+  function drawMeter(){
+    var dpr = view.dpr, W = meterCanvas.width / dpr, H = meterCanvas.height / dpr;
+    if (!W) return;
+    mg.setTransform(dpr, 0, 0, dpr, 0, 0);
+    mg.fillStyle = '#171308'; mg.fillRect(0, 0, W, H);
+    var top = view.top, bottom = H - view.bottom, span = bottom - top;
+    function my(lin){ var db = lin > 1e-6 ? 20 * Math.log10(lin) : -120; return top + Math.max(0, Math.min(1, (6 - db) / 66)) * span; }
+    var xs = [4, 11, 24, 31];
+    mg.fillStyle = 'rgba(240,168,48,0.1)';
+    xs.forEach(function(x){ mg.fillRect(x, top, 6, span); });
+    for (var i = 0; i < 4; i++) {
+      var y = my(meterShown[i]), y0 = my(1);
+      mg.fillStyle = i < 2 ? 'rgba(126,196,190,0.75)' : 'rgba(240,168,48,0.85)';
+      mg.fillRect(xs[i], y, 6, bottom - y);
+      if (meterShown[i] > 1) { mg.fillStyle = '#ff6a4a'; mg.fillRect(xs[i], y, 6, Math.max(0, y0 - y)); }
+      mg.fillStyle = '#f2ecd9'; mg.fillRect(xs[i], my(meterHold[i]), 6, 1.5);
+    }
+    mg.fillStyle = 'rgba(240,168,48,0.3)'; mg.fillRect(2, my(1), W - 4, 1);
+    mg.font = '500 8px "IBM Plex Mono", monospace'; mg.textAlign = 'center'; mg.fillStyle = 'rgba(240,168,48,0.55)';
+    mg.fillText('IN', 10, H - 5); mg.fillText('OUT', 31, H - 5);
+  }
+
+  // ---------- drawing loop ----------
+  var drawQueued = false;
+  function requestDraw(){ if (!drawQueued) { drawQueued = true; requestAnimationFrame(frame); } }
+  function frame(){
+    drawQueued = false;
+    var live = document.body.classList.contains('powered') && ctx && ctx.state === 'running';
+    if (live && preAna && !freeze && ui.anaMode !== 'off') {
+      if (preBuf.length !== preAna.frequencyBinCount) applyAnalyzer();
+      preAna.getFloatFrequencyData(preBuf); postAna.getFloatFrequencyData(postBuf);
+    }
+    if (live) for (var i = 0; i < 4; i++) meterShown[i] *= 0.97;
+    drawEq(); drawMeter();
+    if (live) requestDraw();
+  }
+
+  // ---------- mouse and keys on the display ----------
+  function localPos(e){ var r = eqCanvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * view.w / r.width, y: (e.clientY - r.top) * view.h / r.height }; }
+  function hitBand(p){
+    var best = -1, bd = 12 * 12;
+    for (var i = MAX_BANDS - 1; i >= 0; i--) {
+      if (!params[bandKey(i, 'Used')]) continue;
+      var n = nodePos(i), d = (n.x - p.x) * (n.x - p.x) + (n.y - p.y) * (n.y - p.y);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  function setInfo(p){
+    if (!p) { $('eq-info').textContent = usedCount() ? 'DRAG A DOT · SCROLL FOR Q' : 'DOUBLE-CLICK TO ADD A BAND'; return; }
+    var f = xf(p.x);
+    $('eq-info').textContent = fmtHz(f).toUpperCase() + ' · ' + noteName(f) + ' · ' + fmt(KNOB_DEFS.gain, yg(p.y)).toUpperCase();
+  }
+  eqCanvas.addEventListener('pointerdown', function(e){
+    eqCanvas.focus();
+    var p = localPos(e), i = hitBand(p);
+    if (e.button !== 0) return;
+    if (i < 0) { if (selected >= 0) select(-1); return; }
+    if (e.altKey) { deleteBand(i); return; }
+    if (i !== selected) select(i);
+    var b = bandOf(params, i);
+    drag = { band: i, x: p.x, y: p.y, lastX: p.x, lastY: p.y, fx: fx(b.freq), fy: nodePos(i).y };
+    dragging = true;
+    eqCanvas.setPointerCapture(e.pointerId);
+  });
+  eqCanvas.addEventListener('pointermove', function(e){
+    var p = localPos(e);
+    if (drag) {
+      var k = e.shiftKey ? 0.15 : 1;
+      drag.fx += (p.x - drag.lastX) * k; drag.fy += (p.y - drag.lastY) * k;
+      drag.lastX = p.x; drag.lastY = p.y;
+      var i = drag.band, shape = params[bandKey(i, 'Shape')], R = ui.dispRange;
+      params[bandKey(i, 'Freq')] = Math.min(FREQ_MAX, Math.max(FREQ_MIN, xf(drag.fx)));
+      if (shapeHasGain(shape)) {
+        var g = Math.max(-R, Math.min(R, yg(drag.fy)));
+        if (params.gainScale > 0) params[bandKey(i, 'Gain')] = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, g * 100 / params.gainScale));
+      } else if (shapeHasQ(shape)) params[bandKey(i, 'Q')] = qFromNorm(yg(drag.fy) / (R * 0.5));
+      changed();
+      return;
+    }
+    var h = hitBand(p);
+    if (h !== hover) { hover = h; requestDraw(); }
+    setInfo(p);
+  });
+  function endDrag(){ if (drag) { drag = null; dragging = false; commitUndo(); requestDraw(); } }
+  eqCanvas.addEventListener('pointerup', endDrag);
+  eqCanvas.addEventListener('pointercancel', endDrag);
+  eqCanvas.addEventListener('pointerleave', function(){ if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
+  eqCanvas.addEventListener('dblclick', function(e){
+    var p = localPos(e), i = hitBand(p);
+    if (i >= 0) { setBand('On', !params[bandKey(i, 'On')]); return; }
+    var f = xf(p.x), shape = f <= 25 ? 'lowcut' : f >= 18000 ? 'highcut' : 'bell';
+    var g = Math.round(yg(p.y) * 10) / 10;
+    addBand(Math.min(FREQ_MAX, Math.max(FREQ_MIN, f)), params.gainScale > 0 ? g * 100 / params.gainScale : 0, shape);
+  });
+  eqCanvas.addEventListener('wheel', function(e){
+    var p = localPos(e), i = hitBand(p);
+    if (i < 0) i = selected;
+    if (i < 0 || !shapeHasQ(params[bandKey(i, 'Shape')])) return;
+    e.preventDefault();
+    var k = Math.exp(-e.deltaY * (e.shiftKey ? 0.0003 : 0.0015));
+    params[bandKey(i, 'Q')] = Math.min(Q_MAX, Math.max(Q_MIN, params[bandKey(i, 'Q')] * k));
+    if (i !== selected) selected = i;
+    changed();
+  }, { passive: false });
+  eqCanvas.addEventListener('keydown', function(e){
+    if (selected < 0) return;
+    var fine = e.shiftKey ? 0.2 : 1, used = true;
+    if (e.key === 'Delete' || e.key === 'Backspace') deleteBand(selected);
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      params[bandParam('Freq')] = Math.min(FREQ_MAX, Math.max(FREQ_MIN, params[bandParam('Freq')] * Math.pow(2, (e.key === 'ArrowRight' ? 1 : -1) / 24 * fine)));
+      changed();
+    } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && shapeHasGain(params[bandParam('Shape')])) {
+      params[bandParam('Gain')] = Math.min(GAIN_MAX, Math.max(-GAIN_MAX, params[bandParam('Gain')] + (e.key === 'ArrowUp' ? 0.5 : -0.5) * fine));
+      changed();
+    } else used = false;
+    if (used) { e.preventDefault(); e.stopPropagation(); }
+  });
+  // Drop a sound on the display to play it through the EQ.
+  eqCanvas.addEventListener('dragover', function(e){ e.preventDefault(); eqCanvas.classList.add('is-over'); });
+  eqCanvas.addEventListener('dragleave', function(){ eqCanvas.classList.remove('is-over'); });
+  eqCanvas.addEventListener('drop', function(e){
+    e.preventDefault(); eqCanvas.classList.remove('is-over');
+    var f = e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  // Space plays and stops; Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) undo and redo.
+  window.addEventListener('keydown', function(e){
+    var t = e.target.tagName;
+    if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
+    if (e.key === ' ' && !e.repeat) { e.preventDefault(); setPlaying(!src.playing); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+  });
+
+  // ---------- easter egg: 翡翠 (kawasemi), the kingfisher ----------
+  var bird = $('bird'), subText = $('brand-sub'), subOriginal = subText.innerHTML, birdTimer = null;
+  bird.addEventListener('click', function(){
+    bird.classList.remove('is-diving'); void bird.offsetWidth; bird.classList.add('is-diving');
+    subText.innerHTML = '<span class="jp" lang="ja">カワセミ</span> · Kawasemi · kingfisher';
+    clearTimeout(birdTimer);
+    birdTimer = setTimeout(function(){ subText.innerHTML = subOriginal; }, 2600);
+  });
+
+  window.addEventListener('resize', fitEq);
+  renderPresetSelect();
+  renderAll();
+  setInfo(null);
+  fitEq();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(requestDraw);
+})();
+</script>
+</body>
+</html>
