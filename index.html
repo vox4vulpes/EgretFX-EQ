@@ -408,7 +408,7 @@
   <div class="band-list" id="band-list" role="listbox" aria-label="Bands"></div>
 </div>
 <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
-<p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q, double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it. Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source.</p>
+<p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q, double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source.</p>
 </div>
 </div>
 
@@ -2527,7 +2527,7 @@ if (typeof registerProcessor === 'function') {
     }
     if (drag) {
       // every selected dot moves together: frequency along, gain (or Q) up and down
-      var k = e.shiftKey ? 0.15 : 1, dx = (p.x - drag.lastX) * k, dy = (p.y - drag.lastY) * k, R = ui.dispRange;
+      var k = e.shiftKey ? 0.15 : 1, dx = (p.x - drag.lastX) * k * (drag.xk || 1), dy = (p.y - drag.lastY) * k, R = ui.dispRange;
       drag.lastX = p.x; drag.lastY = p.y;
       drag.members.forEach(function(m){
         m.fx += dx; m.fy += dy;
@@ -2549,7 +2549,7 @@ if (typeof registerProcessor === 'function') {
   // Holding still on the background for a moment holds the spectrum and marks its
   // peaks; the one nearest the pointer is lit. Pull up or down and a bell appears
   // on it, as wide as the peak, and follows the pointer like any dot.
-  var GRAB_HOLD_MS = 350, grab = null;
+  var GRAB_HOLD_MS = 350, GRAB_X_SPEED = 0.1, grab = null;
   function grabSource(){
     if (!preBuf || ui.anaMode === 'off') return null;
     return ui.anaMode === 'post' ? postBuf : preBuf;
@@ -2614,8 +2614,8 @@ if (typeof registerProcessor === 'function') {
       grab.made = true;
       select(i);
       eqCanvas.style.cursor = 'grabbing';
-      // the first pull sets the gain only: the bell stays on the peak until moved sideways
-      drag = { band: i, lastX: p.x, lastY: p.y, members: [{ i: i, fx: fx(f), fy: gy(0) + (p.y - grab.y0) }] };
+      // a grabbed bell is for up and down: sideways it creeps (a tenth as fast), so it stays on its peak
+      drag = { band: i, lastX: p.x, lastY: p.y, xk: GRAB_X_SPEED, members: [{ i: i, fx: fx(f), fy: gy(0) + (p.y - grab.y0) }] };
       var g = Math.max(-ui.dispRange, Math.min(ui.dispRange, yg(drag.members[0].fy)));
       if (params.gainScale > 0) params[bandKey(i, 'Gain')] = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, g * 100 / params.gainScale));
       changed();
