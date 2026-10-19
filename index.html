@@ -29,10 +29,10 @@
     --fg:#2a241d; --fg-soft:rgba(42,36,29,.6); --acc:#a8700a; --acc-soft:rgba(168,112,10,.6); --acc-hover:rgba(168,112,10,.14); --on-acc:#fbf8ef;
     --float:rgba(251,248,239,.96); --float-solid:#fbf8ef; --float-border:rgba(42,36,29,.16); --float-shadow:rgba(60,45,20,.25);
     --hover:rgba(42,36,29,.06); --track:rgba(42,36,29,.14); --knob-hi:#fffdf6; --knob-lo:#d9cfb5; --input-bg:#fffdf6;
-    --led-off:#c7bb9c; --solo:#d9b92a; --teal-hi:#336f6b; --badge-ink:#fbf8ef;
+    --led-off:#c7bb9c; --solo:#d9b92a; --teal-hi:#336f6b; --badge-ink:#fbf8ef; --float-ghost:rgba(251,248,239,.42);
   }
   :root[data-eq-theme="dark"]{
-    --badge-ink:#171308;
+    --badge-ink:#171308; --float-ghost:rgba(33,27,16,.42);
     --scr:#171308; --bar:#211b10; --bar-hi:#2c2416; --bar-lo:#1a150c; --edge:rgba(0,0,0,.5);
     --fg:#f2ecd9; --fg-soft:rgba(242,236,217,.6); --acc:#f0a830; --acc-soft:rgba(240,168,48,.62); --acc-hover:rgba(240,168,48,.18); --on-acc:#171308;
     --float:rgba(33,27,16,.94); --float-solid:#241d12; --float-border:rgba(242,236,217,.14); --float-shadow:rgba(0,0,0,.55);
@@ -123,6 +123,26 @@
   .bp-grip::before{content:''; position:absolute; left:50%; top:4px; width:34px; height:4px; margin-left:-17px; border-radius:2px;
     background:repeating-linear-gradient(90deg, var(--fg-soft) 0 2px, transparent 2px 5px); opacity:.55;}
   .bp-grip:hover::before{opacity:1;}
+  .bp-ghost{position:absolute; top:1px; right:6px; z-index:2; width:20px; height:12px; padding:0; border:none; background:none; cursor:pointer;
+    color:var(--fg-soft); display:flex; align-items:center; justify-content:center;}
+  .bp-ghost:hover, .bp-ghost.is-on{color:var(--band, var(--acc));}
+  .bp-ghost svg{width:11px; height:11px;}
+  /* see-through: the curves and the spectrum show through */
+  .band-panel.is-ghost{background:var(--float-ghost); backdrop-filter:none; box-shadow:none;}
+  /* RANGE: a ring around the GAIN knob */
+  .range-ring{position:absolute; left:-8px; top:-8px; width:56px; height:56px; overflow:visible; pointer-events:none;}
+  .range-ring .hit{pointer-events:stroke; cursor:ns-resize;}
+  .knob[data-knob="gain"] .knob-dial{position:relative;}
+  .gain-wrap{display:flex; align-items:flex-start; gap:2px;}
+  /* the DYN switch beside GAIN */
+  .dyn-sw{display:flex; flex-direction:column; align-items:center; gap:3px; margin-top:4px; cursor:pointer; border:none; background:none; padding:0; color:var(--fg-soft);}
+  .dyn-sw .track{width:12px; height:24px; border-radius:6px; background:var(--track); position:relative; transition:background .15s;}
+  .dyn-sw .track::after{content:''; position:absolute; left:2px; top:14px; width:8px; height:8px; border-radius:50%; background:var(--knob-hi); box-shadow:0 1px 2px var(--float-shadow); transition:top .15s;}
+  .dyn-sw.is-on .track{background:var(--band, var(--acc));}
+  .dyn-sw.is-on .track::after{top:2px;}
+  .dyn-sw .lbl{font-size:8px; font-weight:600; letter-spacing:.06em;}
+  .dyn-sw.is-on .lbl{color:var(--band, var(--acc));}
+  .dyn-sw[disabled]{opacity:.35; cursor:default;}
   .band-panel.is-moving .bp-grip{cursor:grabbing;}
   .band-panel.is-pinned{border-top-style:dashed;}
   /* The band list under the bottom bar: every band, at a glance. */
@@ -348,12 +368,12 @@
     <div class="sketch-hint" id="sketch-hint" hidden>Draw the curve you want; the bands follow</div>
     <div class="band-panel" id="band-panel" hidden>
       <div class="bp-grip" id="bp-grip" title="Drag to move the panel aside; double-click to put it back under the band"></div>
+      <button class="bp-ghost" id="bp-ghost" type="button" aria-pressed="false" title="See-through panel" aria-label="See-through panel"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 1.4a4.6 4.6 0 010 9.2z" fill="currentColor"/></svg></button>
       <div class="bp-col">
         <div class="bp-title" id="bp-title">BAND 1</div>
         <button class="bp-sel" id="bp-shape" type="button" aria-haspopup="menu" title="Shape"></button>
         <button class="bp-sel" id="bp-slope" type="button" aria-haspopup="menu" title="Slope"></button>
         <button class="bp-sel" id="bp-place" type="button" aria-haspopup="menu" title="Stereo placement"></button>
-        <button class="bp-sel no-arrow" id="bp-dyn" type="button" aria-pressed="false" title="Dynamic EQ: the gain moves with the level of this band's part of the sound">Dynamic</button>
       </div>
       <div class="bp-knobs" id="band-knobs"></div>
       <div class="bp-dyn" id="dyn-knobs" hidden></div>
@@ -1547,14 +1567,81 @@ if (typeof registerProcessor === 'function') {
 
   var knobRenders = [];
   function bandParam(name){ return bandKey(selected, name); }
+  var ringParts = null;   // the RANGE ring around GAIN (made with the GAIN knob)
   [['freq', 'Freq'], ['gain', 'Gain'], ['q', 'Q']].forEach(function(k){
     var def = KNOB_DEFS[k[0]];
     var kn = buildKnob(def, function(){ return selected < 0 ? def.def : params[bandParam(k[1])]; },
                             function(v){ if (selected >= 0) { params[bandParam(k[1])] = v; changed(); } });
     kn.el.dataset.knob = k[0];
-    $('band-knobs').appendChild(kn.el); knobRenders.push(kn.render);
+    if (k[0] === 'gain') {
+      var wrap = document.createElement('div'); wrap.className = 'gain-wrap';
+      wrap.appendChild(kn.el); wrap.appendChild(buildDynSwitch());
+      $('band-knobs').appendChild(wrap); addRangeRing(kn.el);
+    } else $('band-knobs').appendChild(kn.el);
+    knobRenders.push(kn.render);
   });
-  [['thresh', 'Thresh'], ['range', 'Range'], ['attack', 'Attack'], ['release', 'Release']].forEach(function(k){
+  // DYN beside GAIN: switches the band's dynamics on and off.
+  function buildDynSwitch(){
+    var sw = document.createElement('button');
+    sw.type = 'button'; sw.className = 'dyn-sw'; sw.id = 'dyn-sw';
+    sw.title = 'Dynamic: the gain moves with the level of this band\u2019s part of the sound. Or drag the arrow under the dot.';
+    sw.innerHTML = '<span class="track"></span><span class="lbl">DYN</span>';
+    sw.addEventListener('click', function(){
+      if (selected < 0 || !shapeHasGain(params[bandParam('Shape')])) return;
+      var on = !params[bandParam('Dyn')];
+      params[bandParam('Dyn')] = on;
+      if (on && Math.abs(params[bandParam('Range')]) < 0.1) params[bandParam('Range')] = -6;
+      changed();
+    });
+    return sw;
+  }
+  // RANGE as a ring around GAIN: an arc from the gain to where the dynamics can take it.
+  function addRangeRing(knobEl){
+    var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'range-ring'); svg.setAttribute('viewBox', '0 0 56 56');
+    svg.innerHTML = '<path class="track" fill="none" stroke-width="2" opacity=".35"/><path class="arc" fill="none" stroke-width="3" stroke-linecap="round"/>' +
+                    '<circle class="end" r="3.2"/><path class="hit" fill="none" stroke="transparent" stroke-width="9"/>';
+    var dial = knobEl.querySelector('.knob-dial');
+    dial.appendChild(svg);
+    ringParts = { svg: svg, track: svg.querySelector('.track'), arc: svg.querySelector('.arc'), end: svg.querySelector('.end'), hit: svg.querySelector('.hit') };
+    var dragRing = null;
+    ringParts.hit.addEventListener('pointerdown', function(e){
+      if (selected < 0) return;
+      e.stopPropagation();
+      dragRing = { y: e.clientY, v: params[bandParam('Range')] };
+      ringParts.hit.setPointerCapture(e.pointerId); beginGesture();
+    });
+    ringParts.hit.addEventListener('pointermove', function(e){
+      if (!dragRing) return;
+      dragRing.v += (dragRing.y - e.clientY) * (e.shiftKey ? 0.03 : 0.15); dragRing.y = e.clientY;
+      params[bandParam('Range')] = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, Math.round(dragRing.v * 10) / 10));
+      changed();
+    });
+    ringParts.hit.addEventListener('pointerup', function(){ dragRing = null; endGesture(); });
+    ringParts.hit.addEventListener('dblclick', function(e){ e.stopPropagation(); params[bandParam('Range')] = -6; changed(); });
+  }
+  function ringPoint(deg, r){ var a = (deg - 90) * Math.PI / 180; return [28 + r * Math.cos(a), 28 + r * Math.sin(a)]; }
+  function arcPath(d0, d1, r){
+    var a = ringPoint(d0, r), b = ringPoint(d1, r), large = Math.abs(d1 - d0) > 180 ? 1 : 0, sweep = d1 > d0 ? 1 : 0;
+    return 'M' + a[0].toFixed(2) + ' ' + a[1].toFixed(2) + 'A' + r + ' ' + r + ' 0 ' + large + ' ' + sweep + ' ' + b[0].toFixed(2) + ' ' + b[1].toFixed(2);
+  }
+  function renderRangeRing(){
+    if (!ringParts) return;
+    var dyn = selected >= 0 && isDyn(selected);
+    ringParts.svg.style.display = dyn ? '' : 'none';
+    if (!dyn) return;
+    var def = KNOB_DEFS.gain, g = params[bandParam('Gain')], r = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, g + params[bandParam('Range')]));
+    var d0 = -135 + toT(def, g) * 270, d1 = -135 + toT(def, r) * 270, col = bandColor(selected);
+    ringParts.track.setAttribute('d', arcPath(-135, 135, 25)); ringParts.track.setAttribute('stroke', T.track || 'currentColor');
+    ringParts.track.style.stroke = 'var(--track)';
+    ringParts.arc.setAttribute('d', Math.abs(d1 - d0) < 0.5 ? arcPath(d0, d0 + 0.5, 25) : arcPath(d0, d1, 25));
+    ringParts.arc.setAttribute('stroke', col);
+    var e = ringPoint(d1, 25);
+    ringParts.end.setAttribute('cx', e[0]); ringParts.end.setAttribute('cy', e[1]); ringParts.end.setAttribute('fill', col);
+    ringParts.hit.setAttribute('d', arcPath(-135, 135, 25));
+    ringParts.svg.setAttribute('aria-label', 'Range ' + fmt(KNOB_DEFS.gain, params[bandParam('Range')]));
+  }
+  [['thresh', 'Thresh'], ['attack', 'Attack'], ['release', 'Release']].forEach(function(k){
     var def = KNOB_DEFS[k[0]];
     var kn = buildKnob(def, function(){ return selected < 0 ? def.def : params[bandParam(k[1])]; },
                             function(v){ if (selected >= 0) { params[bandParam(k[1])] = v; changed(); } });
@@ -1577,7 +1664,6 @@ if (typeof registerProcessor === 'function') {
     var names = ['Stereo', 'Left', 'Right', 'Mid', 'Side'];
     showMenu($('bp-place'), PLACEMENTS.map(function(s, i){ return { label: names[i], checked: params[bandParam('Place')] === s, action: function(){ setBand('Place', s); } }; }));
   });
-  $('bp-dyn').addEventListener('click', function(){ if (selected >= 0 && shapeHasGain(params[bandParam('Shape')])) setBand('Dyn', !params[bandParam('Dyn')]); });
   $('bp-bypass').addEventListener('click', function(){ if (selected >= 0) setBand('On', !params[bandParam('On')]); });
   $('bp-solo').addEventListener('click', function(){ if (selected >= 0) { solo = solo === selected ? -1 : selected; sendParams(); renderAll(); } });
   $('bp-delete').addEventListener('click', function(){ deleteBand(selected); });
@@ -1609,10 +1695,14 @@ if (typeof registerProcessor === 'function') {
     $('bp-solo').classList.toggle('is-on', solo === selected); $('bp-solo').disabled = !shapeCanSolo(shape);
     $('bp-solo').setAttribute('aria-pressed', solo === selected ? 'true' : 'false');
     var dyn = !!params[bandParam('Dyn')] && shapeHasGain(shape);
-    $('bp-dyn').disabled = !shapeHasGain(shape);
-    $('bp-dyn').classList.toggle('is-on', dyn); $('bp-dyn').setAttribute('aria-pressed', dyn ? 'true' : 'false');
-    $('bp-dyn').textContent = dyn ? 'Dynamic \u2713' : 'Dynamic';
+    var sw = $('dyn-sw');
+    sw.disabled = !shapeHasGain(shape);
+    sw.classList.toggle('is-on', dyn); sw.setAttribute('aria-pressed', dyn ? 'true' : 'false');
+    sw.setAttribute('aria-label', 'Dynamic ' + (dyn ? 'on' : 'off'));
     $('dyn-knobs').hidden = !dyn;
+    $('band-panel').classList.toggle('is-ghost', !!ui.panelGhost);
+    $('bp-ghost').classList.toggle('is-on', !!ui.panelGhost); $('bp-ghost').setAttribute('aria-pressed', ui.panelGhost ? 'true' : 'false');
+    renderRangeRing();
     placeBandPanel();
   }
   // Under the band, like Pro-Q's: centred on its dot, or at the top when the dot is low.
@@ -1653,6 +1743,9 @@ if (typeof registerProcessor === 'function') {
     grip.addEventListener('pointercancel', end);
     grip.addEventListener('dblclick', function(){ ui.panelPos = null; save(); placeBandPanel(); });
   })();
+
+  $('bp-ghost').addEventListener('click', function(e){ e.stopPropagation(); ui.panelGhost = !ui.panelGhost; save(); renderBandPanel(); });
+  $('bp-ghost').addEventListener('pointerdown', function(e){ e.stopPropagation(); });
 
   // ---------- the band list ----------
   function renderBandList(){
@@ -1894,6 +1987,13 @@ if (typeof registerProcessor === 'function') {
     var p = nodePos(i), R = ui.dispRange, g = bandOf(params, i).gain + params[bandKey(i, 'Range')] * params.gainScale / 100;
     return { x: p.x, y: gy(Math.max(-R, Math.min(R, g))) };
   }
+  // Under the selected dot (above it when the dot is low): the arrow that makes the band dynamic.
+  function arrowPos(i){ var p = nodePos(i); return { x: p.x, y: p.y > view.h - view.bottom - 34 ? p.y - 20 : p.y + 20 }; }
+  function hitArrow(p){
+    if (selected < 0 || !params[bandKey(selected, 'Used')] || isDyn(selected) || !shapeHasGain(params[bandKey(selected, 'Shape')])) return -1;
+    var a = arrowPos(selected);
+    return (a.x - p.x) * (a.x - p.x) + (a.y - p.y) * (a.y - p.y) < 81 ? selected : -1;
+  }
   function hitRange(p){
     for (var i = MAX_BANDS - 1; i >= 0; i--) {
       if (!params[bandKey(i, 'Used')] || !isDyn(i)) continue;
@@ -2094,6 +2194,12 @@ if (typeof registerProcessor === 'function') {
         var ly = gy(Math.max(-ui.dispRange, Math.min(ui.dispRange, bandOf(params, i).gain + dynLive[i])));
         eg.fillStyle = c; eg.fillRect(p.x - 7, ly - 1, 14, 2);
       }
+      if (i === selected && !isDyn(i) && shapeHasGain(params[bandKey(i, 'Shape')])) {
+        // the arrow: pull it up or down to make the band dynamic
+        var ap = arrowPos(i), dir = ap.y > p.y ? 1 : -1;
+        eg.beginPath(); eg.moveTo(ap.x - 5, ap.y - 3 * dir); eg.lineTo(ap.x + 5, ap.y - 3 * dir); eg.lineTo(ap.x, ap.y + 4 * dir); eg.closePath();
+        eg.fillStyle = c; eg.globalAlpha = 0.85; eg.fill(); eg.globalAlpha = 1;
+      }
       if (i === selected) { eg.beginPath(); eg.arc(p.x, p.y, 10.5, 0, 2 * Math.PI); eg.strokeStyle = T.ring; eg.lineWidth = 1.5; eg.stroke(); }
       else if (i === hover) { eg.beginPath(); eg.arc(p.x, p.y, 10, 0, 2 * Math.PI); eg.strokeStyle = T.ringHover; eg.lineWidth = 1; eg.stroke(); }
       eg.beginPath(); eg.arc(p.x, p.y, 6.5, 0, 2 * Math.PI);
@@ -2222,6 +2328,13 @@ if (typeof registerProcessor === 'function') {
     var p = localPos(e), i = hitBand(p);
     if (e.button !== 0) return;
     if (sketch.on && i < 0 && p.x <= view.plotW) { sketch.points = [p]; beginGesture(); eqCanvas.setPointerCapture(e.pointerId); requestDraw(); return; }
+    var ai = i < 0 ? hitArrow(p) : -1;
+    if (ai >= 0) {   // pulling the arrow: the band turns dynamic, its range follows the pointer
+      params[bandKey(ai, 'Dyn')] = true; params[bandKey(ai, 'Range')] = 0;
+      drag = { band: ai, range: true, lastY: p.y, fy: nodePos(ai).y };
+      beginGesture(); eqCanvas.setPointerCapture(e.pointerId); changed();
+      return;
+    }
     var ri = i < 0 ? hitRange(p) : -1;
     if (ri >= 0) {
       if (ri !== selected) select(ri);
