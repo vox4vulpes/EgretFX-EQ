@@ -75,6 +75,14 @@ namespace eq
                 setSection (out, bh, -2 * bh, bh, a1, a2);
                 return;
             }
+            if (c.n2 == 0 && c.n1 == 0 && W < 0.05 * pi)
+            {
+                // A lowpass far below Nyquist: the fit would cancel itself out; both
+                // zeros at Nyquist (the analog curve is long gone there), unity at DC.
+                const auto bl = (1 + a1 + a2) / 4;
+                setSection (out, bl, 2 * bl, bl, a1, a2);
+                return;
+            }
             const auto A0 = (1 + a1 + a2) * (1 + a1 + a2), A1 = (1 - a1 + a2) * (1 - a1 + a2), A2 = -4 * a2;
             const auto B0 = A0 * analogMag2 (c, 0), B1 = A1 * analogMag2 (c, x);
             const auto wm = std::min (W, 0.9 * pi), sm = std::sin (wm / 2), phi1 = sm * sm, phi0 = 1 - phi1, phi2 = 4 * phi0 * phi1;
