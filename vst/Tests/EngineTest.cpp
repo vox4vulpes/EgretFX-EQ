@@ -53,6 +53,48 @@ namespace
         }
         return db;
     }
+
+    // Through the engine in 128-sample blocks; in Natural/Linear Phase the kernel
+    // is built first, as the plugin's builder thread does.
+    struct Run { std::vector<float> L, R; int latency; };
+    Run runEngine (const Params& p, const std::vector<float>& inL, const std::vector<float>& inR,
+                   const std::vector<float>* sc = nullptr, double fs = 48000)
+    {
+        Engine e;
+        e.prepare (fs);
+        e.setParams (p, -1, sc != nullptr);
+        if (p.phase != Phase::zero) e.setKernel (buildKernel (p, fs));
+        const auto n = inL.size();
+        Run r { std::vector<float> (n), std::vector<float> (n), 0 };
+        for (size_t o = 0; o + 128 <= n; o += 128)
+            e.process (inL.data() + o, inR.data() + o, r.L.data() + o, r.R.data() + o, 128,
+                       sc != nullptr ? sc->data() + o : nullptr, sc != nullptr ? sc->data() + o : nullptr);
+        r.latency = e.getLatency();
+        return r;
+    }
+    std::vector<float> sine (double f, double amp, double secs, double fs = 48000)
+    {
+        std::vector<float> x ((size_t) (secs * fs));
+        for (size_t i = 0; i < x.size(); ++i) x[i] = (float) (amp * std::sin (2 * 3.14159265358979 * f * (double) i / fs));
+        return x;
+    }
+    // The level of out against in over the last quarter second (both steady), in dB.
+    double levelDb (const std::vector<float>& out, const std::vector<float>& in, double fs = 48000)
+    {
+        double a = 0, b = 0;
+        for (size_t i = out.size() - (size_t) (fs / 4); i < out.size() - 128; ++i) { a += (double) out[i] * out[i]; b += (double) in[i] * in[i]; }
+        return 10 * std::log10 (a / b);
+    }
+    double analogDb (const Params& p, double f)
+    {
+        double re = 1, im = 0;
+        for (int i = 0; i < maxBands; ++i)
+        {
+            const auto& b = p.bands[(size_t) i];
+            if (b.used && b.on) analogBand ({ b.shape, b.freq, p.effectiveGain (i), b.q, b.slope, p.gainQ }, &f, 1, &re, &im);
+        }
+        return 10 * std::log10 (re * re + im * im);
+    }
 }
 
 int main()
@@ -192,6 +234,119 @@ int main()
         float top = -200;
         for (auto v : db) top = std::max (top, v);
         check (std::abs (top - 20 * std::log10 (0.21)) < 0.5, "analyzer: full-scale sine (Blackman, 1/N)", top, 20 * std::log10 (0.21));
+    }
+
+    // 8. NATURAL and LINEAR PHASE, BRICKWALL, SPECTRAL dynamics, SIDECHAIN (as the web version is checked).
+    {
+        auto band = [] (Params& p, int i, Shape shape, double f, double g, double q, int slope = 12, Place place = Place::stereo)
+        {
+            auto& b = p.bands[(size_t) i];
+            b.used = true; b.shape = shape; b.freq = f; b.gain = g; b.q = q; b.slope = slope; b.place = place;
+            return &b;
+        };
+        for (auto mode : { Phase::natural, Phase::linear })
+        {
+            Params p;
+            p.phase = mode;
+            band (p, 0, Shape::bell, 1000, 9, 2); band (p, 1, Shape::lowcut, 80, 0, 0.71, 24); band (p, 2, Shape::highshelf, 15000, -6, 0.71);
+            double worst = 0;
+            for (double f : { 100.0, 300.0, 800.0, 1000.0, 1300.0, 4000.0, 12000.0, 18000.0 })
+            {
+                const auto x = sine (f, 0.25, 0.8);
+                worst = std::max (worst, std::abs (levelDb (runEngine (p, x, x).L, x) - analogDb (p, f)));
+            }
+            check (worst < 0.35, mode == Phase::natural ? "Natural Phase follows the analog curve" : "Linear Phase follows the analog curve", worst, 0);
+        }
+        {
+            Params p;
+            p.phase = Phase::linear;
+            band (p, 0, Shape::bell, 300, 12, 4);
+            std::vector<float> x (48000, 0.0f);
+            x[20000] = 1;   // after the fade-in
+            const auto r = runEngine (p, x, x);
+            size_t at = 0;
+            for (size_t i = 0; i < r.L.size(); ++i) if (std::abs (r.L[i]) > std::abs (r.L[at])) at = i;
+            double asym = 0, en = 0;
+            for (size_t d = 1; d < 3000; ++d) { asym += std::abs (r.L[at + d] - r.L[at - d]); en += std::abs (r.L[at + d]); }
+            check ((int) at - 20000 == r.latency && r.latency == kernelLatency (Phase::linear, PhaseRes::medium, 48000), "Linear Phase: the impulse comes out a latency later", (double) at - 20000, r.latency);
+            check (asym / en < 1e-3, "Linear Phase: the impulse is symmetric", asym / en, 0);
+        }
+        for (auto mode : { Phase::linear, Phase::natural })
+        {
+            Params p;
+            p.phase = mode; p.phaseRes = PhaseRes::high;
+            band (p, 0, Shape::highcut, 1000, 0, 0.71, brickSlope);
+            const auto x9 = sine (900, 0.25, 1.2), x15 = sine (1500, 0.25, 1.2);
+            const auto pass = levelDb (runEngine (p, x9, x9).L, x9), stop = levelDb (runEngine (p, x15, x15).L, x15);
+            check (std::abs (pass) < 0.5 && stop < -60, mode == Phase::linear ? "brickwall 1 kHz (Linear): 1.5 kHz gone" : "brickwall 1 kHz (Natural): 1.5 kHz gone", stop, -60);
+        }
+        {
+            Params p;
+            p.phase = Phase::linear;
+            band (p, 0, Shape::bell, 1000, -12, 1, 12, Place::side);
+            const auto x = sine (1000, 0.2, 1.0);
+            std::vector<float> neg (x.size());
+            for (size_t i = 0; i < x.size(); ++i) neg[i] = -x[i];
+            const auto side = levelDb (runEngine (p, x, neg).L, x), mono = levelDb (runEngine (p, x, x).L, x);
+            check (std::abs (side + 12) < 0.3 && std::abs (mono) < 0.1, "Linear Phase, side band: side -12, mono untouched", side, -12);
+        }
+        {
+            Params p;
+            auto* b = band (p, 0, Shape::bell, 2000, 0, 0.7);
+            b->dyn = true; b->range = -10; b->thresh = -30; b->attack = 5; b->release = 50; b->spectral = true;
+            const auto tone = sine (2500, 0.3, 1.5);
+            const auto r = runEngine (p, tone, tone);
+            check (levelDb (r.L, tone) < -7, "spectral: a loud tone in the band comes down", levelDb (r.L, tone), -9);
+            check (r.latency == 2048, "spectral: latency 2048 at 48 kHz", r.latency, 2048);
+            std::vector<float> noise (96000);
+            uint32_t seed = 1;
+            for (auto& v : noise) { seed = seed * 1664525u + 1013904223u; v = (float) ((seed / 4294967296.0 - 0.5) * 0.6); }
+            const auto spectral = levelDb (runEngine (p, noise, noise).L, noise);
+            b->spectral = false;
+            const auto broad = levelDb (runEngine (p, noise, noise).L, noise);
+            check (spectral > -0.5 && broad < spectral - 0.5, "spectral leaves noise alone (broadband doesn't)", spectral, 0);
+        }
+        {
+            Params p;
+            auto* b = band (p, 0, Shape::lowshelf, 200, 0, 0.71);
+            b->dyn = true; b->range = -12; b->thresh = -30; b->attack = 2; b->release = 50; b->sc = true;
+            const auto x = sine (60, 0.05, 1.5), key = sine (100, 0.5, 1.5);
+            const std::vector<float> silence (x.size(), 0.0f);
+            const auto ducked = levelDb (runEngine (p, x, x, &key).L, x), alone = levelDb (runEngine (p, x, x, &silence).L, x);
+            check (ducked < -8 && std::abs (alone) < 0.3, "sidechain: the key ducks the band", ducked, -12);
+            p.phase = Phase::linear;
+            const auto lin = levelDb (runEngine (p, x, x, &key).L, x);
+            check (lin < -8, "sidechain in Linear Phase", lin, -12);
+        }
+        {
+            // a new kernel fades in: no step bigger than the sine's own
+            Params p;
+            p.phase = Phase::linear;
+            band (p, 0, Shape::bell, 1000, 0, 1);
+            Engine e;
+            e.prepare (48000);
+            e.setParams (p, -1);
+            e.setKernel (buildKernel (p, 48000));
+            const auto x = sine (1000, 0.3, 1.0);
+            std::vector<float> oL (x.size()), oR (x.size());
+            for (size_t o = 0; o + 128 <= x.size(); o += 128)
+            {
+                if (o == 24064) { p.bands[0].gain = 12; e.setParams (p, -1); e.setKernel (buildKernel (p, 48000)); }
+                e.process (x.data() + o, x.data() + o, oL.data() + o, oR.data() + o, 128);
+            }
+            double maxStep = 0;
+            for (size_t i = 20000; i < x.size(); ++i) maxStep = std::max (maxStep, (double) std::abs (oL[i] - oL[i - 1]));
+            const auto sineStep = 0.3 * std::pow (10.0, 12 / 20.0) * 2 * 3.14159265358979 * 1000 / 48000;
+            check (maxStep < sineStep * 1.05, "a new kernel fades in smoothly", maxStep, sineStep);
+            int freed = 0;
+            while (e.takeRetired() != nullptr) ++freed;
+            check (freed >= 1, "the old kernel comes back to be freed", freed, 1);
+        }
+        {
+            const auto lin = presetParams ("b1=lowcut 25 0 0.71 120; b2=bell 3000 0 0.5 12 stereo dyn:-6,-36,5,80 spec sc; gq=1; phase=linear; res=high");
+            check (lin.phase == Phase::linear && lin.phaseRes == PhaseRes::high && lin.gainQ && lin.bands[0].slope == brickSlope
+                   && lin.bands[1].spectral && lin.bands[1].sc, "presets: phase, res, gq, brickwall, spec, sc", 1, 1);
+        }
     }
 
     std::printf (failures == 0 ? "\nAll Egret EQ engine tests passed.\n" : "\n%d test(s) FAILED.\n", failures);

@@ -162,22 +162,31 @@ namespace eq
     const char* const placeKeys[numPlaces] = { "stereo", "left", "right", "mid", "side" };
     const char* const placeLabels[numPlaces] = { "STEREO", "L", "R", "MID", "SIDE" };
 
+    const char* const phaseKeys[numPhases] = { "zero", "natural", "linear" };
+    const char* const phaseLabels[numPhases] = { "Zero Latency", "Natural Phase", "Linear Phase" };
+    const char* const phaseResKeys[numPhaseRes] = { "low", "medium", "high", "max" };
+    const char* const phaseResLabels[numPhaseRes] = { "Low", "Medium", "High", "Maximum" };
+
     bool hasGain (Shape s) { return s == Shape::bell || s == Shape::lowshelf || s == Shape::highshelf || s == Shape::tiltshelf || s == Shape::flattilt; }
     bool hasQ (Shape s) { return s != Shape::flattilt; }
     bool hasSlope (Shape s) { return s != Shape::bell && s != Shape::flattilt; }
     bool canSolo (Shape s) { return s != Shape::tiltshelf && s != Shape::flattilt && s != Shape::allpass; }
+    bool isCut (Shape s) { return s == Shape::lowcut || s == Shape::highcut; }
+    bool isBrick (Shape s, int slope) { return isCut (s) && slope >= brickSlope; }
 
     bool Band::operator== (const Band& o) const
     {
         return used == o.used && on == o.on && shape == o.shape && freq == o.freq && gain == o.gain && q == o.q && slope == o.slope && place == o.place
-            && dyn == o.dyn && range == o.range && thresh == o.thresh && attack == o.attack && release == o.release;
+            && dyn == o.dyn && range == o.range && thresh == o.thresh && attack == o.attack && release == o.release
+            && sc == o.sc && spectral == o.spectral;
     }
     bool Params::isDynamic (int i) const { return bands[(size_t) i].dyn && hasGain (bands[(size_t) i].shape); }
     const char* const characterKeys[numCharacters] = { "clean", "subtle", "warm" };
     const char* const characterLabels[numCharacters] = { "Clean", "Subtle", "Warm" };
     bool Params::operator== (const Params& o) const
     {
-        return bands == o.bands && outGain == o.outGain && outPan == o.outPan && gainScale == o.gainScale && autoGain == o.autoGain && power == o.power && character == o.character;
+        return bands == o.bands && outGain == o.outGain && outPan == o.outPan && gainScale == o.gainScale && autoGain == o.autoGain && power == o.power
+            && character == o.character && gainQ == o.gainQ && phase == o.phase && phaseRes == o.phaseRes;
     }
     double Params::effectiveGain (int i) const
     {
@@ -193,12 +202,15 @@ namespace eq
         return std::sqrt ((nr * nr + ni * ni) / (dr * dr + di * di));
     }
 
-    int designBand (Shape shape, double freq, double g, double q, int slope, double fs, Section* secs)
+    int designBand (Shape shape, double freq, double g, double q, int slope, double fs, Section* secs, bool gainQ)
     {
         const auto f = std::min (freq, freqMax);
         auto w0 = 2 * pi * f / fs;
         int n = 0;
-        const auto order = std::max (1, roundJs (slope / 6.0)), pairs = std::max (1, roundJs (slope / 12.0));
+        // GAIN-Q: like an analog desk, a bell narrows as it boosts or cuts more (Q x2 at 15 dB)
+        if (gainQ && shape == Shape::bell) q = std::min (qMax, q * std::pow (2.0, std::abs (g) / 15));
+        // BRICKWALL in Zero Latency: the steepest Butterworth there is (96 dB/oct)
+        const auto order = std::min (16, std::max (1, roundJs (slope / 6.0))), pairs = std::min (maxSections, std::max (1, roundJs (slope / 12.0)));
         const auto fLim = 0.45 * fs;   // a resonance above this can't sit at its own frequency
 
         switch (shape)
@@ -353,7 +365,7 @@ namespace eq
         {
             const auto& b = p.bands[(size_t) i];
             if (! b.used || ! b.on || b.place == Place::side) continue;
-            const auto n = designBand (b.shape, b.freq, p.effectiveGain (i), b.q, b.slope, fs, secs);
+            const auto n = designBand (b.shape, b.freq, p.effectiveGain (i), b.q, b.slope, fs, secs, p.gainQ);
             const auto full = b.place == Place::stereo || b.place == Place::mid;
             for (size_t k = 0; k < (size_t) points; ++k)
             {
@@ -375,6 +387,353 @@ namespace eq
     }
 
     //==============================================================================
+    // The analog curves. A brickwall is 120 dB down within a semitone, its
+    // edge a raised cosine.
+    double brickDb (Shape shape, double bandFreq, double f)
+    {
+        constexpr double floorDb = -120;
+        const auto t = 12 * std::log2 (shape == Shape::lowcut ? f / bandFreq : bandFreq / f);   // semitones into the open side
+        if (! (t < 0)) return 0;
+        if (t <= -1) return floorDb;
+        return floorDb * (0.5 - 0.5 * std::cos (pi * -t));
+    }
+
+    namespace
+    {
+        void mulSection (const Proto& c0, double f0, const double* freqs, int n, double* re, double* im, bool invert, double scale)
+        {
+            auto c = c0;
+            if (invert) { std::swap (c.n2, c.d2); std::swap (c.n1, c.d1); std::swap (c.n0, c.d0); }
+            for (int k = 0; k < n; ++k)
+            {
+                const auto x = freqs[k] / f0, nr = c.n0 - c.n2 * x * x, ni = c.n1 * x, dr = c.d0 - c.d2 * x * x, di = c.d1 * x;
+                const auto den = std::max (1e-300, dr * dr + di * di);
+                const auto hr = (nr * dr + ni * di) / den * scale, hi = (ni * dr - nr * di) / den * scale;
+                const auto r = re[k], m = im[k];
+                re[k] = r * hr - m * hi; im[k] = r * hi + m * hr;
+            }
+        }
+    }
+
+    bool analogBand (const AnalogBand& band, const double* freqs, int n, double* re, double* im, bool brickApart)
+    {
+        const auto shape = band.shape;
+        const auto f = std::min (band.freq, freqMax), g = band.gain;
+        auto q = band.q;
+        if (band.gainQ && shape == Shape::bell) q = std::min (qMax, q * std::pow (2.0, std::abs (g) / 15));
+        const auto order = std::min (16, std::max (1, roundJs (band.slope / 6.0))), pairs = std::min (maxSections, std::max (1, roundJs (band.slope / 12.0)));
+        switch (shape)
+        {
+            case Shape::bell:
+                mulSection (bellProto (g, q), f, freqs, n, re, im, g < 0, 1);
+                break;
+            case Shape::lowshelf:
+            case Shape::highshelf:
+            case Shape::tiltshelf:
+            {
+                const auto high = shape != Shape::lowshelf, flip = high == (g > 0);
+                const auto& qs = butterQs (order);
+                const auto As = std::pow (10.0, std::abs (g) * 2 / order / 40), G2 = As * As;
+                for (size_t i = 0; i < qs.size(); ++i)
+                {
+                    const auto qk = i == qs.size() - 1 ? qs[i] * q / sqrt1_2 : qs[i], kk = std::sqrt (As) / qk;
+                    mulSection ({ As, As * kk, G2, As, kk, 1 }, f, freqs, n, re, im, flip, high ? (g > 0 ? G2 : 1 / G2) : 1);
+                }
+                if (order % 2)
+                {
+                    const auto G1 = std::pow (10.0, std::abs (g) / order / 20), r1 = std::sqrt (G1);
+                    mulSection ({ 0, 1, r1, 0, 1, 1 / r1 }, f, freqs, n, re, im, flip, high ? (g > 0 ? G1 : 1 / G1) : 1);
+                }
+                if (shape == Shape::tiltshelf)
+                {
+                    const auto ts = std::pow (10.0, -g / 40);
+                    for (int k = 0; k < n; ++k) { re[k] *= ts; im[k] *= ts; }
+                }
+                break;
+            }
+            case Shape::lowcut:
+            case Shape::highcut:
+            {
+                if (isBrick (shape, band.slope))
+                {
+                    if (brickApart) return true;
+                    for (int k = 0; k < n; ++k) { const auto m = std::pow (10.0, brickDb (shape, band.freq, freqs[k]) / 20); re[k] *= m; im[k] *= m; }
+                    return false;
+                }
+                const auto hp = shape == Shape::lowcut;
+                const auto& qs = butterQs (order);
+                for (size_t i = 0; i < qs.size(); ++i)
+                {
+                    const auto qn = i == qs.size() - 1 ? qs[i] * q / sqrt1_2 : qs[i];
+                    mulSection (hp ? Proto { 1, 0, 0, 1, 1 / qn, 1 } : Proto { 0, 0, 1, 1, 1 / qn, 1 }, f, freqs, n, re, im, false, 1);
+                }
+                if (order % 2) mulSection (hp ? Proto { 0, 1, 0, 0, 1, 1 } : Proto { 0, 0, 1, 0, 1, 1 }, f, freqs, n, re, im, false, 1);
+                break;
+            }
+            case Shape::notch:
+            case Shape::bandpass:
+                for (int i = 0; i < pairs; ++i)
+                    mulSection (shape == Shape::bandpass ? Proto { 0, 1 / q, 0, 1, 1 / q, 1 } : Proto { 1, 0, 1, 1, 1 / q, 1 }, f, freqs, n, re, im, false, 1);
+                break;
+            case Shape::flattilt:
+            {
+                const auto lo = std::log2 (flatTiltLo / 2), step = (std::log2 (flatTiltHi * 2) - lo) / maxSections;
+                const auto Gt = std::pow (10.0, g / std::log2 (flatTiltHi / flatTiltLo) * step / 20), rt = std::sqrt (Gt);
+                double ar = 1, ai = 0;
+                for (int i = 0; i < maxSections; ++i)
+                {
+                    const auto fc = std::pow (2.0, lo + (i + 0.5) * step);
+                    mulSection ({ 0, Gt, rt, 0, 1, rt }, fc, freqs, n, re, im, false, 1);
+                    mulSection ({ 0, Gt, rt, 0, 1, rt }, fc, &f, 1, &ar, &ai, false, 1);
+                }
+                const auto at = 1 / std::sqrt (ar * ar + ai * ai);   // pinned to 0 dB at the band frequency
+                for (int k = 0; k < n; ++k) { re[k] *= at; im[k] *= at; }
+                break;
+            }
+            case Shape::allpass:
+                if (order == 1) mulSection ({ 0, -1, 1, 0, 1, 1 }, f, freqs, n, re, im, false, 1);
+                else for (int i = 0; i < pairs; ++i) mulSection ({ 1, -1 / q, 1, 1, 1 / q, 1 }, f, freqs, n, re, im, false, 1);
+                break;
+        }
+        return false;
+    }
+
+    //==============================================================================
+    void FftTable::make (int size)
+    {
+        n = size;
+        c.resize ((size_t) size / 2); s.resize ((size_t) size / 2);
+        for (int i = 0; i < size / 2; ++i) { c[(size_t) i] = std::cos (2 * pi * i / size); s[(size_t) i] = std::sin (2 * pi * i / size); }
+    }
+
+    void fftWith (const FftTable& t, double* re, double* im, bool inverse)
+    {
+            const auto n = t.n;
+            for (int i = 1, j = 0; i < n; ++i)
+            {
+                int bit = n >> 1;
+                for (; j & bit; bit >>= 1) j ^= bit;
+                j ^= bit;
+                if (i < j) { std::swap (re[i], re[j]); std::swap (im[i], im[j]); }
+            }
+            const auto sg = inverse ? 1.0 : -1.0;
+            for (int size = 2; size <= n; size <<= 1)
+            {
+                const auto half = size >> 1, step = n / size;
+                for (int i = 0; i < n; i += size)
+                    for (int j = 0; j < half; ++j)
+                    {
+                        const auto wr = t.c[(size_t) (j * step)], wi = sg * t.s[(size_t) (j * step)];
+                        const auto a = i + j, b = a + half;
+                        const auto tr = re[b] * wr - im[b] * wi, ti = re[b] * wi + im[b] * wr;
+                        re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+                    }
+            }
+            if (inverse) for (int i = 0; i < n; ++i) { re[i] /= n; im[i] /= n; }
+    }
+
+    namespace
+    {
+        // NATURAL / LINEAR PHASE: each mode's kernel length (Linear Phase's by RES).
+        constexpr double linSeconds[numPhaseRes] = { 0.085, 0.17, 0.34, 0.68 };
+        constexpr double naturalSeconds = 0.34;
+        constexpr int naturalPre = 256;   // Natural Phase: room before the analog response starts
+        int pow2Round (double x) { return 1 << (int) std::lround (std::log2 (x)); }
+        int kernelLength (Phase m, PhaseRes r, double fs) { return pow2Round (fs * (m == Phase::linear ? linSeconds[(int) r] : naturalSeconds)); }
+        int specSize (double fs) { return fs > 60000 ? 4096 : 2048; }
+        bool needsSpec (const Params& p)
+        {
+            for (int i = 0; i < maxBands; ++i)
+            {
+                const auto& b = p.bands[(size_t) i];
+                if (b.used && b.on && p.isDynamic (i) && (b.spectral || p.phase != Phase::zero)) return true;
+            }
+            return false;
+        }
+
+        // The minimum-phase spectrum with the magnitude db[0..N/2] (dB) on an N-point grid, by the cepstrum.
+        void minPhase (const double* db, int N, double* outRe, double* outIm)
+        {
+            const auto K = N / 2;
+            std::vector<double> re ((size_t) N, 0.0), im ((size_t) N, 0.0);
+            FftTable t;
+            t.make (N);
+            for (int k = 0; k <= K; ++k) { re[(size_t) k] = db[k] * std::log (10.0) / 20; if (k > 0 && k < K) re[(size_t) (N - k)] = re[(size_t) k]; }
+            fftWith (t, re.data(), im.data(), true);
+            for (int k = 1; k < K; ++k) re[(size_t) k] *= 2;
+            for (int k = K + 1; k < N; ++k) re[(size_t) k] = 0;
+            std::fill (im.begin(), im.end(), 0.0);
+            fftWith (t, re.data(), im.data(), false);
+            for (int k = 0; k <= K; ++k) { const auto mg = std::exp (re[(size_t) k]); outRe[k] = mg * std::cos (im[(size_t) k]); outIm[k] = mg * std::sin (im[(size_t) k]); }
+        }
+    }
+
+    void fft (double* re, double* im, int n, bool inverse)
+    {
+        FftTable t;
+        t.make (n);
+        fftWith (t, re, im, inverse);
+    }
+
+    int kernelLatency (Phase m, PhaseRes r, double fs)
+    {
+        if (m == Phase::zero) return 0;
+        return kernelBlock + (m == Phase::linear ? kernelLength (m, r, fs) / 2 : naturalPre);
+    }
+
+    int expectedLatency (const Params& p, double fs)
+    {
+        return kernelLatency (p.phase, p.phaseRes, fs) + (needsSpec (p) ? specSize (fs) : 0);
+    }
+
+    bool kernelChanged (const Params& a, const Params& b)
+    {
+        if (a.phase != b.phase || a.phaseRes != b.phaseRes || a.gainScale != b.gainScale || a.gainQ != b.gainQ) return true;
+        for (size_t i = 0; i < (size_t) maxBands; ++i)
+        {
+            const auto& x = a.bands[i];
+            const auto& y = b.bands[i];
+            if (x.used != y.used || x.on != y.on) return true;
+            if (! x.used || ! x.on) continue;
+            if (x.shape != y.shape || x.freq != y.freq || x.gain != y.gain || x.q != y.q || x.slope != y.slope || x.place != y.place) return true;
+        }
+        return false;
+    }
+
+    // The whole EQ as four filters from the bands' analog curves:
+    //  Linear Phase: the magnitude only, symmetric around half the kernel (no
+    //    phase change at all; latency half the kernel); RES sets the length.
+    //  Natural Phase: the analog magnitude and phase, delayed a little so the
+    //    part the analog filter would have past Nyquist can be made.
+    std::unique_ptr<Kernel> buildKernel (const Params& p, double fs)
+    {
+        auto kernel = std::make_unique<Kernel>();
+        kernel->mode = p.phase; kernel->res = p.phaseRes; kernel->fs = fs;
+        if (p.phase == Phase::zero) return kernel;
+        const auto lin = p.phase == Phase::linear;
+        const auto K = kernelLength (p.phase, p.phaseRes, fs), N = 2 * K, nb = K + 1;
+        std::vector<double> freqs ((size_t) nb);
+        for (int k = 0; k < nb; ++k) freqs[(size_t) k] = k * fs / N;
+        struct Spectrum { std::vector<double> re, im; };
+        std::array<Spectrum, 4> groups;   // left, right, mid, side (empty: nothing there)
+        auto group = [&] (int gi) -> Spectrum&
+        {
+            auto& g = groups[(size_t) gi];
+            if (g.re.empty()) { g.re.assign ((size_t) nb, 1.0); g.im.assign ((size_t) nb, 0.0); }
+            return g;
+        };
+        std::vector<double> tRe ((size_t) nb), tIm ((size_t) nb), db ((size_t) nb);
+        auto oneSided = false;
+        for (int i = 0; i < maxBands; ++i)
+        {
+            const auto& b = p.bands[(size_t) i];
+            if (! b.used || ! b.on) continue;
+            oneSided = oneSided || b.place != Place::stereo;
+            std::fill (tRe.begin(), tRe.end(), 1.0); std::fill (tIm.begin(), tIm.end(), 0.0);
+            if (analogBand ({ b.shape, b.freq, p.effectiveGain (i), b.q, b.slope, p.gainQ }, freqs.data(), nb, tRe.data(), tIm.data(), ! lin))
+            {
+                // Natural Phase: the brickwall minimum-phase
+                for (int k = 0; k < nb; ++k) db[(size_t) k] = brickDb (b.shape, b.freq, freqs[(size_t) k]);
+                minPhase (db.data(), N, tRe.data(), tIm.data());
+            }
+            auto apply = [&] (int gi)
+            {
+                auto& g = group (gi);
+                for (size_t k = 0; k < (size_t) nb; ++k)
+                {
+                    const auto r = g.re[k], m = g.im[k];
+                    g.re[k] = r * tRe[k] - m * tIm[k]; g.im[k] = r * tIm[k] + m * tRe[k];
+                }
+            };
+            switch (b.place)
+            {
+                case Place::stereo: apply (0); apply (1); break;
+                case Place::left: apply (0); break;
+                case Place::right: apply (1); break;
+                case Place::mid: apply (2); break;
+                case Place::side: apply (3); break;
+            }
+        }
+        Spectrum one { std::vector<double> ((size_t) nb, 1.0), std::vector<double> ((size_t) nb, 0.0) };
+        auto get = [&] (int gi) -> const Spectrum& { return groups[(size_t) gi].re.empty() ? one : groups[(size_t) gi]; };
+        auto mul = [nb] (const Spectrum& a, const Spectrum& b, double sc)
+        {
+            Spectrum o { std::vector<double> ((size_t) nb), std::vector<double> ((size_t) nb) };
+            for (size_t k = 0; k < (size_t) nb; ++k)
+            {
+                o.re[k] = (a.re[k] * b.re[k] - a.im[k] * b.im[k]) * sc;
+                o.im[k] = (a.re[k] * b.im[k] + a.im[k] * b.re[k]) * sc;
+            }
+            return o;
+        };
+        Spectrum ll = get (0), rr = get (1), lr, rl;
+        const auto ms = ! groups[2].re.empty() || ! groups[3].re.empty();
+        if (ms)
+        {
+            const auto& M = get (2);
+            const auto& S = get (3);
+            Spectrum sum { std::vector<double> ((size_t) nb), std::vector<double> ((size_t) nb) }, dif = sum;
+            for (size_t k = 0; k < (size_t) nb; ++k)
+            {
+                sum.re[k] = M.re[k] + S.re[k]; sum.im[k] = M.im[k] + S.im[k];
+                dif.re[k] = M.re[k] - S.re[k]; dif.im[k] = M.im[k] - S.im[k];
+            }
+            const auto L = get (0), R = get (1);
+            ll = mul (L, sum, 0.5); rl = mul (L, dif, 0.5); lr = mul (R, dif, 0.5); rr = mul (R, sum, 0.5);
+        }
+        if (lin)
+            for (auto* h : { &ll, &lr, &rl, &rr })
+                for (size_t k = 0; k < h->re.size(); ++k) { h->re[k] = std::sqrt (h->re[k] * h->re[k] + h->im[k] * h->im[k]); h->im[k] = 0; }
+        const auto D = lin ? K / 2 : naturalPre, P = kernelBlock, nparts = K / P;
+        FftTable big, small;
+        big.make (N); small.make (2 * P);
+        auto parts = [&] (const Spectrum& H)
+        {
+            std::vector<float> out;
+            if (H.re.empty()) return out;
+            std::vector<double> re ((size_t) N, 0.0), im ((size_t) N, 0.0);
+            for (int j = 0; j <= K; ++j)
+            {
+                const auto ph = -2 * pi * j * D / N, c = std::cos (ph), sn = std::sin (ph);
+                const auto xr = H.re[(size_t) j] * c - H.im[(size_t) j] * sn, xi = H.re[(size_t) j] * sn + H.im[(size_t) j] * c;
+                re[(size_t) j] = xr; im[(size_t) j] = j == K ? 0 : xi;
+                if (j > 0 && j < K) { re[(size_t) (N - j)] = xr; im[(size_t) (N - j)] = -xi; }
+            }
+            fftWith (big, re.data(), im.data(), true);
+            for (int n = 0; n < K; ++n)
+            {
+                double w;
+                if (lin) w = 0.5 - 0.5 * std::cos (2 * pi * (n + 0.5) / K);
+                else w = n < D ? 0.5 - 0.5 * std::cos (pi * n / D) : n > K * 0.75 ? 0.5 + 0.5 * std::cos (pi * (n - K * 0.75) / (K * 0.25)) : 1.0;
+                re[(size_t) n] *= w;
+            }
+            out.assign ((size_t) (nparts * (P + 1) * 2), 0.0f);
+            std::vector<double> fr ((size_t) (2 * P)), fi ((size_t) (2 * P));
+            for (int j = 0; j < nparts; ++j)
+            {
+                std::fill (fr.begin(), fr.end(), 0.0); std::fill (fi.begin(), fi.end(), 0.0);
+                for (int n = 0; n < P; ++n) fr[(size_t) n] = re[(size_t) (j * P + n)];
+                fftWith (small, fr.data(), fi.data(), false);
+                for (int n = 0; n <= P; ++n)
+                {
+                    out[(size_t) ((j * (P + 1) + n) * 2)] = (float) fr[(size_t) n];
+                    out[(size_t) ((j * (P + 1) + n) * 2 + 1)] = (float) fi[(size_t) n];
+                }
+            }
+            return out;
+        };
+        kernel->parts = nparts;
+        kernel->latency = P + D;
+        kernel->ll = parts (ll);
+        if (ms) { kernel->lr = parts (lr); kernel->rl = parts (rl); }
+        if (oneSided) kernel->rr = parts (rr);   // nothing only on one side: the right channel's filter is the left's
+        return kernel;
+    }
+
+    //==============================================================================
+    Engine::Engine() { prepare (48000); }
+    Engine::~Engine() = default;
+
     void Engine::prepare (double sampleRate)
     {
         fs = sampleRate;
@@ -382,9 +741,39 @@ namespace eq
         glide = 1 - std::exp (-subBlock / (glideSeconds * fs));
         for (auto& b : bands) { b.z.fill (0); b.dirty = true; }
         soloZ.fill (0);
+        // NATURAL / LINEAR PHASE: room for the longest kernel at this rate
+        const auto P = kernelBlock, N = 2 * P;
+        maxParts = kernelLength (Phase::linear, PhaseRes::max, fs) / P;
+        for (auto* v : { &fir.inL, &fir.inR, &fir.re, &fir.im }) v->assign ((size_t) N, 0.0);
+        for (auto* v : { &fir.outL, &fir.outR, &fir.out2L, &fir.out2R }) v->assign ((size_t) P, 0.0);
+        for (auto* v : { &fir.yl, &fir.yr }) v->assign ((size_t) (2 * (P + 1)), 0.0);
+        fir.fdlL.assign ((size_t) maxParts, std::vector<double> ((size_t) (2 * (P + 1)), 0.0));
+        fir.fdlR = fir.fdlL;
+        firTable.make (N);
+        // SPECTRAL: the short-time FFT
+        spec.N = specSize (fs); spec.H = spec.N / 4;
+        const auto nb = spec.N / 2 + 1;
+        for (auto* v : { &spec.win, &spec.inL, &spec.inR, &spec.dI, &spec.dS, &spec.accL, &spec.accR, &spec.re, &spec.im, &spec.dre, &spec.dim })
+            v->assign ((size_t) spec.N, 0.0);
+        for (auto* v : { &spec.outL, &spec.outR }) v->assign ((size_t) spec.H, 0.0);
+        for (auto* v : { &spec.gdb, &spec.freqs, &spec.wRe, &spec.wIm }) v->assign ((size_t) nb, 0.0);
+        for (int i = 0; i < spec.N; ++i) spec.win[(size_t) i] = std::sin (pi * i / spec.N);   // square-root Hann
+        for (int i = 0; i < nb; ++i) spec.freqs[(size_t) i] = i * fs / spec.N;
+        spec.cal = 20 * std::log10 (pi / spec.N);   // a sine's bin reads its peak level
+        specTable.make (spec.N);
+        for (auto& b : bands) { b.specW.assign ((size_t) nb, 0.0); b.specEnv.assign ((size_t) nb, 0.0); b.wF = -1; }
+        // the delays: as long as the longest latency
+        int size = 1;
+        while (size < kernelLatency (Phase::linear, PhaseRes::max, fs) + spec.N + subBlock + 1) size <<= 1;
+        for (auto* d : { &dry, &detDelay }) { d->a.assign ((size_t) size, 0.0); d->b.assign ((size_t) size, 0.0); d->mask = size - 1; d->w = 0; }
+        // kernels made for another rate are no use (this isn't the audio thread)
+        fir.kern.reset(); fir.next.reset(); waiting.reset();
+        for (auto& r : retired) r.reset();
+        firReset(); specReset();
+        if (mode != Phase::zero) gate = 0;
     }
 
-    void Engine::setParams (const Params& p, int soloBand)
+    void Engine::setParams (const Params& p, int soloBand, bool scConnected)
     {
         for (int i = 0; i < maxBands; ++i)
         {
@@ -398,8 +787,17 @@ namespace eq
             if (dyn != b.dyn) { b.env = 0; b.dynDb = 0; b.detZ.fill (0); }
             b.dyn = dyn;
             b.range = src.range * p.gainScale / 100; b.thresh = src.thresh; b.att = src.attack; b.rel = src.release;
-            b.tg = b.staticG + (b.dyn ? b.dynDb : 0);
+            b.sc = src.sc; b.spectral = src.spectral;
+            // through the short-time FFT: spectral bands, and every dynamic band in Natural/Linear Phase
+            b.viaStft = b.dyn && (b.spectral || p.phase != Phase::zero);
+            if (b.viaStft && b.spectral) b.dynDb = 0;
+            b.tg = b.staticG + (b.dyn && ! b.viaStft ? b.dynDb : 0);
         }
+        if (p.gainQ != gainQ) { gainQ = p.gainQ; for (auto& b : bands) b.dirty = true; }
+        tMode = p.phase; tRes = p.phaseRes;
+        tSpec = false;
+        for (const auto& b : bands) tSpec = tSpec || b.viaStft;
+        scOn = scConnected;
         tCharacter = p.character;
         tSolo = soloBand >= 0 && soloBand < maxBands && p.bands[(size_t) soloBand].used && canSolo (p.bands[(size_t) soloBand].shape) ? soloBand : -1;
         autoDb = p.autoGain ? autoGainDb (p, fs) : 0;
@@ -417,7 +815,56 @@ namespace eq
             }
             gain = tGain; pan = tPan; power = tPower;
             character = tCharacter; charMix = character == Character::clean ? 0 : 1;
+            if (tMode != Phase::zero || tSpec) gate = 0;   // the mode below switches in silence, then fades in
         }
+    }
+
+    // PHASE and the spectral stage: switch in silence, fade back in. Returns the gate before this sub-block.
+    double Engine::updateMode (int len)
+    {
+        auto want = tMode != mode || (tMode == Phase::linear && tRes != res) || tSpec != specOn;
+        if (want && gate == 0)
+        {
+            mode = tMode; res = tRes; specOn = tSpec;
+            firReset(); specReset(); dry.reset(); detDelay.reset();
+            if (kernelFits (waiting.get(), mode, res)) firSetKernel (std::move (waiting));
+            for (auto& b : bands) std::fill (b.specEnv.begin(), b.specEnv.end(), 0.0);
+            want = false;
+        }
+        firLatency = mode != Phase::zero && fir.kern != nullptr ? fir.kern->latency : 0;
+        latency = firLatency + (specOn ? spec.N : 0);
+        latencyNow.store (latency, std::memory_order_relaxed);
+        const double target = want || (mode != Phase::zero && fir.kern == nullptr) ? 0 : 1, g0 = gate;
+        gate = target > g0 ? std::min (1.0, g0 + len * fadeStep) : target < g0 ? std::max (0.0, g0 - len * fadeStep) : g0;
+        return g0;
+    }
+
+    bool Engine::kernelFits (const Kernel* k, Phase m, PhaseRes r) const
+    {
+        return k != nullptr && m != Phase::zero && k->fs == fs && k->mode == m && (m != Phase::linear || k->res == r);
+    }
+
+    void Engine::setKernel (std::unique_ptr<Kernel> k)
+    {
+        if (k == nullptr) return;
+        if (k->fs != fs) { retire (std::move (k)); return; }
+        if (kernelFits (k.get(), mode, res)) firSetKernel (std::move (k));
+        else { retire (std::move (waiting)); waiting = std::move (k); }
+    }
+
+    void Engine::retire (std::unique_ptr<Kernel> k)
+    {
+        if (k == nullptr) return;
+        for (auto& r : retired)
+            if (r == nullptr) { r = std::move (k); return; }
+        // all full (the caller isn't collecting): freed here, as a last resort
+    }
+
+    std::unique_ptr<Kernel> Engine::takeRetired()
+    {
+        for (auto& r : retired)
+            if (r != nullptr) return std::move (r);
+        return {};
     }
 
     void Engine::updateBand (BandState& b)
@@ -447,7 +894,7 @@ namespace eq
         }
         if (b.dirty)
         {
-            b.n = designBand (b.shape, b.f, b.g, b.q, b.slope, fs, b.secs.data());
+            b.n = designBand (b.shape, b.f, b.g, b.q, b.slope, fs, b.secs.data(), gainQ);
             b.dirty = false;
         }
     }
@@ -569,24 +1016,33 @@ namespace eq
         }
     }
 
-    void Engine::process (const float* inL, const float* inR, float* outL, float* outR, int n)
+    void Engine::process (const float* inL, const float* inR, float* outL, float* outR, int n, const float* scL, const float* scR)
     {
         float peaks[4] = {};
+        const auto hasSc = scL != nullptr && scR != nullptr;
         for (int off = 0; off < n; off += subBlock)
         {
             const auto len = std::min (subBlock, n - off);
             auto* L = bufL.data();
             auto* R = bufR.data();
-            double dl[subBlock], dr[subBlock];
+            const auto gate0 = updateMode (len);
+            // il/ir: the input now; dl/dr: the dry sound, delayed as much as the EQ (BYPASS, SOLO)
+            double il[subBlock], ir[subBlock], sl[subBlock], sr[subBlock];
+            auto* dl = dryL.data();
+            auto* dr = dryR.data();
             for (int i = 0; i < len; ++i)
             {
-                dl[i] = inL[off + i]; dr[i] = inR[off + i];
-                L[i] = dl[i]; R[i] = dr[i];
+                il[i] = inL[off + i]; ir[i] = inR[off + i];
+                L[i] = dl[i] = il[i]; R[i] = dr[i] = ir[i];
                 peaks[0] = std::max (peaks[0], std::abs (inL[off + i]));
                 peaks[1] = std::max (peaks[1], std::abs (inR[off + i]));
             }
+            if (hasSc) for (int i = 0; i < len; ++i) { sl[i] = scL[off + i]; sr[i] = scR[off + i]; }
             for (int j = 0; j < maxBands; ++j)
-                if (bands[(size_t) j].dyn) detect (bands[(size_t) j], dl, dr, len, j);
+            {
+                auto& bj = bands[(size_t) j];
+                if (bj.dyn && ! (bj.viaStft && bj.spectral)) detect (bj, il, ir, hasSc ? sl : nullptr, hasSc ? sr : nullptr, len, j);
+            }
             // The bands in order. Settled stereo bands next to each other (most of
             // them, most of the time) go through together, sample by sample: the
             // processor then has every section's filter to work on at once instead
@@ -594,7 +1050,8 @@ namespace eq
             // go one band at a time.
             for (auto& b : bands) updateBand (b);
             int count = 0;
-            for (auto& b : bands)
+            if (mode != Phase::zero) firProcess (L, R, len);   // Natural/Linear Phase: the kernel does every band
+            else for (auto& b : bands)
             {
                 if (b.mix == 0 && b.mixTarget == 0) continue;
                 if (b.place == Place::stereo && b.mix == 1 && b.mixTarget == 1)
@@ -612,6 +1069,15 @@ namespace eq
                 runBand (b, L, R, len);
             }
             if (count > 0) runSettled (count, L, R, len);
+            if (specOn)
+            {
+                auto* di = detI.data();
+                auto* ds = detS.data();
+                for (int i = 0; i < len; ++i) { di[i] = (il[i] + ir[i]) * 0.5; ds[i] = hasSc ? (sl[i] + sr[i]) * 0.5 : 0.0; }
+                detDelay.process (di, ds, len, firLatency);   // lined up with what comes out of the EQ
+                specProcess (L, R, di, ds, len);
+            }
+            dry.process (dl, dr, len, latency);
             // SOLO: the soloed band's part of the spectrum, from the input.
             double soloTarget = tSolo >= 0 && tSolo == solo ? 1 : 0;
             if (soloMix == 0 && tSolo != solo) { solo = tSolo; soloZ.fill (0); soloTarget = solo >= 0 ? 1 : 0; }
@@ -641,6 +1107,8 @@ namespace eq
                 const auto t = (i + 1) / (double) len, g = g0 + (gain - g0) * t, pn = p0 + (pan - p0) * t, w = w0 + (w1 - w0) * t;
                 auto ol = L[i] * g * (pn > 0 ? 1 - pn : 1), orr = R[i] * g * (pn < 0 ? 1 + pn : 1);
                 ol = dl[i] + w * (ol - dl[i]); orr = dr[i] + w * (orr - dr[i]);
+                const auto gt = gate0 + (gate - gate0) * t;
+                ol *= gt; orr *= gt;
                 outL[off + i] = (float) ol; outR[off + i] = (float) orr;
                 peaks[2] = std::max (peaks[2], (float) std::abs (ol));
                 peaks[3] = std::max (peaks[3], (float) std::abs (orr));
@@ -656,13 +1124,15 @@ namespace eq
     // DYNAMIC: the band's part of the input (as SOLO hears it), its level in dB
     // (RMS, +3 dB so a sine reads its peak), attack and release; above
     // THRESHOLD the gain moves 3/4 dB per dB (like a 4:1 compressor), at most RANGE.
-    void Engine::detect (BandState& b, const double* dl, const double* dr, int len, int index)
+    // SC: the detector listens to the sidechain instead of the input.
+    void Engine::detect (BandState& b, const double* dl, const double* dr, const double* sl, const double* sr, int len, int index)
     {
         if (b.tShape != b.detShape || b.tf != b.detF || b.tq != b.detQ)
         {
             b.detShape = b.tShape; b.detF = b.tf; b.detQ = b.tq;
             designSolo (b.tShape, b.tf, b.tq, fs, b.det);
         }
+        if (b.sc && scOn && sl != nullptr) { dl = sl; dr = sr; }
         double ms = 0;
         for (int i = 0; i < len; ++i)
         {
@@ -677,7 +1147,7 @@ namespace eq
         double change = 0;
         if (over > 0) change = (b.range < 0 ? -1 : 1) * std::min (std::abs (b.range), over * 0.75);
         b.dynDb = change;
-        b.tg = b.staticG + change;
+        if (! b.viaStft) b.tg = b.staticG + change;   // in the STFT the change is spread over the bins instead
         dynShown[(size_t) index].store ((float) change, std::memory_order_relaxed);
     }
 
@@ -707,6 +1177,277 @@ namespace eq
             }
         }
         charMix = mix;
+    }
+
+    //==============================================================================
+    // NATURAL and LINEAR PHASE: uniformly partitioned convolution (overlap-save,
+    // blocks of kernelBlock samples) of left and right through the four kernels.
+    // A new kernel fades in over one block. Latency: a block plus the kernel's own.
+    void Engine::firReset()
+    {
+        for (auto* v : { &fir.inL, &fir.inR, &fir.outL, &fir.outR }) std::fill (v->begin(), v->end(), 0.0);
+        for (auto& v : fir.fdlL) std::fill (v.begin(), v.end(), 0.0);
+        for (auto& v : fir.fdlR) std::fill (v.begin(), v.end(), 0.0);
+        fir.pos = 0; fir.head = 0;
+        retire (std::move (fir.kern));
+        retire (std::move (fir.next));
+    }
+
+    void Engine::firSetKernel (std::unique_ptr<Kernel> k)
+    {
+        if (k->parts > maxParts) { retire (std::move (k)); return; }
+        if (fir.kern == nullptr) fir.kern = std::move (k);
+        else { retire (std::move (fir.next)); fir.next = std::move (k); }
+    }
+
+    namespace
+    {
+        void cmac (double* y, const double* x, const float* h, int n2)
+        {
+            for (int b = 0; b < n2; b += 2)
+            {
+                const auto xr = x[b], xi = x[b + 1], hr = (double) h[b], hi = (double) h[b + 1];
+                y[b] += xr * hr - xi * hi; y[b + 1] += xr * hi + xi * hr;
+            }
+        }
+    }
+
+    // The output spectra for kernel k, then back to time: the last block's worth of samples.
+    void Engine::firRender (const Kernel& k, double* oL, double* oR)
+    {
+        const auto P = kernelBlock, N = 2 * P, n2 = 2 * (P + 1), nf = maxParts;
+        auto* yl = fir.yl.data();
+        auto* yr = fir.yr.data();
+        auto* re = fir.re.data();
+        auto* im = fir.im.data();
+        std::fill (fir.yl.begin(), fir.yl.end(), 0.0);
+        std::fill (fir.yr.begin(), fir.yr.end(), 0.0);
+        const auto& rr = k.rr.empty() ? k.ll : k.rr;
+        for (int j = 0; j < k.parts; ++j)
+        {
+            const auto slot = (size_t) ((fir.head - j + nf) % nf);
+            const auto* xl = fir.fdlL[slot].data();
+            const auto* xr = fir.fdlR[slot].data();
+            const auto o = (size_t) (j * n2);
+            cmac (yl, xl, k.ll.data() + o, n2);
+            if (! k.lr.empty()) cmac (yl, xr, k.lr.data() + o, n2);
+            cmac (yr, xr, rr.data() + o, n2);
+            if (! k.rl.empty()) cmac (yr, xl, k.rl.data() + o, n2);
+        }
+        // both channels in one inverse transform: YL + j YR
+        for (int b = 0; b <= P; ++b)
+        {
+            const auto lr = yl[2 * b], li = yl[2 * b + 1], rre = yr[2 * b], ri = yr[2 * b + 1];
+            re[b] = lr - ri; im[b] = li + rre;
+            if (b > 0 && b < P) { re[N - b] = lr + ri; im[N - b] = rre - li; }
+        }
+        fftWith (firTable, re, im, true);
+        for (int i = 0; i < P; ++i) { oL[i] = re[P + i]; oR[i] = im[P + i]; }
+    }
+
+    void Engine::firBlock()
+    {
+        const auto P = kernelBlock, N = 2 * P;
+        auto* re = fir.re.data();
+        auto* im = fir.im.data();
+        std::copy (fir.inL.begin(), fir.inL.end(), re);
+        std::copy (fir.inR.begin(), fir.inR.end(), im);
+        fftWith (firTable, re, im, false);
+        fir.head = (fir.head + 1) % maxParts;
+        auto* xl = fir.fdlL[(size_t) fir.head].data();
+        auto* xr = fir.fdlR[(size_t) fir.head].data();
+        for (int k = 0; k <= P; ++k)
+        {
+            const auto nk = (N - k) % N;
+            const auto ar = re[k], ai = im[k], br = re[nk], bi = -im[nk];
+            xl[2 * k] = (ar + br) / 2; xl[2 * k + 1] = (ai + bi) / 2;
+            xr[2 * k] = (ai - bi) / 2; xr[2 * k + 1] = -(ar - br) / 2;
+        }
+        firRender (*fir.kern, fir.outL.data(), fir.outR.data());
+        if (fir.next != nullptr)
+        {
+            firRender (*fir.next, fir.out2L.data(), fir.out2R.data());
+            for (int i = 0; i < P; ++i)
+            {
+                const auto t = (i + 0.5) / P;
+                fir.outL[(size_t) i] += (fir.out2L[(size_t) i] - fir.outL[(size_t) i]) * t;
+                fir.outR[(size_t) i] += (fir.out2R[(size_t) i] - fir.outR[(size_t) i]) * t;
+            }
+            retire (std::move (fir.kern));
+            fir.kern = std::move (fir.next);
+        }
+        std::copy (fir.inL.begin() + P, fir.inL.end(), fir.inL.begin());
+        std::copy (fir.inR.begin() + P, fir.inR.end(), fir.inR.begin());
+    }
+
+    void Engine::firProcess (double* L, double* R, int len)
+    {
+        const auto P = kernelBlock;
+        for (int i = 0; i < len; ++i)
+        {
+            fir.inL[(size_t) (P + fir.pos)] = L[i]; fir.inR[(size_t) (P + fir.pos)] = R[i];
+            L[i] = fir.outL[(size_t) fir.pos]; R[i] = fir.outR[(size_t) fir.pos];
+            if (++fir.pos == P)
+            {
+                fir.pos = 0;
+                if (fir.kern != nullptr) firBlock();
+                else
+                {
+                    std::fill (fir.outL.begin(), fir.outL.end(), 0.0); std::fill (fir.outR.begin(), fir.outR.end(), 0.0);
+                    std::copy (fir.inL.begin() + P, fir.inL.end(), fir.inL.begin());
+                    std::copy (fir.inR.begin() + P, fir.inR.end(), fir.inR.begin());
+                }
+            }
+        }
+    }
+
+    //==============================================================================
+    // SPECTRAL dynamics (and every dynamic band in Natural/Linear Phase): a
+    // short-time FFT (2048 points at 44.1/48 kHz, hops of a quarter, square-root
+    // Hann in and out), each dynamic band's gain change spread over the bins by
+    // the band's own shape. A SPECTRAL band reads its detector bin by bin, so only
+    // the frequencies that pass THRESHOLD move (a resonance, not the whole band);
+    // the others move as a whole with the band's level. Latency: the FFT size.
+    void Engine::specReset()
+    {
+        for (auto* v : { &spec.inL, &spec.inR, &spec.dI, &spec.dS, &spec.accL, &spec.accR, &spec.outL, &spec.outR })
+            std::fill (v->begin(), v->end(), 0.0);
+        spec.c = 0;
+    }
+
+    // The band's shape, 0..1 (1 where its gain change is whole).
+    const std::vector<double>& Engine::specWeights (BandState& b)
+    {
+        if (b.wShape == b.tShape && b.wF == b.tf && b.wQ == b.tq && b.wSlope == b.tSlope && b.wRange == b.range && b.wGainQ == gainQ)
+            return b.specW;
+        b.wShape = b.tShape; b.wF = b.tf; b.wQ = b.tq; b.wSlope = b.tSlope; b.wRange = b.range; b.wGainQ = gainQ;
+        const auto nb = spec.N / 2 + 1;
+        const auto g = std::abs (b.range) > 0.01 ? b.range : 0.0;
+        if (g != 0)
+        {
+            std::fill (spec.wRe.begin(), spec.wRe.end(), 1.0); std::fill (spec.wIm.begin(), spec.wIm.end(), 0.0);
+            analogBand ({ b.tShape, b.tf, g, b.tq, b.tSlope, gainQ }, spec.freqs.data(), nb, spec.wRe.data(), spec.wIm.data());
+            for (size_t k = 0; k < (size_t) nb; ++k)
+                b.specW[k] = std::clamp (10 * std::log10 (spec.wRe[k] * spec.wRe[k] + spec.wIm[k] * spec.wIm[k] + 1e-30) / g, 0.0, 1.0);
+        }
+        else std::fill (b.specW.begin(), b.specW.end(), 0.0);
+        return b.specW;
+    }
+
+    void Engine::specProcess (double* L, double* R, const double* dI, const double* dS, int len)
+    {
+        const auto N = spec.N, H = spec.H;
+        for (int i = 0; i < len; ++i)
+        {
+            const auto k = (size_t) (N - H + spec.c);
+            spec.inL[k] = L[i]; spec.inR[k] = R[i]; spec.dI[k] = dI[i]; spec.dS[k] = dS[i];
+            L[i] = spec.outL[(size_t) spec.c]; R[i] = spec.outR[(size_t) spec.c];
+            if (++spec.c == H) { spec.c = 0; specFrame(); }
+        }
+    }
+
+    void Engine::specFrame()
+    {
+        const auto N = spec.N, H = spec.H, nb = N / 2 + 1;
+        auto* re = spec.re.data();
+        auto* im = spec.im.data();
+        auto* dre = spec.dre.data();
+        auto* dim = spec.dim.data();
+        auto* gdb = spec.gdb.data();
+        const auto* win = spec.win.data();
+        for (int n = 0; n < N; ++n)
+        {
+            re[n] = spec.inL[(size_t) n] * win[n]; im[n] = spec.inR[(size_t) n] * win[n];
+            dre[n] = spec.dI[(size_t) n] * win[n]; dim[n] = spec.dS[(size_t) n] * win[n];
+        }
+        fftWith (specTable, re, im, false);
+        fftWith (specTable, dre, dim, false);
+        std::fill (spec.gdb.begin(), spec.gdb.end(), 0.0);
+        auto any = false;
+        for (int j = 0; j < maxBands; ++j)
+        {
+            auto& b = bands[(size_t) j];
+            if (! b.viaStft || ! b.tActive) continue;
+            const auto& W = specWeights (b);
+            if (b.spectral)
+            {
+                auto* env = b.specEnv.data();
+                const auto useSc = b.sc && scOn;
+                const auto mag = std::abs (b.range), sg = b.range < 0 ? -1.0 : 1.0;
+                const auto ca = 1 - std::exp (-H / (std::max (0.1, b.att) * 0.001 * fs)), cr = 1 - std::exp (-H / (std::max (0.1, b.rel) * 0.001 * fs));
+                double shown = 0;
+                for (int k = 0; k < nb; ++k)
+                {
+                    const auto w = W[(size_t) k];
+                    if (w < 1e-3) { env[k] = 0; continue; }
+                    const auto nk = (N - k) % N;
+                    const auto ar = dre[k], ai = dim[k], br = dre[nk], bi = -dim[nk];
+                    // the input is in the real part, the sidechain in the imaginary
+                    const auto pr = useSc ? (ai - bi) / 2 : (ar + br) / 2, pim = useSc ? -(ar - br) / 2 : (ai + bi) / 2;
+                    const auto pw = (pr * pr + pim * pim) * w * w;
+                    env[k] += (pw - env[k]) * (pw > env[k] ? ca : cr);
+                    if (env[k] < 1e-30) env[k] = 0;
+                    const auto over = 10 * std::log10 (env[k] + 1e-30) + spec.cal - b.thresh;
+                    if (over > 0 && mag > 0)
+                    {
+                        const auto ch = w * sg * std::min (mag, over * 0.75);
+                        gdb[k] += ch; any = true;
+                        if (std::abs (ch) > std::abs (shown)) shown = ch;
+                    }
+                }
+                dynShown[(size_t) j].store ((float) shown, std::memory_order_relaxed);
+            }
+            else if (b.dynDb != 0)
+            {
+                for (int k = 0; k < nb; ++k) gdb[k] += W[(size_t) k] * b.dynDb;
+                any = true;
+            }
+        }
+        if (any)
+            for (int k = 0; k < nb; ++k)
+            {
+                if (gdb[k] == 0) continue;
+                const auto g = std::pow (10.0, gdb[k] / 20);
+                re[k] *= g; im[k] *= g;
+                if (k > 0 && k < N / 2) { re[N - k] *= g; im[N - k] *= g; }
+            }
+        fftWith (specTable, re, im, true);
+        // square-root Hann twice is Hann; Hann at a quarter hop adds up to 2
+        for (int n = 0; n < N; ++n) { spec.accL[(size_t) n] += re[n] * win[n] * 0.5; spec.accR[(size_t) n] += im[n] * win[n] * 0.5; }
+        std::copy (spec.accL.begin(), spec.accL.begin() + H, spec.outL.begin());
+        std::copy (spec.accR.begin(), spec.accR.begin() + H, spec.outR.begin());
+        for (auto* v : { &spec.accL, &spec.accR })
+        {
+            std::copy (v->begin() + H, v->end(), v->begin());
+            std::fill (v->end() - H, v->end(), 0.0);
+        }
+        for (auto* v : { &spec.inL, &spec.inR, &spec.dI, &spec.dS }) std::copy (v->begin() + H, v->end(), v->begin());
+    }
+
+    //==============================================================================
+    void Engine::Delay::reset() { std::fill (a.begin(), a.end(), 0.0); std::fill (b.begin(), b.end(), 0.0); w = 0; }
+
+    void Engine::Delay::process (double* x, double* y, int len, int d)
+    {
+        if (d <= 0) return;
+        for (int i = 0; i < len; ++i)
+        {
+            a[(size_t) w] = x[i]; b[(size_t) w] = y[i];
+            const auto r = (size_t) ((w - d) & mask);
+            x[i] = a[r]; y[i] = b[r];
+            w = (w + 1) & mask;
+        }
+    }
+
+    void Engine::processBypassed (float* L, float* R, int n)
+    {
+        for (int off = 0; off < n; off += subBlock)
+        {
+            const auto len = std::min (subBlock, n - off);
+            for (int i = 0; i < len; ++i) { dryL[(size_t) i] = L[off + i]; dryR[(size_t) i] = R[off + i]; }
+            dry.process (dryL.data(), dryR.data(), len, latency);
+            for (int i = 0; i < len; ++i) { L[off + i] = (float) dryL[(size_t) i]; R[off + i] = (float) dryR[(size_t) i]; }
+        }
     }
 
     std::array<float, 4> Engine::takeMeters()
@@ -742,6 +1483,9 @@ namespace eq
             { "Dynamic Air", "b1=highshelf 10000 0 0.71 12 stereo dyn:4,-40,20,300" },
             { "Mud Tamer", "b1=bell 280 0 1.2 12 stereo dyn:-5,-26,10,150; b2=bell 4000 1 0.8" },
             { "Tape Warmth", "b1=lowcut 25 0 0.71 12; b2=lowshelf 100 1.5 0.71 12; b3=highshelf 12000 -1.5 0.71 6; char=warm" },
+            { "Resonance Tamer", "b1=bell 3000 0 0.5 12 stereo dyn:-6,-36,5,80 spec" },
+            { "Sidechain Duck", "b1=lowshelf 150 0 0.71 12 stereo dyn:-9,-30,3,120 sc" },
+            { "Master Linear", "b1=lowcut 25 0 0.71 120; b2=lowshelf 90 1 0.71 12; b3=highshelf 12000 1.5 0.71 6; phase=linear; res=high" },
         };
         return list;
     }
@@ -781,6 +1525,8 @@ namespace eq
                 for (size_t t = 6; t < v.size(); ++t)
                 {
                     if (v[t] == "off") b.on = false;
+                    if (v[t] == "sc") b.sc = true;
+                    if (v[t] == "spec") b.spectral = true;
                     if (v[t].rfind ("dyn:", 0) == 0)
                     {
                         double r, th, at, re;
@@ -794,8 +1540,21 @@ namespace eq
             else if (key == "pan") p.outPan = std::stod (v[0]);
             else if (key == "auto") p.autoGain = v[0] == "1";
             else if (key == "char")
+            {
                 for (int k = 0; k < numCharacters; ++k)
                     if (v[0] == characterKeys[k]) p.character = (Character) k;
+            }
+            else if (key == "gq") p.gainQ = v[0] == "1";
+            else if (key == "phase")
+            {
+                for (int k = 0; k < numPhases; ++k)
+                    if (v[0] == phaseKeys[k]) p.phase = (Phase) k;
+            }
+            else if (key == "res")
+            {
+                for (int k = 0; k < numPhaseRes; ++k)
+                    if (v[0] == phaseResKeys[k]) p.phaseRes = (PhaseRes) k;
+            }
         }
         return p;
     }
