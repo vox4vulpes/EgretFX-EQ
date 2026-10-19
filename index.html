@@ -112,7 +112,7 @@
 
   /* the band panel: under the selected band, like Pro-Q's */
   .band-panel{
-    position:absolute; bottom:26px; z-index:4; display:flex; align-items:center; gap:10px;
+    position:absolute; bottom:calc(var(--plot-bottom, 20px) + 6px); z-index:4; display:flex; align-items:center; gap:10px;
     background:var(--float); border:1px solid var(--float-border); border-top:2px solid var(--band, var(--acc));
     border-radius:8px; padding:14px 10px 6px; box-shadow:0 8px 24px var(--float-shadow);
     backdrop-filter:blur(4px);
@@ -184,7 +184,7 @@
   .bp-dyn[hidden]{display:none;}
   .bp-sel.is-on{border-color:var(--band, var(--acc)); color:var(--band, var(--acc)); font-weight:600;}
   .bp-sel.no-arrow::after{content:'';}
-  .sketch-btn{position:absolute; left:8px; bottom:24px; z-index:3; width:28px; height:28px; justify-content:center; padding:0;
+  .sketch-btn{position:absolute; left:8px; bottom:calc(var(--plot-bottom, 20px) + 4px); z-index:3; width:28px; height:28px; justify-content:center; padding:0;
     background:var(--float); border:1px solid var(--float-border);}
   .sketch-btn.is-on{background:var(--acc); color:var(--on-acc); border-color:var(--acc);}
   .sketch-hint{position:absolute; left:8px; top:8px; z-index:3; font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--acc);
@@ -408,7 +408,7 @@
   <div class="band-list" id="band-list" role="listbox" aria-label="Bands"></div>
 </div>
 <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
-<p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q, double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source.</p>
+<p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source.</p>
 </div>
 </div>
 
@@ -1066,7 +1066,7 @@ if (typeof registerProcessor === 'function') {
 
   // ---------- state ----------
   var DEFAULTS = makeDefaults();
-  var UI_DEFAULTS = { theme: 'light', anaMode: 'both', anaRes: 'high', anaSpeed: 'med', anaRange: 90, anaTilt: true, dispRange: 12, source: 'demo' };
+  var UI_DEFAULTS = { theme: 'light', anaMode: 'both', anaRes: 'high', anaSpeed: 'med', anaRange: 90, anaTilt: true, piano: true, dispRange: 12, source: 'demo' };
   var STATE_KEY = 'egret-eq/state/v1', USER_KEY = 'egret-eq/presets/v1', UI_KEY = 'egret-eq/ui/v1';
   var params = clone(DEFAULTS), presetName = 'Flat', ab = { cur: 'A', A: null, B: null };
   var ui = Object.assign({}, UI_DEFAULTS);
@@ -1106,7 +1106,8 @@ if (typeof registerProcessor === 'function') {
       offFill: '#f8f4e8', badgeText: '#fbf8ef', solo: '#c9a520',
       tipBg: 'rgba(251,248,239,0.96)', tipText: '#2a241d',
       meterBg: '#ece4cf', meterTrack: 'rgba(42,36,29,0.08)', meterLow: '#c9a35a', meterMid: '#a8700a', meterTop: '#6b4a10', meterHold: '#2a241d',
-      meterLine: 'rgba(168,112,10,0.45)', meterText: 'rgba(42,36,29,0.75)', bandDarken: 0.72
+      meterLine: 'rgba(168,112,10,0.45)', meterText: 'rgba(42,36,29,0.75)', bandDarken: 0.72,
+      keyWhite: '#fbf8ef', keyBlack: '#3a3226', keyEdge: 'rgba(42,36,29,0.22)', keyLabel: 'rgba(42,36,29,0.5)'
     },
     dark: {
       bgTop: '#1d170c', bgBottom: '#120e06', scaleBg: 'rgba(0,0,0,0.25)', nyquist: 'rgba(0,0,0,0.4)',
@@ -1117,7 +1118,8 @@ if (typeof registerProcessor === 'function') {
       offFill: '#171308', badgeText: '#171308', solo: '#e6cf5a',
       tipBg: 'rgba(23,19,8,0.92)', tipText: '#f2ecd9',
       meterBg: '#120e06', meterTrack: 'rgba(240,168,48,0.08)', meterLow: '#7a5a18', meterMid: '#f0a830', meterTop: '#f2ecd9', meterHold: '#f2ecd9',
-      meterLine: 'rgba(240,168,48,0.35)', meterText: 'rgba(242,236,217,0.75)', bandDarken: 1
+      meterLine: 'rgba(240,168,48,0.35)', meterText: 'rgba(242,236,217,0.75)', bandDarken: 1,
+      keyWhite: '#3d3322', keyBlack: '#0c0904', keyEdge: 'rgba(240,168,48,0.16)', keyLabel: 'rgba(242,236,217,0.45)'
     }
   };
   var T = THEMES.light;
@@ -1827,6 +1829,7 @@ if (typeof registerProcessor === 'function') {
     [60, 90, 120].forEach(function(r){ items.push({ label: r + ' dB', checked: ui.anaRange === r, action: function(){ ui.anaRange = r; uiChanged(); } }); });
     items.push({ sep: true },
       { label: 'Tilt 4.5 dB/oct', checked: ui.anaTilt, action: function(){ ui.anaTilt = !ui.anaTilt; uiChanged(); } },
+      { label: 'Piano keyboard', checked: ui.piano, action: function(){ ui.piano = !ui.piano; uiChanged(); fitEq(); } },
       { label: 'Freeze', checked: freeze, action: function(){ freeze = !freeze; renderAll(); } });
     showMenu($('ana-btn'), items);
   }
@@ -2085,6 +2088,7 @@ if (typeof registerProcessor === 'function') {
   // ---------- the display ----------
   var eqCanvas = $('eq'), eg = eqCanvas.getContext('2d');
   var SCALE_W = 58;   // the dB scales on the right
+  var PIANO_H = 14;
   var view = { w: 0, h: 0, plotW: 0, dpr: 1, top: 10, bottom: 20 };
   var LOG_MIN = Math.log(FREQ_MIN), LOG_SPAN = Math.log(FREQ_MAX / FREQ_MIN);
   function fx(f){ return (Math.log(f) - LOG_MIN) / LOG_SPAN * view.plotW; }
@@ -2128,6 +2132,8 @@ if (typeof registerProcessor === 'function') {
     var dpr = window.devicePixelRatio || 1, r = eqCanvas.getBoundingClientRect();
     if (!r.width) return;
     view.dpr = dpr; view.w = r.width; view.h = r.height; view.plotW = r.width - SCALE_W;
+    view.bottom = 20 + (ui.piano ? PIANO_H : 0);
+    eqCanvas.parentElement.style.setProperty('--plot-bottom', view.bottom + 'px');
     eqCanvas.width = Math.round(r.width * dpr); eqCanvas.height = Math.round(r.height * dpr);
     var mr = meterCanvas.getBoundingClientRect();
     meterCanvas.width = Math.round(mr.width * dpr); meterCanvas.height = Math.round(mr.height * dpr);
@@ -2258,6 +2264,7 @@ if (typeof registerProcessor === 'function') {
     [[20, '20'], [50, '50'], [100, '100'], [200, '200'], [500, '500'], [1000, '1k'], [2000, '2k'], [5000, '5k'], [10000, '10k'], [20000, '20k']].forEach(function(l){
       eg.fillText(l[1], fx(l[0]), H - 6);
     });
+    if (ui.piano) drawPiano(bottom);
     // spectrum
     eg.save(); eg.beginPath(); eg.rect(0, 0, PW, H); eg.clip();
     if (preBuf && ui.anaMode !== 'off') {
@@ -2377,6 +2384,50 @@ if (typeof registerProcessor === 'function') {
       eg.fillStyle = T.tipText; eg.textAlign = 'left'; eg.textBaseline = 'middle';
       eg.fillText(text, tx + 7, ty + 10);
     }
+  }
+  // ---------- the piano under the display ----------
+  // One key per semitone along the frequency scale. The note of the band under the
+  // pointer (or being dragged, or selected) lights in its colour; the note under
+  // the pointer, or the peak being grabbed, lights faintly.
+  var pianoPointer = -1;
+  function midiOf(f){ return 69 + 12 * Math.log2(f / 440); }
+  function freqOfMidi(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+  var BLACK_KEYS = [false, true, false, true, false, false, true, false, true, false, true, false];
+  function drawPiano(y0){
+    var PW = view.plotW, h = PIANO_H, m0 = Math.floor(midiOf(FREQ_MIN)), m1 = Math.ceil(midiOf(FREQ_MAX));
+    eg.save(); eg.beginPath(); eg.rect(0, y0, PW, h); eg.clip();
+    eg.fillStyle = T.keyWhite; eg.fillRect(0, y0, PW, h);
+    function span(m){ return [fx(freqOfMidi(m - 0.5)), fx(freqOfMidi(m + 0.5))]; }
+    function light(m, color, alpha, full){
+      var s = span(m), black = BLACK_KEYS[((m % 12) + 12) % 12];
+      eg.globalAlpha = alpha; eg.fillStyle = color;
+      eg.fillRect(s[0], y0, s[1] - s[0], black ? h * 0.62 : h); eg.globalAlpha = 1;
+      if (!black && full) {   // a white key widens under its black neighbours
+        var pc = ((m % 12) + 12) % 12, w = s[1] - s[0];
+        var l = BLACK_KEYS[(pc + 11) % 12] ? w * 0.5 : 0, r = BLACK_KEYS[(pc + 1) % 12] ? w * 0.5 : 0;
+        eg.globalAlpha = alpha; eg.fillRect(s[0] - l, y0 + h * 0.62, w + l + r, h * 0.38); eg.globalAlpha = 1;
+      }
+    }
+    var lit = [];
+    var show = drag ? drag.band : hover >= 0 ? hover : selected;
+    if (show >= 0 && params[bandKey(show, 'Used')]) lit.push({ m: Math.round(midiOf(params[bandKey(show, 'Freq')])), c: bandColor(show), a: 0.85 });
+    if (grab && grab.active && !grab.made && grab.hot >= 0) lit.push({ m: Math.round(midiOf(grab.peaks[grab.hot].freq)), c: T.curve, a: 0.45 });
+    else if (pianoPointer >= 0 && !drag) lit.push({ m: Math.round(midiOf(xf(pianoPointer))), c: T.eqLabel0, a: 0.3 });
+    eg.strokeStyle = T.keyEdge; eg.lineWidth = 1;
+    for (var m = m0; m <= m1; m++) {
+      var pc = ((m % 12) + 12) % 12;
+      if (pc === 4 || pc === 11) { var xe = Math.round(fx(freqOfMidi(m + 0.5))) + 0.5; eg.beginPath(); eg.moveTo(xe, y0); eg.lineTo(xe, y0 + h); eg.stroke(); }
+      if (BLACK_KEYS[pc]) { var s = span(m); eg.fillStyle = T.keyBlack; eg.fillRect(s[0], y0, s[1] - s[0], h * 0.62); }
+    }
+    lit.forEach(function(l){ light(l.m, l.c, l.a, true); });
+    // the Cs, named when an octave has room for it
+    var octW = PW / (LOG_SPAN / Math.LN2);
+    if (octW > 40) {
+      eg.font = '600 7px "IBM Plex Mono", monospace'; eg.textAlign = 'left'; eg.textBaseline = 'alphabetic'; eg.fillStyle = T.keyLabel;
+      for (m = Math.ceil(m0 / 12) * 12; m <= m1; m += 12) eg.fillText('C' + (m / 12 - 1), span(m)[0] + 1, y0 + h - 1.5);
+    }
+    eg.restore();
+    eg.strokeStyle = T.keyEdge; eg.beginPath(); eg.moveTo(0, y0 + 0.5); eg.lineTo(PW, y0 + 0.5); eg.moveTo(0, y0 + h - 0.5); eg.lineTo(PW, y0 + h - 0.5); eg.stroke();
   }
   function roundRect(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
   var NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -2543,6 +2594,9 @@ if (typeof registerProcessor === 'function') {
     }
     var h = hitBand(p);
     if (h !== hover) { hover = h; requestDraw(); }
+    var pp = p.x <= view.plotW ? p.x : -1, noteAt = function(x){ return x < 0 ? null : Math.round(midiOf(xf(x))); };
+    if (ui.piano && noteAt(pp) !== noteAt(pianoPointer)) requestDraw();
+    pianoPointer = pp;
     setInfo(p);
   });
   // ---------- Spectrum Grab: hold the mouse on the spectrum, pull a peak into a band ----------
@@ -2762,7 +2816,7 @@ if (typeof registerProcessor === 'function') {
   }
   eqCanvas.addEventListener('pointerup', endDrag);
   eqCanvas.addEventListener('pointercancel', endDrag);
-  eqCanvas.addEventListener('pointerleave', function(){ if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
+  eqCanvas.addEventListener('pointerleave', function(){ pianoPointer = -1; if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
   eqCanvas.addEventListener('contextmenu', function(e){
     e.preventDefault();
     var p = localPos(e), i = hitBand(p);
