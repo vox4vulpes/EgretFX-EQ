@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <random>
+#include <cstdint>
 #include <vector>
 
 using namespace eq;
@@ -98,11 +98,13 @@ int main()
     }
     // 5. Every setting stable, at every rate.
     {
-        std::mt19937 rng (7);
-        std::uniform_real_distribution<double> u (0, 1);
+        // Our own random numbers, the same on every platform.
+        uint32_t seed = 7;
+        auto u = [&seed] (auto&) { seed = seed * 1664525u + 1013904223u; return seed / 4294967296.0; };
+        int rng = 0;
         int bad = 0, total = 0;
         Section s[maxSections];
-        for (int i = 0; i < 200000; ++i)
+        for (int i = 0; i < 1000000; ++i)
         {
             const auto shape = (Shape) (i % numShapes);
             const auto fs = (double[]) { 44100, 48000, 88200, 96000, 192000, 22050 }[i % 6];

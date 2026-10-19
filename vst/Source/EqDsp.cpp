@@ -71,7 +71,23 @@ namespace eq
             const auto wm = std::min (W, 0.9 * pi), sm = std::sin (wm / 2), phi1 = sm * sm, phi0 = 1 - phi1, phi2 = 4 * phi0 * phi1;
             auto B2 = ((A0 * phi0 + A1 * phi1 + A2 * phi2) * analogMag2 (c, wm / w0) - B0 * phi0 - B1 * phi1) / phi2;
             const auto sq0 = std::sqrt (B0), sq1 = std::sqrt (B1), Wv = (sq0 + sq1) / 2;
-            if (Wv * Wv + B2 < 0) B2 = -Wv * Wv;   // as close as these poles allow
+            if (Wv * Wv + B2 < 0)
+            {
+                if (c.n2 > 0)
+                {
+                    // No fit with these poles: the zeros by the matched z-transform too
+                    // (always inside the unit circle, so the section can be turned over),
+                    // the level matched at DC.
+                    const auto wz = std::sqrt (c.n0 / c.n2), zz = c.n1 / c.n2 / (2 * wz), Wz = wz * w0;
+                    const auto rz = std::exp (-zz * Wz), c2 = rz * rz;
+                    const auto c1 = zz < 1 ? -2 * rz * std::cos (std::min (pi, Wz * std::sqrt (1 - zz * zz)))
+                                           : -2 * rz * std::cosh (Wz * std::sqrt (zz * zz - 1));
+                    const auto k = std::sqrt (analogMag2 (c, 0)) * (1 + a1 + a2) / (1 + c1 + c2);
+                    setSection (out, k, k * c1, k * c2, a1, a2);
+                    return;
+                }
+                B2 = -Wv * Wv;   // as close as these poles allow
+            }
             const auto b0 = (Wv + std::sqrt (Wv * Wv + B2)) / 2;
             setSection (out, b0, (sq0 - sq1) / 2, b0 > 0 ? -B2 / (4 * b0) : 0, a1, a2);
         }
@@ -273,9 +289,10 @@ namespace eq
     }
 
     // AUTO GAIN: the level change on pink, A-weighted sound, measured on the curve, turned around.
+    namespace { constexpr int points = 64; }
+
     double autoGainDb (const Params& p, double fs)
     {
-        constexpr int points = 64;
         static const auto table = []
         {
             std::array<std::array<double, points>, 2> t {};
