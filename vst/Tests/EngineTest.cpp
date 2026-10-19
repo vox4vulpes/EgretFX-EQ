@@ -107,16 +107,22 @@ int main()
         for (int i = 0; i < 1000000; ++i)
         {
             const auto shape = (Shape) (i % numShapes);
-            const auto fs = (double[]) { 44100, 48000, 88200, 96000, 192000, 22050 }[i % 6];
-            const auto n = designBand (shape, freqMin * std::pow (freqMax / freqMin, u (rng)), (u (rng) * 2 - 1) * gainMax,
-                                       qMin * std::pow (qMax / qMin, u (rng)), slopes[(int) (u (rng) * numSlopes) % numSlopes], fs, s);
+            static const double rates[] = { 44100, 48000, 88200, 96000, 192000, 22050 };
+            const auto fs = rates[i % 6];
+            const auto f = freqMin * std::pow (freqMax / freqMin, u (rng)), g = (u (rng) * 2 - 1) * gainMax;
+            const auto q = qMin * std::pow (qMax / qMin, u (rng));
+            const auto slope = slopes[(int) (u (rng) * numSlopes) % numSlopes];
+            const auto n = designBand (shape, f, g, q, slope, fs, s);
             for (int k = 0; k < n; ++k)
             {
                 ++total;
                 const auto a1 = s[k].a1, a2 = s[k].a2;
                 const auto disc = a1 * a1 - 4 * a2;
                 const auto r = disc < 0 ? std::sqrt (a2) : std::max (std::abs ((-a1 + std::sqrt (disc)) / 2), std::abs ((-a1 - std::sqrt (disc)) / 2));
-                if (! (r < 1) || ! std::isfinite (s[k].b0 + s[k].b1 + s[k].b2)) ++bad;
+                if (! (r < 1) || ! std::isfinite (s[k].b0 + s[k].b1 + s[k].b2))
+                {
+                    if (++bad <= 5) std::printf ("     unstable: %s %.6g Hz %.4g dB Q %.5g slope %d at %g, section %d, pole radius %.12g\n", shapeKeys[(int) shape], f, g, q, slope, fs, k, r);
+                }
             }
         }
         check (bad == 0, "random settings: unstable sections", bad, 0);

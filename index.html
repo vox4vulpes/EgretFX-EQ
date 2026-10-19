@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-eq-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,315 +17,326 @@
     --groove-dark:#a99c79;
     --ink:#2a241d;
     --ink-soft:rgba(42,36,29,.62);
-    --mustard:#c08f17;
-    --teal:#336f6b;
     --coral:#b85540;
-    --lavender:#8a78a3;
-    --sage:#5f7344;
-    --readout-bg:#171308;
-    --readout-ink:#f0a830;
     --focus:#2a7f90;
     --shadow:rgba(30,25,15,.35);
+    --hot:#ff6a4a;
+  }
+  /* The plugin's two themes: light (the default) and the warm dark screen. */
+  :root, :root[data-eq-theme="light"]{
+    --scr:#f6f1e3; --bar:#e4dbc4; --bar-hi:#efe8d6; --bar-lo:#d9cfb5; --edge:rgba(42,36,29,.18);
+    --fg:#2a241d; --fg-soft:rgba(42,36,29,.6); --acc:#a8700a; --acc-soft:rgba(168,112,10,.6); --acc-hover:rgba(168,112,10,.14); --on-acc:#fbf8ef;
+    --float:rgba(251,248,239,.96); --float-solid:#fbf8ef; --float-border:rgba(42,36,29,.16); --float-shadow:rgba(60,45,20,.25);
+    --hover:rgba(42,36,29,.06); --track:rgba(42,36,29,.14); --knob-hi:#fffdf6; --knob-lo:#d9cfb5; --input-bg:#fffdf6;
+    --led-off:#c7bb9c; --solo:#d9b92a; --teal-hi:#336f6b;
+  }
+  :root[data-eq-theme="dark"]{
+    --scr:#171308; --bar:#211b10; --bar-hi:#2c2416; --bar-lo:#1a150c; --edge:rgba(0,0,0,.5);
+    --fg:#f2ecd9; --fg-soft:rgba(242,236,217,.6); --acc:#f0a830; --acc-soft:rgba(240,168,48,.62); --acc-hover:rgba(240,168,48,.18); --on-acc:#171308;
+    --float:rgba(33,27,16,.94); --float-solid:#241d12; --float-border:rgba(242,236,217,.14); --float-shadow:rgba(0,0,0,.55);
+    --hover:rgba(242,236,217,.07); --track:rgba(242,236,217,.16); --knob-hi:#4a3f2c; --knob-lo:#231c11; --input-bg:#0d0a04;
+    --led-off:#5a4a30; --solo:#e6cf5a; --teal-hi:#7ec4be;
   }
   @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --page-bg:#121110; --panel:#ddd3ba; --panel-raised:#e8dec2;
-      --groove:#b9ac8a; --groove-dark:#948666; --shadow:rgba(0,0,0,.6);
-    }
+    :root:not([data-theme="light"]){ --page-bg:#121110; --panel:#ddd3ba; --panel-raised:#e8dec2; --groove:#b9ac8a; --groove-dark:#948666; --shadow:rgba(0,0,0,.6); }
   }
-  :root[data-theme="dark"]{
-    --page-bg:#121110; --panel:#ddd3ba; --panel-raised:#e8dec2;
-    --groove:#b9ac8a; --groove-dark:#948666; --shadow:rgba(0,0,0,.6);
-  }
+  :root[data-theme="dark"]{ --page-bg:#121110; --panel:#ddd3ba; --panel-raised:#e8dec2; --groove:#b9ac8a; --groove-dark:#948666; --shadow:rgba(0,0,0,.6); }
 
   *{box-sizing:border-box;}
   html,body{margin:0;}
   body{
     background:var(--page-bg); color:var(--ink);
     font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;
-    min-height:100vh; display:flex; padding:32px 16px;
-  }
-  kbd{
-    font-family:'IBM Plex Mono',monospace; background:var(--panel-raised);
-    border:1px solid var(--groove-dark); border-radius:4px; padding:1px 5px; font-size:11px;
+    min-height:100vh; display:flex; padding:28px 16px;
   }
   button{font-family:inherit;}
   button:focus-visible{outline:2px solid var(--focus); outline-offset:2px;}
+  kbd{font-family:'IBM Plex Mono',monospace; background:var(--panel-raised); border:1px solid var(--groove-dark); border-radius:4px; padding:1px 5px; font-size:11px;}
 
-  .chassis{
-    zoom:.9; margin:auto; width:100%; max-width:900px;
-    background-color:var(--panel);
-    background-image:repeating-linear-gradient(135deg, rgba(0,0,0,.015) 0 2px, transparent 2px 4px);
-    border-radius:18px; padding:24px 26px 22px;
-    box-shadow:0 30px 60px -20px var(--shadow), inset 0 1px 0 rgba(255,255,255,.3);
-    display:flex; flex-direction:column; gap:16px;
-  }
+  .stage{margin:auto; display:flex; gap:20px; align-items:flex-start; width:100%; max-width:1400px;}
+  .main{flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:10px;}
 
-  /* ---------- header ---------- */
-  .top-rail{display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;}
-  .brand{display:flex; flex-direction:column; gap:2px;}
-  .brand-title{display:flex; align-items:baseline; gap:8px;}
-  .brand-name, .brand-model{
-    font-family:'Big Shoulders Inclined','Arial Narrow',sans-serif; font-weight:800;
-    font-size:30px; line-height:1; letter-spacing:.01em;
+  /* ---------- the plugin ---------- */
+  .plugin{
+    background:var(--scr); border-radius:10px; overflow:hidden; color:var(--fg);
+    box-shadow:0 30px 60px -20px var(--shadow), 0 0 0 1px var(--edge);
+    display:flex; flex-direction:column; user-select:none;
   }
-  .brand-model{color:var(--teal);}
-  .brand-sub-row{display:flex; align-items:center; gap:6px; min-height:22px;}
-  .brand-sub{
-    font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.14em;
-    color:var(--ink-soft); text-transform:uppercase;
+  .plugin:fullscreen{border-radius:0;}
+  .plugin:fullscreen .screen{aspect-ratio:auto; flex:1;}
+  .bar{
+    display:flex; align-items:center; gap:6px; padding:0 10px; height:38px; flex:none;
+    background:linear-gradient(var(--bar-hi), var(--bar)); font-size:12px;
   }
-  .brand-sub .jp{font-family:'Noto Sans JP',sans-serif; letter-spacing:.08em; font-size:11px; text-transform:none;}
-  /* Easter egg: the kingfisher (kawasemi), a flash of blue over the water. */
-  .bird{width:24px; height:24px; padding:0; border:none; background:none; cursor:pointer; transform-origin:50% 90%;}
-  .bird:hover{transform:rotate(-6deg);}
+  .bar.bottom{height:32px; background:linear-gradient(var(--bar), var(--bar-lo)); border-top:1px solid var(--edge);}
+  .bar.top{border-bottom:1px solid var(--edge);}
+  .bar .spacer{flex:1;}
+  .tb{
+    background:none; border:1px solid transparent; color:var(--fg); border-radius:5px; padding:4px 8px; cursor:pointer;
+    font-size:12px; line-height:1; display:inline-flex; align-items:center; gap:4px; white-space:nowrap;
+  }
+  .tb:hover{background:var(--hover); border-color:var(--float-border);}
+  .tb:disabled{opacity:.35; cursor:default; background:none; border-color:transparent;}
+  .tb.is-on{color:var(--acc);}
+  .tb .dim{color:var(--fg-soft);}
+  .tb svg{width:15px; height:15px; display:block;}
+  .logo{display:flex; align-items:baseline; gap:6px; margin-right:10px;}
+  .logo-name{font-family:'Big Shoulders Inclined','Arial Narrow',sans-serif; font-weight:800; font-size:21px; letter-spacing:.02em; color:var(--fg);}
+  .logo-name b{color:var(--acc);}
+  .logo-sub{font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.14em; color:var(--fg-soft); text-transform:uppercase; white-space:nowrap;}
+  .logo-sub .jp{font-family:'Noto Sans JP',sans-serif; text-transform:none; letter-spacing:.06em;}
+  .bird{width:22px; height:22px; padding:0; border:none; background:none; cursor:pointer; align-self:center; transform-origin:50% 90%;}
   .bird.is-diving{animation:bird-dive .6s ease-in-out;}
   @keyframes bird-dive{ 0%{transform:translateY(0)} 35%{transform:translateY(6px) rotate(25deg)} 70%{transform:translateY(-3px) rotate(-8deg)} 100%{transform:translateY(0)} }
   @media (prefers-reduced-motion:reduce){ .bird.is-diving{animation:none;} }
+  .preset-nav{display:flex; align-items:center; gap:2px; min-width:0;}
+  .preset-btn{min-width:200px; max-width:300px; justify-content:center; overflow:hidden; text-overflow:ellipsis;}
+  .preset-btn span{overflow:hidden; text-overflow:ellipsis;}
+  .power-led{width:9px; height:9px; border-radius:50%; background:var(--led-off);}
+  .tb.is-on .power-led{background:var(--acc); box-shadow:0 0 6px var(--acc);}
+  .status{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--fg-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;}
 
-  .status-group{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
-  .readout-window{
-    background:var(--readout-bg); border-radius:6px; padding:4px 10px;
-    display:flex; align-items:baseline; gap:6px; box-shadow:inset 0 1px 3px rgba(0,0,0,.6);
+  /* ---------- the screen ---------- */
+  .screen{position:relative; aspect-ratio:950/540; min-height:300px; display:flex;}
+  #eq{flex:1; min-width:0; height:100%; display:block; cursor:crosshair; touch-action:none; outline:none;}
+  #eq.is-over{outline:2px dashed var(--teal-hi); outline-offset:-4px;}
+  #meter{width:30px; height:100%; display:block; flex:none; border-left:1px solid var(--edge);}
+  .range-box{
+    position:absolute; top:8px; right:42px; z-index:3;
+    font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--acc);
+    background:var(--float); border:1px solid var(--float-border); border-radius:4px; padding:3px 7px; cursor:pointer;
   }
-  .readout-label{font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.1em; color:rgba(240,168,48,.55);}
-  .readout-value{
-    font-family:'IBM Plex Mono',monospace; font-size:14px; color:var(--readout-ink);
-    font-variant-numeric:tabular-nums; text-shadow:0 0 6px rgba(240,168,48,.5); min-width:2.2em; display:inline-block;
-  }
-  .readout-value.is-hot{color:#ff6a4a; text-shadow:0 0 6px rgba(255,106,74,.6);}
-  .power-switch{
-    display:flex; align-items:center; gap:8px; background:var(--panel-raised);
-    border:1px solid var(--groove-dark); border-radius:999px; padding:7px 14px; cursor:pointer;
-    font-weight:600; font-size:11px; letter-spacing:.08em; color:var(--ink);
-  }
-  .power-switch .led{width:10px; height:10px; border-radius:50%; background:var(--groove-dark); display:inline-block;}
-  body.powered .power-switch .led{background:var(--coral); box-shadow:0 0 8px var(--coral);}
+  .range-box:hover{border-color:var(--acc);}
 
-  /* ---------- modules ---------- */
-  .module{
-    min-width:0;
-    background:var(--panel-raised); border-radius:12px; padding:12px 12px 14px;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.4), 0 1px 3px var(--groove-dark);
-    border-top:3px solid var(--accent); display:flex; flex-direction:column; gap:10px;
+  /* the band panel: under the selected band, like Pro-Q's */
+  .band-panel{
+    position:absolute; bottom:26px; z-index:4; display:flex; align-items:center; gap:10px;
+    background:var(--float); border:1px solid var(--float-border); border-top:2px solid var(--band, var(--acc));
+    border-radius:8px; padding:8px 10px 6px; box-shadow:0 8px 24px var(--float-shadow);
+    backdrop-filter:blur(4px);
   }
-  .module-title{
-    font-family:'Big Shoulders Inclined','Arial Narrow',sans-serif; font-weight:700; font-size:13px;
-    letter-spacing:.12em; text-transform:uppercase; color:var(--accent); margin:0;
+  .band-panel[hidden]{display:none;}
+  .bp-col{display:flex; flex-direction:column; gap:4px;}
+  .bp-sel{
+    background:var(--hover); border:1px solid var(--float-border); color:var(--fg); border-radius:4px;
+    font-size:11px; padding:4px 7px; width:104px; text-align:left; cursor:pointer; display:flex; justify-content:space-between; gap:4px;
   }
-  .module-head{display:flex; align-items:center; gap:10px; min-height:22px;}
-  .chip-btn{
-    font-weight:600; font-size:11px; letter-spacing:.04em; padding:6px 10px; border-radius:6px;
-    border:1px solid var(--groove-dark); background:var(--panel); color:var(--ink); cursor:pointer;
-  }
-  .chip-btn.is-active{background:var(--accent); color:var(--panel-raised); border-color:var(--accent);}
-  .chip-btn:disabled{opacity:.45; cursor:default;}
-  .chip-row{display:flex; gap:4px; align-items:center; flex-wrap:wrap;}
-  .chip-row .chip-btn{padding:5px 0; flex:1 1 0; min-width:34px;}
-  .row-label{font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.12em; color:var(--ink-soft); flex:none; width:44px;}
-  .is-disabled{opacity:.42; pointer-events:none;}
+  .bp-sel::after{content:'\25BE'; color:var(--fg-soft);}
+  .bp-sel:hover{border-color:var(--band, var(--acc));}
+  .bp-sel:disabled{opacity:.35; cursor:default;}
+  .bp-knobs{display:flex; gap:4px;}
+  .bp-buttons{display:grid; grid-template-columns:repeat(2, 26px); gap:4px;}
+  .bp-buttons .tb{padding:4px 0; justify-content:center; font-size:12px;}
+  .bp-buttons .tb.is-on{color:var(--on-acc); background:var(--acc);}
+  .bp-buttons .tb.is-solo.is-on{background:var(--solo);}
+  .bp-title{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--band, var(--acc)); letter-spacing:.08em; text-align:center;}
 
-  .preset-bar{display:flex; flex-wrap:wrap; align-items:center; gap:8px 8px;}
-  .preset-select, .preset-name{
-    font-family:'IBM Plex Sans',sans-serif; font-weight:600; font-size:12px; padding:7px 10px; border-radius:6px;
-    border:1px solid var(--groove-dark); background:var(--panel); color:var(--ink);
-  }
-  .preset-select{min-width:180px; cursor:pointer;}
-  .preset-name{width:130px; font-weight:500;}
-  .preset-name::placeholder{color:var(--ink-soft);}
-  .preset-status{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--ink-soft); margin:0 0 0 auto; min-height:1.3em;}
-  .bar-gap{width:6px;}
-
-  /* ---------- the display ---------- */
-  .screen-bay{background:var(--groove-dark); border-radius:10px; padding:10px; box-shadow:inset 0 2px 6px var(--shadow);}
-  .screen-row{display:flex; gap:8px;}
-  .eq-wrap{position:relative; flex:1; min-width:0;}
-  #eq{width:100%; height:380px; display:block; border-radius:6px; background:var(--readout-bg); cursor:crosshair; touch-action:none; outline:none;}
-  #eq.is-over{outline:2px dashed var(--teal); outline-offset:2px;}
-  #eq:focus-visible{outline:2px solid var(--focus); outline-offset:2px;}
-  #meter{width:44px; height:380px; display:block; border-radius:6px; background:var(--readout-bg); flex:none;}
-  .screen-caption{
-    display:flex; justify-content:space-between; gap:12px;
-    font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.15em; color:var(--ink); opacity:.75; margin-top:4px;
-    white-space:nowrap; overflow:hidden;
-  }
-
-  /* ---------- band ---------- */
-  .band-strip{display:flex; gap:4px; flex-wrap:wrap; align-items:center; flex:1;}
-  .band-chip{
-    min-width:28px; padding:3px 6px; border-radius:6px; border:1px solid var(--groove-dark);
-    background:var(--panel); color:var(--ink); cursor:pointer; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:500;
-    display:inline-flex; align-items:center; gap:4px;
-  }
-  .band-chip .dot{width:8px; height:8px; border-radius:50%; background:var(--c);}
-  .band-chip.is-active{background:var(--readout-bg); color:var(--c); border-color:var(--readout-bg);}
-  .band-chip.is-off .dot{background:transparent; box-shadow:inset 0 0 0 1.5px var(--c);}
-  .band-body{display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;}
-  .band-left{flex:1 1 440px; display:flex; flex-direction:column; gap:7px; min-width:0;}
-  .band-right{flex:0 0 auto; display:flex; gap:12px; align-items:flex-start;}
-  .band-actions{display:flex; flex-direction:column; gap:5px; width:76px;}
-  .band-actions .chip-btn{padding:5px 0;}
-  .band-actions .chip-btn.is-solo{--accent:var(--mustard);}
-  #shape-chips{display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:4px;}
-  #shape-chips .chip-btn{white-space:nowrap; font-size:10.5px; padding:5px 2px;}
-  .band-empty{font-size:12px; color:var(--ink-soft); margin:2px 0 0;}
-
-  /* ---------- bottom row ---------- */
-  .lower{display:grid; grid-template-columns:1fr 1.45fr 1fr; gap:12px;}
-  @media (max-width:860px){ .lower{grid-template-columns:1fr;} }
-  .src-status{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--ink); margin:0; min-height:1.3em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .toggle-btn{flex:none !important; padding:5px 10px !important;}
-
-  /* ---------- knobs ---------- */
-  .knob-row{display:flex; gap:8px; flex-wrap:wrap;}
-  .knob{display:flex; flex-direction:column; align-items:center; gap:4px; width:52px; user-select:none;}
-  .knob:focus-visible{outline:2px solid var(--focus); outline-offset:3px; border-radius:10px;}
+  /* knobs, dark, inside the panel */
+  .knob{display:flex; flex-direction:column; align-items:center; gap:2px; width:66px;}
+  .knob:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:8px;}
   .knob-dial{
-    width:48px; height:48px; border-radius:50%;
-    background:conic-gradient(from 225deg, var(--groove-dark) 0deg 270deg, transparent 270deg 360deg);
-    display:flex; align-items:center; justify-content:center; box-shadow:inset 0 2px 4px var(--shadow);
+    width:40px; height:40px; border-radius:50%; position:relative;
+    background:conic-gradient(from 225deg, var(--track) 0deg 270deg, transparent 270deg 360deg);
+    display:flex; align-items:center; justify-content:center;
   }
   .knob-cap{
-    width:36px; height:36px; border-radius:50%; position:relative; cursor:grab; touch-action:none;
-    background:radial-gradient(circle at 50% 22%, var(--panel-raised), var(--groove) 85%);
-    box-shadow:0 2px 3px var(--shadow), inset 0 1px 1px rgba(255,255,255,.5);
+    width:30px; height:30px; border-radius:50%; position:relative; cursor:grab; touch-action:none;
+    background:radial-gradient(circle at 50% 25%, var(--knob-hi), var(--knob-lo) 85%);
+    box-shadow:0 2px 4px var(--float-shadow), inset 0 1px 1px rgba(255,255,255,.15);
   }
   .knob-pointer{
-    position:absolute; left:50%; top:10%; width:3px; height:36%; border-radius:2px;
-    background:var(--accent); transform-origin:50% 100%;
-    transform:translateX(-50%) rotate(var(--angle,-135deg)); box-shadow:0 0 4px var(--accent);
+    position:absolute; left:50%; top:10%; width:2.5px; height:36%; border-radius:2px;
+    background:var(--band, var(--acc)); transform-origin:50% 100%;
+    transform:translateX(-50%) rotate(var(--angle,-135deg)); box-shadow:0 0 4px var(--band, var(--acc));
   }
-  .knob-label{font-size:9px; font-weight:600; letter-spacing:.05em; color:var(--ink-soft); text-transform:uppercase; white-space:nowrap;}
-  .knob-readout{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; cursor:text; border-radius:3px; padding:0 2px;}
-  .knob-readout:hover{background:rgba(42,36,29,.08);}
-  .knob-input{
-    width:58px; padding:0 2px; margin:0; text-align:center; border-radius:3px;
-    font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink);
-    background:var(--panel); border:1px solid var(--focus); outline:none;
-  }
+  .knob-label{font-size:8.5px; font-weight:600; letter-spacing:.06em; color:var(--fg-soft); text-transform:uppercase;}
+  .knob-readout{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--fg); white-space:nowrap; cursor:text; border-radius:3px; padding:0 2px;}
+  .knob-readout:hover{background:var(--hover);}
+  .knob-input{width:60px; padding:0 2px; margin:0; text-align:center; border-radius:3px; font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+    color:var(--fg); background:var(--input-bg); border:1px solid var(--acc); outline:none;}
+  .is-disabled{opacity:.35; pointer-events:none;}
 
-  .instructions{font-size:12px; color:var(--ink-soft); margin:2px 0 0;}
+  /* draggable values in the bottom bar (output, scale, pan) */
+  .dv{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--fg); padding:3px 7px; border-radius:4px;
+    cursor:ns-resize; border:1px solid transparent; white-space:nowrap; touch-action:none;
+  }
+  .dv:hover{border-color:var(--float-border); background:var(--hover);}
+  .dv .dim{color:var(--fg-soft); font-family:'IBM Plex Sans',sans-serif; font-size:10.5px; margin-right:4px;}
+
+  /* pop-up menus */
+  .menu{
+    position:fixed; z-index:50; min-width:170px; max-height:70vh; overflow-y:auto;
+    background:var(--float-solid); border:1px solid var(--float-border); border-radius:6px; padding:4px; box-shadow:0 10px 30px var(--float-shadow);
+    color:var(--fg); font-size:12px;
+  }
+  .menu[hidden]{display:none;}
+  .mi{display:flex; align-items:center; gap:8px; padding:5px 10px 5px 6px; border-radius:4px; cursor:pointer; white-space:nowrap; border:none; background:none; color:inherit; width:100%; text-align:left; font-size:12px;}
+  .mi:hover{background:var(--acc-hover);}
+  .mi[disabled]{opacity:.4; cursor:default; background:none;}
+  .mi .chk{width:12px; color:var(--acc); flex:none; text-align:center;}
+  .mh{font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--fg-soft); padding:6px 8px 2px;}
+  .ms{height:1px; background:var(--float-border); margin:4px 2px;}
+  .menu input{width:100%; background:var(--input-bg); color:var(--fg); border:1px solid var(--acc-soft); border-radius:4px; padding:5px 7px; font-size:12px; outline:none;}
+
+  .help{font-size:12px; color:var(--ink-soft); margin:0;}
   .no-worklet{font-size:12px; color:var(--coral); margin:0;}
-  @media (max-width:480px){ .brand-name, .brand-model{font-size:22px;} #eq, #meter{height:280px;} }
+
+  /* ---------- the player: a column to the left of the plugin ---------- */
+  .player{
+    flex:0 0 220px; position:sticky; top:16px;
+    background-color:var(--panel); border-radius:14px; padding:16px 14px 14px;
+    background-image:repeating-linear-gradient(135deg, rgba(0,0,0,.015) 0 2px, transparent 2px 4px);
+    box-shadow:0 30px 60px -20px var(--shadow), inset 0 1px 0 rgba(255,255,255,.3);
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .player-title{font-family:'Big Shoulders Inclined','Arial Narrow',sans-serif; font-weight:800; font-size:20px; line-height:1; margin:0;}
+  .player-title span{color:var(--coral);}
+  .player-sub{font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.12em; color:var(--ink-soft); text-transform:uppercase; margin:2px 0 0;}
+  .pl-label{font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:.12em; color:var(--ink-soft); text-transform:uppercase; margin:2px 0 -4px;}
+  .chip-btn{
+    font-weight:600; font-size:11px; letter-spacing:.04em; padding:6px 8px; border-radius:6px;
+    border:1px solid var(--groove-dark); background:var(--panel-raised); color:var(--ink); cursor:pointer;
+  }
+  .chip-btn.is-active{background:var(--coral); color:var(--panel-raised); border-color:var(--coral);}
+  .chip-row{display:flex; gap:4px; flex-wrap:wrap;}
+  .chip-row .chip-btn{flex:1 1 0; padding:5px 0; min-width:40px;}
+  .src-status{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink); margin:0; min-height:1.3em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .np{background:var(--scr); border-radius:8px; padding:8px 10px; box-shadow:inset 0 1px 3px rgba(0,0,0,.6); display:flex; flex-direction:column; gap:6px;}
+  .np-name{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--acc); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-height:1.3em;}
+  .np-time{font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--acc-soft); display:flex; justify-content:space-between;}
+  .np input[type=range]{width:100%; margin:0; accent-color:var(--acc);}
+  .player-buttons{display:flex; gap:6px;}
+  .player-buttons .chip-btn{flex:1; padding:6px 0; display:flex; justify-content:center;}
+  .track-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:3px; max-height:300px; overflow-y:auto;}
+  .track{display:flex; gap:8px; align-items:baseline; padding:5px 8px; border-radius:6px; cursor:pointer; font-size:12px; color:var(--ink); background:var(--panel-raised); border:1px solid transparent;}
+  .track:hover{border-color:var(--groove-dark);}
+  .track.is-active{background:var(--scr); color:var(--acc);}
+  .track .num{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-soft); width:16px; flex:none;}
+  .track.is-active .num{color:var(--acc-soft);}
+  .track .name{flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .player-empty, .credit{font-size:11px; color:var(--ink-soft); margin:0;}
+  .credit a{color:inherit;}
+
+  @media (max-width:1100px){
+    .stage{flex-direction:column; align-items:stretch;}
+    .player{position:static; flex:none;}
+    .track-list{max-height:160px;}
+  }
+  @media (max-width:640px){
+    .logo-sub, .bar .hide-narrow{display:none;}
+    .preset-btn{min-width:110px;}
+    .screen{aspect-ratio:auto; height:62vh;}
+  }
 </style>
 </head>
 <body>
-<div class="chassis" role="group" aria-label="Egret EQ parametric equalizer">
-  <header class="top-rail">
-    <div class="brand">
-      <div class="brand-title"><span class="brand-name">EGRET</span><span class="brand-model">EQ</span></div>
-      <div class="brand-sub-row">
-        <span class="brand-sub" id="brand-sub"><span class="jp" lang="ja">翡翠</span> · Parametric Equalizer</span>
-        <button class="bird" id="bird" type="button" aria-label="Kawasemi, the kingfisher" title="翡翠">
-          <!-- A kingfisher: blue back, orange breast, white throat, long dark bill. -->
-          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-            <path d="M6 9.5c0-2.6 2.1-4.5 4.7-4.5 2.3 0 4 1.5 4.4 3.5l.4 2.3c.4 2.2 1.9 3.6 3.9 4.6l-1.2.9c-1.1-.2-2.2-.6-3.1-1.2-.9 2.3-3.3 3.6-6 3.1-2.4-.5-3.9-2.6-3.6-5z"
-                  fill="#2a8fc4" stroke="#2a241d" stroke-width=".7" stroke-linejoin="round"/>
-            <path d="M7.4 11.4c.6 2.6 2.6 4.3 5.4 3.9 1-.2 1.8-.6 2.4-1.3-1.9.2-4.4-.6-5.9-2.7z" fill="#e07b2a"/>
-            <path d="M6.6 9.6c.6.6 1.6.8 2.4.5-.2.7-.9 1.2-1.7 1.2-.5-.4-.7-1-.7-1.7z" fill="#fbf8ef"/>
-            <path d="M6.2 8.4L1 9.3l5.4.5z" fill="#2a241d"/>
-            <circle cx="8.2" cy="7.6" r=".55" fill="#2a241d"/>
-            <path d="M11 17.6l-.4 2.6M12.6 17.7l.2 2.5" stroke="#d9452f" stroke-width=".9" stroke-linecap="round"/>
-          </svg>
-        </button>
-      </div>
+<div class="stage">
+<aside class="player" aria-label="What plays through the EQ">
+  <div>
+    <h2 class="player-title">PLAY<span>ER</span></h2>
+    <p class="player-sub">Sound through the EQ</p>
+  </div>
+  <p class="pl-label">Source</p>
+  <div class="chip-row" id="src-chips" role="group" aria-label="Source"></div>
+  <div class="chip-row">
+    <button class="chip-btn" id="src-play" type="button" title="Play or stop (Space)">PLAY</button>
+    <button class="chip-btn" id="src-load" type="button">LOAD FILE</button>
+    <input type="file" id="src-file" accept="audio/*" hidden>
+  </div>
+  <p class="src-status" id="src-status" aria-live="polite"></p>
+  <p class="pl-label">Tracks</p>
+  <div class="np">
+    <div class="np-name" id="np-name">&mdash;</div>
+    <input type="range" id="np-seek" min="0" max="1000" value="0" aria-label="Position in the track">
+    <div class="np-time"><span id="np-pos">0:00</span><span id="np-dur">0:00</span></div>
+  </div>
+  <div class="player-buttons">
+    <button class="chip-btn" id="pl-prev" type="button" aria-label="Previous track"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 3v10M13 3L5 8l8 5z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+    <button class="chip-btn" id="pl-play" type="button" aria-label="Play"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 2.5l9 5.5-9 5.5z" fill="currentColor"/></svg></button>
+    <button class="chip-btn" id="pl-next" type="button" aria-label="Next track"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M13 3v10M3 3l8 5-8 5z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+  </div>
+  <ul class="track-list" id="track-list"></ul>
+  <p class="player-empty" id="player-empty">No tracks here yet.</p>
+  <button class="chip-btn" id="pl-add" type="button">+ ADD TRACKS</button>
+  <input type="file" id="pl-file" accept="audio/*" multiple hidden>
+  <p class="credit" id="credit"></p>
+</aside>
+
+<div class="main">
+<div class="plugin" id="plugin" role="group" aria-label="Egret EQ parametric equalizer">
+  <header class="bar top">
+    <div class="logo">
+      <span class="logo-name">EGRET <b>EQ</b></span>
+      <span class="logo-sub" id="brand-sub"><span class="jp" lang="ja">翡翠</span> · Parametric EQ</span>
+      <button class="bird" id="bird" type="button" aria-label="Kawasemi, the kingfisher" title="翡翠">
+        <!-- A kingfisher: blue back, orange breast, white throat, long dark bill. -->
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M6 9.5c0-2.6 2.1-4.5 4.7-4.5 2.3 0 4 1.5 4.4 3.5l.4 2.3c.4 2.2 1.9 3.6 3.9 4.6l-1.2.9c-1.1-.2-2.2-.6-3.1-1.2-.9 2.3-3.3 3.6-6 3.1-2.4-.5-3.9-2.6-3.6-5z"
+                fill="#2a8fc4" stroke="#0d0a04" stroke-width=".7" stroke-linejoin="round"/>
+          <path d="M7.4 11.4c.6 2.6 2.6 4.3 5.4 3.9 1-.2 1.8-.6 2.4-1.3-1.9.2-4.4-.6-5.9-2.7z" fill="#e07b2a"/>
+          <path d="M6.6 9.6c.6.6 1.6.8 2.4.5-.2.7-.9 1.2-1.7 1.2-.5-.4-.7-1-.7-1.7z" fill="#fbf8ef"/>
+          <path d="M6.2 8.4L1 9.3l5.4.5z" style="fill:var(--fg)"/>
+          <circle cx="8.2" cy="7.6" r=".55" fill="#0d0a04"/>
+          <path d="M11 17.6l-.4 2.6M12.6 17.7l.2 2.5" stroke="#d9452f" stroke-width=".9" stroke-linecap="round"/>
+        </svg>
+      </button>
     </div>
-    <div class="status-group">
-      <div class="readout-window"><span class="readout-label">BANDS</span><span class="readout-value" id="bands-readout">0</span></div>
-      <div class="readout-window"><span class="readout-label">PEAK</span><span class="readout-value" id="peak-readout">&mdash;</span></div>
-      <button id="power" class="power-switch" type="button" aria-pressed="false"><span class="led" aria-hidden="true"></span><span>POWER</span></button>
+    <button class="tb" id="undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo"><svg viewBox="0 0 16 16"><path d="M6 3L2 7l4 4M2.5 7H10a4 4 0 010 8H8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button class="tb" id="redo" type="button" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg viewBox="0 0 16 16"><path d="M10 3l4 4-4 4M13.5 7H6a4 4 0 000 8h2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button class="tb" id="ab" type="button" title="Switch between settings A and B"><span class="dim">A/B</span> <span id="ab-cur">A</span></button>
+    <button class="tb hide-narrow" id="ab-copy" type="button" title="Copy this setting to the other one">Copy</button>
+    <span class="spacer"></span>
+    <div class="preset-nav">
+      <button class="tb" id="preset-prev" type="button" aria-label="Previous preset">&lsaquo;</button>
+      <button class="tb preset-btn" id="preset-btn" type="button" aria-haspopup="menu" title="Presets"><span id="preset-name">Flat</span></button>
+      <button class="tb" id="preset-next" type="button" aria-label="Next preset">&rsaquo;</button>
     </div>
+    <span class="spacer"></span>
+    <button class="tb" id="theme-btn" type="button" title="Light or dark" aria-label="Switch between light and dark"></button>
+    <button class="tb" id="power" type="button" aria-pressed="false" title="Sound on: starts the audio in the browser"><span class="power-led"></span><span class="hide-narrow">POWER</span></button>
+    <button class="tb" id="fullscreen" type="button" title="Full screen" aria-label="Full screen"><svg viewBox="0 0 16 16"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
   </header>
 
-  <section class="module" style="--accent:var(--sage);">
-    <h2 class="module-title">Presets</h2>
-    <div class="preset-bar">
-      <button class="chip-btn" id="preset-prev" type="button" aria-label="Previous preset">&lsaquo;</button>
-      <select id="preset-select" class="preset-select" aria-label="Preset"></select>
-      <button class="chip-btn" id="preset-next" type="button" aria-label="Next preset">&rsaquo;</button>
-      <input id="preset-name" class="preset-name" type="text" maxlength="32" placeholder="Preset name" autocomplete="off" aria-label="Name for your preset">
-      <button class="chip-btn" id="preset-save" type="button">SAVE</button>
-      <button class="chip-btn" id="preset-delete" type="button">DELETE</button>
-      <span class="bar-gap"></span>
-      <button class="chip-btn" id="undo" type="button" title="Undo (Ctrl+Z)">UNDO</button>
-      <button class="chip-btn" id="redo" type="button" title="Redo (Ctrl+Shift+Z)">REDO</button>
-      <span class="bar-gap"></span>
-      <span class="chip-row" style="--accent:var(--sage)">
-        <button class="chip-btn" id="ab-a" type="button" title="Setting A">A</button>
-        <button class="chip-btn" id="ab-b" type="button" title="Setting B">B</button>
-        <button class="chip-btn" id="ab-copy" type="button" title="Copy this setting to the other one">A&rarr;B</button>
-      </span>
-      <p class="preset-status" id="preset-status" aria-live="polite"></p>
+  <div class="screen" id="screen">
+    <canvas id="eq" tabindex="0" aria-label="The EQ curve. Double-click to add a band, drag a dot to move it, scroll on it to change Q."></canvas>
+    <canvas id="meter" aria-hidden="true"></canvas>
+    <button class="range-box" id="range-box" type="button" title="Display range">12 dB</button>
+    <div class="band-panel" id="band-panel" hidden>
+      <div class="bp-col">
+        <div class="bp-title" id="bp-title">BAND 1</div>
+        <button class="bp-sel" id="bp-shape" type="button" aria-haspopup="menu" title="Shape"></button>
+        <button class="bp-sel" id="bp-slope" type="button" aria-haspopup="menu" title="Slope"></button>
+        <button class="bp-sel" id="bp-place" type="button" aria-haspopup="menu" title="Stereo placement"></button>
+      </div>
+      <div class="bp-knobs" id="band-knobs"></div>
+      <div class="bp-buttons">
+        <button class="tb" id="bp-bypass" type="button" title="Band on/off (or double-click its dot)" aria-label="Band on"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 1.5v6M4.6 3.8a5.5 5.5 0 106.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+        <button class="tb is-solo" id="bp-solo" type="button" title="Solo: hear only what this band works on" aria-label="Solo">S</button>
+        <button class="tb" id="bp-prev" type="button" title="Previous band" aria-label="Previous band">&lsaquo;</button>
+        <button class="tb" id="bp-next" type="button" title="Next band" aria-label="Next band">&rsaquo;</button>
+        <button class="tb" id="bp-delete" type="button" title="Remove the band (Delete, or Alt-click its dot)" aria-label="Remove band" style="grid-column:span 2">&#10005;</button>
+      </div>
     </div>
-  </section>
-
-  <div class="screen-bay">
-    <div class="screen-row">
-      <div class="eq-wrap"><canvas id="eq" tabindex="0" aria-label="The EQ curve. Double-click to add a band, drag a dot to move it, scroll on it to change Q."></canvas></div>
-      <canvas id="meter" aria-hidden="true"></canvas>
-    </div>
-    <div class="screen-caption"><span id="eq-info">DOUBLE-CLICK TO ADD A BAND</span><span id="eq-mode">ZERO LATENCY</span></div>
   </div>
 
-  <section class="module" style="--accent:var(--teal);" id="band-module">
-    <div class="module-head">
-      <h2 class="module-title" id="band-title">Band</h2>
-      <div class="band-strip" id="band-strip"></div>
-    </div>
-    <p class="band-empty" id="band-empty">No band selected. Double-click the display to add one, or click a dot.</p>
-    <div class="band-body" id="band-body">
-      <div class="band-left">
-        <div class="chip-row"><span class="row-label">SHAPE</span><span class="chip-row" id="shape-chips" style="flex:1" role="group" aria-label="Shape"></span></div>
-        <div class="chip-row" id="slope-row"><span class="row-label">SLOPE</span><span class="chip-row" id="slope-chips" style="flex:1" role="group" aria-label="Slope, dB per octave"></span></div>
-        <div class="chip-row"><span class="row-label">STEREO</span><span class="chip-row" id="place-chips" style="flex:1" role="group" aria-label="Stereo placement"></span></div>
-      </div>
-      <div class="band-right">
-        <div class="knob-row" id="band-knobs"></div>
-        <div class="band-actions">
-          <button class="chip-btn" id="band-bypass" type="button" title="Switch the band off (or double-click its dot)">BYPASS</button>
-          <button class="chip-btn" id="band-solo" type="button" title="Hear only what this band works on">SOLO</button>
-          <button class="chip-btn" id="band-delete" type="button" title="Remove the band (Delete, or Alt-click its dot)">DELETE</button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <div class="lower">
-    <section class="module" style="--accent:var(--coral);" id="source-module">
-      <h2 class="module-title">Source</h2>
-      <div class="chip-row" id="src-chips" role="group" aria-label="What plays through the EQ"></div>
-      <div class="chip-row">
-        <button class="chip-btn toggle-btn" id="src-play" type="button" title="Play or stop (Space)">PLAY</button>
-        <button class="chip-btn toggle-btn" id="src-load" type="button">LOAD FILE</button>
-        <input type="file" id="src-file" accept="audio/*" hidden>
-      </div>
-      <p class="src-status" id="src-status" aria-live="polite"></p>
-    </section>
-
-    <section class="module" style="--accent:var(--lavender);">
-      <h2 class="module-title">Analyzer</h2>
-      <div class="chip-row"><span class="row-label">SHOW</span><span class="chip-row" id="ana-mode" style="flex:1" role="group" aria-label="Analyzer"></span></div>
-      <div class="chip-row"><span class="row-label">RES</span><span class="chip-row" id="ana-res" style="flex:1" role="group" aria-label="Resolution"></span></div>
-      <div class="chip-row"><span class="row-label">SPEED</span><span class="chip-row" id="ana-speed" style="flex:1" role="group" aria-label="Speed"></span></div>
-      <div class="chip-row"><span class="row-label">RANGE</span><span class="chip-row" id="ana-range" style="flex:1" role="group" aria-label="Analyzer range, dB"></span></div>
-      <div class="chip-row"><span class="row-label">EQ &plusmn;</span><span class="chip-row" id="disp-range" style="flex:1" role="group" aria-label="Display range, dB"></span>
-        <button class="chip-btn toggle-btn" id="ana-tilt" type="button" title="Tilt the spectrum 4.5 dB per octave, so music looks flat">TILT</button>
-        <button class="chip-btn toggle-btn" id="ana-freeze" type="button" title="Hold the spectrum still">FREEZE</button></div>
-    </section>
-
-    <section class="module" style="--accent:var(--mustard);">
-      <h2 class="module-title">Output</h2>
-      <div class="knob-row" id="out-knobs"></div>
-      <div class="chip-row">
-        <button class="chip-btn toggle-btn" id="auto-gain" type="button" title="Keep the loudness the same while you EQ">AUTO GAIN</button>
-        <span class="src-status" id="auto-readout"></span>
-      </div>
-    </section>
-  </div>
-
-  <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
-  <p class="instructions">Press POWER and PLAY to hear the demo loop, or load a file (or drop one on the display), use your microphone or pink noise. Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q, double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Click a value to type it.</p>
+  <footer class="bar bottom">
+    <button class="tb" id="phase-btn" type="button" aria-haspopup="menu" title="Processing mode">Zero Latency</button>
+    <button class="tb" id="ana-btn" type="button" aria-haspopup="menu"><span class="dim">Analyzer:</span> <span id="ana-label">Pre+Post</span></button>
+    <span class="status hide-narrow" id="eq-info"></span>
+    <span class="spacer"></span>
+    <button class="tb" id="auto-gain" type="button" title="Keep the loudness the same while you EQ">Auto Gain</button>
+    <span class="dv" id="dv-scale" tabindex="0" role="slider" aria-label="Gain scale" title="Gain scale: drag, scroll, double-click to reset"></span>
+    <span class="dv" id="dv-gain" tabindex="0" role="slider" aria-label="Output gain" title="Output gain: drag, scroll, double-click to reset"></span>
+    <span class="dv" id="dv-pan" tabindex="0" role="slider" aria-label="Output pan" title="Output pan: drag, scroll, double-click to reset"></span>
+  </footer>
 </div>
+<p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
+<p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q, double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Click a value to type it. <kbd>Space</kbd> plays the source.</p>
+</div>
+</div>
+
+<div class="menu" id="menu" role="menu" hidden></div>
 
 <!-- Shared by the page (curves, presets) and the audio engine: the filter design.
      The VST uses the same formulas. -->
@@ -409,7 +420,14 @@ function matchSection(c, w0, out){
   var wm = Math.min(W, 0.9 * Math.PI), sm = Math.sin(wm / 2), phi1 = sm * sm, phi0 = 1 - phi1, phi2 = 4 * phi0 * phi1;
   var B2 = ((A0 * phi0 + A1 * phi1 + A2 * phi2) * analogMag2(c, wm / w0) - B0 * phi0 - B1 * phi1) / phi2;
   var sq0 = Math.sqrt(B0), sq1 = Math.sqrt(B1), Wv = (sq0 + sq1) / 2;
-  if (Wv * Wv + B2 < 0) {
+  // The fitted zeros, or the matched ones when the fit has none or puts them
+  // (almost) on the unit circle, where turning the section over would make it unstable.
+  var fitted = Wv * Wv + B2 >= 0;
+  if (fitted && c[0] > 0) {
+    var fb0 = (Wv + Math.sqrt(Wv * Wv + B2)) / 2, fb1 = (sq0 - sq1) / 2, fb2 = fb0 > 0 ? -B2 / (4 * fb0) : 0;
+    fitted = fb0 > 0 && zeroRadius(fb0, fb1, fb2) < 1 - 1e-6;
+  }
+  if (!fitted) {
     if (c[0] > 0) {
       // No fit with these poles: the zeros by the matched z-transform too
       // (always inside the unit circle, so the section can be turned over),
@@ -425,6 +443,14 @@ function matchSection(c, w0, out){
   }
   var b0 = (Wv + Math.sqrt(Wv * Wv + B2)) / 2;
   setSection(out, b0, (sq0 - sq1) / 2, b0 > 0 ? -B2 / (4 * b0) : 0, a1, a2);
+}
+
+// The largest root of b0 z^2 + b1 z + b2.
+function zeroRadius(b0, b1, b2){
+  var d = b1 * b1 - 4 * b0 * b2;
+  if (d < 0) return Math.sqrt(b2 / b0);
+  var sd = Math.sqrt(d);
+  return Math.max(Math.abs((-b1 + sd) / (2 * b0)), Math.abs((-b1 - sd) / (2 * b0)));
 }
 
 // Notch: zeros right on the unit circle (a true null), matched poles, unity at DC.
@@ -868,11 +894,10 @@ if (typeof registerProcessor === 'function') {
 
   // Band colours on the dark screen, as in the VST.
   var BAND_COLORS = ['#f0a830', '#7ec4be', '#e8846a', '#b6a5d0', '#a9c27e', '#e6cf5a', '#6fb7d6', '#e793b6', '#d2a77c', '#93d493', '#c9c39a', '#f08a7a'];
-  function bandColor(i){ return BAND_COLORS[i % BAND_COLORS.length]; }
 
   // ---------- state ----------
   var DEFAULTS = makeDefaults();
-  var UI_DEFAULTS = { anaMode: 'both', anaRes: 'high', anaSpeed: 'med', anaRange: 90, anaTilt: true, dispRange: 12, source: 'demo' };
+  var UI_DEFAULTS = { theme: 'light', anaMode: 'both', anaRes: 'high', anaSpeed: 'med', anaRange: 90, anaTilt: true, dispRange: 12, source: 'demo' };
   var STATE_KEY = 'egret-eq/state/v1', USER_KEY = 'egret-eq/presets/v1', UI_KEY = 'egret-eq/ui/v1';
   var params = clone(DEFAULTS), presetName = 'Flat', ab = { cur: 'A', A: null, B: null };
   var ui = Object.assign({}, UI_DEFAULTS);
@@ -900,6 +925,51 @@ if (typeof registerProcessor === 'function') {
   function save(){ clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 300); }
   window.addEventListener('pagehide', function(){ if (saveTimer) saveNow(); });
 
+
+  // ---------- themes: light (the default) and dark; the screen's colours ----------
+  var THEMES = {
+    light: {
+      bgTop: '#f8f4e8', bgBottom: '#efe8d6', scaleBg: 'rgba(42,36,29,0.05)', nyquist: 'rgba(42,36,29,0.08)',
+      gridMajor: 'rgba(42,36,29,0.16)', gridMinor: 'rgba(42,36,29,0.06)', zero: 'rgba(168,112,10,0.45)', hline: 'rgba(42,36,29,0.06)',
+      eqLabel: 'rgba(168,112,10,0.85)', eqLabel0: '#a8700a', anaLabel: 'rgba(42,36,29,0.4)', freqLabel: 'rgba(42,36,29,0.55)',
+      preFill: 'rgba(51,111,107,0.14)', postFill: 'rgba(42,36,29,0.07)', postLine: 'rgba(42,36,29,0.35)',
+      curve: '#2a241d', curveGlow: 'rgba(42,36,29,0.25)', dotEdge: 'rgba(42,36,29,0.55)', ring: '#2a241d', ringHover: 'rgba(42,36,29,0.4)',
+      offFill: '#f8f4e8', badgeText: '#fbf8ef', solo: '#c9a520',
+      tipBg: 'rgba(251,248,239,0.96)', tipText: '#2a241d',
+      meterBg: '#ece4cf', meterTrack: 'rgba(42,36,29,0.08)', meterLow: '#c9a35a', meterMid: '#a8700a', meterTop: '#6b4a10', meterHold: '#2a241d',
+      meterLine: 'rgba(168,112,10,0.45)', meterText: 'rgba(42,36,29,0.75)', bandDarken: 0.72
+    },
+    dark: {
+      bgTop: '#1d170c', bgBottom: '#120e06', scaleBg: 'rgba(0,0,0,0.25)', nyquist: 'rgba(0,0,0,0.4)',
+      gridMajor: 'rgba(240,168,48,0.15)', gridMinor: 'rgba(240,168,48,0.06)', zero: 'rgba(240,168,48,0.3)', hline: 'rgba(240,168,48,0.06)',
+      eqLabel: 'rgba(240,168,48,0.75)', eqLabel0: '#f0a830', anaLabel: 'rgba(242,236,217,0.38)', freqLabel: 'rgba(242,236,217,0.5)',
+      preFill: 'rgba(126,196,190,0.13)', postFill: 'rgba(242,236,217,0.08)', postLine: 'rgba(242,236,217,0.4)',
+      curve: '#f2ecd9', curveGlow: 'rgba(242,236,217,0.55)', dotEdge: 'rgba(0,0,0,0.6)', ring: '#f2ecd9', ringHover: 'rgba(242,236,217,0.45)',
+      offFill: '#171308', badgeText: '#171308', solo: '#e6cf5a',
+      tipBg: 'rgba(23,19,8,0.92)', tipText: '#f2ecd9',
+      meterBg: '#120e06', meterTrack: 'rgba(240,168,48,0.08)', meterLow: '#7a5a18', meterMid: '#f0a830', meterTop: '#f2ecd9', meterHold: '#f2ecd9',
+      meterLine: 'rgba(240,168,48,0.35)', meterText: 'rgba(242,236,217,0.75)', bandDarken: 1
+    }
+  };
+  var T = THEMES.light;
+  function applyTheme(){
+    var name = ui.theme === 'dark' ? 'dark' : 'light';
+    T = THEMES[name];
+    document.documentElement.setAttribute('data-eq-theme', name);
+    var btn = $('theme-btn');
+    btn.innerHTML = name === 'light'
+      ? '<svg viewBox="0 0 16 16"><path d="M13 9.5A5.5 5.5 0 016.5 3a5.5 5.5 0 106.5 6.5z" fill="currentColor"/></svg>'
+      : '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="currentColor"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6L13 13M13 3l-1.4 1.4M4.4 11.6L3 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+    btn.title = name === 'light' ? 'Dark theme' : 'Light theme';
+  }
+  // The band colours are made for the dark screen; on the light one, a deeper shade.
+  function bandColor(i){
+    var c = BAND_COLORS[i % BAND_COLORS.length];
+    if (T.bandDarken === 1) return c;
+    var k = T.bandDarken, r = parseInt(c.substr(1, 2), 16) * k, g = parseInt(c.substr(3, 2), 16) * k, b = parseInt(c.substr(5, 2), 16) * k;
+    return 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
+  }
+
   // ---------- audio ----------
   var ctx = null, node = null, inputBus = null, preAna = null, postAna = null, preBuf = null, postBuf = null;
   function sampleRateNow(){ return ctx ? ctx.sampleRate : 48000; }
@@ -919,7 +989,7 @@ if (typeof registerProcessor === 'function') {
     var url = 'data:application/javascript;charset=utf-8,' + encodeURIComponent(source);
     ctx.audioWorklet.addModule(url).then(function(){
       node = new AudioWorkletNode(ctx, 'egret-eq', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
-                                                    channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
+                                                     channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
       inputBus.connect(node);
       node.connect(postAna);
       node.connect(ctx.destination);
@@ -928,18 +998,19 @@ if (typeof registerProcessor === 'function') {
       if (src.playing) startSource();
     }, function(){ $('no-worklet').hidden = false; });
   }
-
+  function isPowered(){ return document.body.classList.contains('powered'); }
   function setPower(on){
     document.body.classList.toggle('powered', on);
+    $('power').classList.toggle('is-on', on);
     $('power').setAttribute('aria-pressed', on ? 'true' : 'false');
     if (on) { initAudio(); if (ctx.state === 'suspended') ctx.resume(); requestDraw(); }
     else if (ctx) ctx.suspend();
   }
   function ensurePower(){
-    if (!document.body.classList.contains('powered')) setPower(true);
+    if (!isPowered()) setPower(true);
     else if (ctx && ctx.state === 'suspended') ctx.resume();
   }
-  $('power').addEventListener('click', function(){ setPower(!document.body.classList.contains('powered')); });
+  $('power').addEventListener('click', function(){ setPower(!isPowered()); });
 
   // ---------- sources: demo loop, a file, the microphone, pink noise ----------
   var SOURCES = ['demo', 'file', 'input', 'noise'], SOURCE_LABELS = ['DEMO', 'FILE', 'INPUT', 'NOISE'];
@@ -968,7 +1039,7 @@ if (typeof registerProcessor === 'function') {
     var out = [0, 0];
     for (var bt = 0; bt < 8; bt++) {
       var t0 = bt * beat;
-      // kick on every beat, plus one on the "and" of the last
+      // kick on every beat
       (function(){ var ph = 0; add(t0, 0.45, function(t){ ph += (45 + 75 * Math.exp(-t * 30)) / fs; var v = Math.sin(2 * Math.PI * ph) * Math.exp(-t * 7) * 0.8; out[0] = v; out[1] = v; return out; }); })();
       // snare on 2 and 4
       if (bt % 2 === 1) (function(){ var hp = 0, prev = 0; add(t0, 0.3, function(t){
@@ -1046,10 +1117,17 @@ if (typeof registerProcessor === 'function') {
   }
   function setPlaying(on){
     src.playing = on;
-    if (on) { ensurePower(); startSource(); } else stopSource();
+    if (on) { pausePlayer(); ensurePower(); startSource(); } else stopSource();
     renderSource();
   }
   function setSrcStatus(text){ $('src-status').textContent = text; }
+  var srcButtons = SOURCES.map(function(s, i){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip-btn'; b.textContent = SOURCE_LABELS[i];
+    b.addEventListener('click', function(){ ui.source = s; save(); if (s === 'file' && !src.file) $('src-file').click(); if (src.playing) startSource(); renderSource(); });
+    $('src-chips').appendChild(b);
+    return b;
+  });
   function renderSource(){
     srcButtons.forEach(function(b, i){ var on = SOURCES[i] === ui.source; b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
     var play = $('src-play');
@@ -1058,13 +1136,6 @@ if (typeof registerProcessor === 'function') {
     setSrcStatus(ui.source === 'demo' ? 'Demo loop, 112 BPM' : ui.source === 'noise' ? 'Pink noise' :
                  ui.source === 'file' ? (src.fileName || 'No file yet') : 'Microphone or line in');
   }
-  var srcButtons = SOURCES.map(function(s, i){
-    var b = document.createElement('button');
-    b.type = 'button'; b.className = 'chip-btn'; b.textContent = SOURCE_LABELS[i];
-    b.addEventListener('click', function(){ ui.source = s; save(); if (s === 'file' && !src.file) $('src-file').click(); if (src.playing) startSource(); renderSource(); });
-    $('src-chips').appendChild(b);
-    return b;
-  });
   $('src-play').addEventListener('click', function(){ setPlaying(!src.playing); });
   $('src-load').addEventListener('click', function(){ $('src-file').click(); });
   $('src-file').addEventListener('change', function(e){ if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; });
@@ -1077,7 +1148,127 @@ if (typeof registerProcessor === 'function') {
       setPlaying(true);
     }, function(){ setSrcStatus('Couldn’t read ' + file.name); });
   }
-  renderSource();
+
+  // ---------- the player: tracks from music/playlist.json, or your own ----------
+  var player = { tracks: [], index: -1, audio: new Audio(), node: null, seeking: false };
+  player.audio.preload = 'auto';
+  var PLAY_ICON = '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 2.5l9 5.5-9 5.5z" fill="currentColor"/></svg>', PAUSE_ICON = '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z" fill="currentColor"/></svg>';
+  function fmtTime(t){ if (!isFinite(t)) t = 0; var m = Math.floor(t / 60), sec = Math.floor(t % 60); return m + ':' + (sec < 10 ? '0' : '') + sec; }
+  function renderPlayer(){
+    var list = $('track-list');
+    list.textContent = '';
+    player.tracks.forEach(function(t, i){
+      var li = document.createElement('li');
+      li.className = 'track' + (i === player.index ? ' is-active' : '');
+      li.innerHTML = '<span class="num"></span><span class="name"></span>';
+      li.querySelector('.num').textContent = i + 1;
+      li.querySelector('.name').textContent = t.title;
+      li.title = t.artist ? t.artist + ' — ' + t.title : t.title;
+      li.addEventListener('click', function(){ playTrack(i); });
+      list.appendChild(li);
+    });
+    $('player-empty').hidden = player.tracks.length > 0;
+    var t = player.tracks[player.index];
+    $('np-name').textContent = t ? (t.artist ? t.artist + ' — ' : '') + t.title : '—';
+    var playing = !player.audio.paused;
+    $('pl-play').innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
+    $('pl-play').setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    $('pl-play').classList.toggle('is-active', playing);
+    var credit = $('credit');
+    credit.textContent = '';
+    player.tracks.forEach(function(tr){
+      if (!tr.license) return;
+      var line = document.createElement('div');
+      line.append('“' + tr.title + '” by ' + tr.artist + ', ');
+      var a = document.createElement('a'); a.href = tr.source || '#'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = tr.license;
+      line.appendChild(a);
+      credit.appendChild(line);
+    });
+  }
+  function playTrack(i){
+    if (!player.tracks.length) return;
+    i = ((i % player.tracks.length) + player.tracks.length) % player.tracks.length;
+    ensurePower();
+    if (!player.node) { player.node = ctx.createMediaElementSource(player.audio); player.node.connect(inputBus); }
+    if (src.playing) setPlaying(false);   // one thing at a time through the EQ
+    if (i !== player.index || !player.audio.src) { player.index = i; player.audio.src = player.tracks[i].url; }
+    player.audio.play().catch(function(){});
+    renderPlayer();
+  }
+  function pausePlayer(){ if (!player.audio.paused) { player.audio.pause(); renderPlayer(); } }
+  $('pl-play').addEventListener('click', function(){ if (player.audio.paused) playTrack(player.index < 0 ? 0 : player.index); else pausePlayer(); });
+  $('pl-prev').addEventListener('click', function(){ if (player.audio.currentTime > 3) player.audio.currentTime = 0; else playTrack(player.index - 1); });
+  $('pl-next').addEventListener('click', function(){ playTrack(player.index + 1); });
+  player.audio.addEventListener('ended', function(){ playTrack(player.index + 1); });
+  player.audio.addEventListener('pause', renderPlayer);
+  player.audio.addEventListener('play', renderPlayer);
+  player.audio.addEventListener('timeupdate', function(){
+    var a = player.audio;
+    $('np-pos').textContent = fmtTime(a.currentTime); $('np-dur').textContent = fmtTime(a.duration);
+    if (!player.seeking && a.duration) $('np-seek').value = Math.round(a.currentTime / a.duration * 1000);
+  });
+  $('np-seek').addEventListener('input', function(){ player.seeking = true; });
+  $('np-seek').addEventListener('change', function(){
+    player.seeking = false;
+    if (player.audio.duration) player.audio.currentTime = $('np-seek').value / 1000 * player.audio.duration;
+  });
+  $('pl-add').addEventListener('click', function(){ $('pl-file').click(); });
+  $('pl-file').addEventListener('change', function(e){
+    var first = player.tracks.length;
+    Array.prototype.forEach.call(e.target.files, function(f){ player.tracks.push({ title: f.name.replace(/\.[^.]+$/, ''), artist: '', url: URL.createObjectURL(f) }); });
+    e.target.value = '';
+    renderPlayer();
+    if (player.tracks.length > first) playTrack(first);
+  });
+  // The tracks that come with the page, listed in music/playlist.json next to it.
+  if (location.protocol !== 'file:' && window.fetch) {
+    fetch('music/playlist.json').then(function(r){ return r.ok ? r.json() : []; }).then(function(list){
+      (list || []).forEach(function(t){
+        if (t && t.file) player.tracks.push({ title: t.title || t.file, artist: t.artist || '', url: 'music/' + t.file, license: t.license, source: t.source });
+      });
+      renderPlayer();
+    }, function(){});
+  }
+
+  // ---------- pop-up menus ----------
+  var menuEl = $('menu'), menuOpenFor = null;
+  // items: { label, checked, disabled, action } | { header } | { sep: true } | { input, value, action(text) }
+  function showMenu(anchor, items){
+    if (menuOpenFor === anchor) { closeMenu(); return; }
+    menuEl.textContent = '';
+    items.forEach(function(it){
+      var el;
+      if (it.sep) { el = document.createElement('div'); el.className = 'ms'; }
+      else if (it.header) { el = document.createElement('div'); el.className = 'mh'; el.textContent = it.header; }
+      else if (it.input) {
+        el = document.createElement('div'); el.style.padding = '4px';
+        var inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = it.input; inp.value = it.value || ''; inp.maxLength = 32;
+        inp.addEventListener('keydown', function(e){
+          e.stopPropagation();
+          if (e.key === 'Enter') { closeMenu(); it.action(inp.value.trim()); } else if (e.key === 'Escape') closeMenu();
+        });
+        el.appendChild(inp);
+        setTimeout(function(){ inp.focus(); inp.select(); }, 0);
+      } else {
+        el = document.createElement('button'); el.type = 'button'; el.className = 'mi'; el.setAttribute('role', 'menuitem');
+        el.innerHTML = '<span class="chk"></span><span class="lbl"></span>';
+        el.querySelector('.chk').textContent = it.checked ? '✓' : '';
+        el.querySelector('.lbl').textContent = it.label;
+        if (it.disabled) el.disabled = true;
+        el.addEventListener('click', function(e){ e.stopPropagation(); if (!it.keepOpen) closeMenu(); it.action && it.action(); if (it.keepOpen) showMenu.refresh && showMenu.refresh(); });
+      }
+      menuEl.appendChild(el);
+    });
+    menuEl.hidden = false;
+    var r = anchor.getBoundingClientRect(), mw = menuEl.offsetWidth, mh = menuEl.offsetHeight;
+    var x = Math.max(4, Math.min(window.innerWidth - mw - 4, r.left)), y = r.bottom + 4;
+    if (y + mh > window.innerHeight - 4) y = Math.max(4, r.top - mh - 4);
+    menuEl.style.left = x + 'px'; menuEl.style.top = y + 'px';
+    menuOpenFor = anchor;
+  }
+  function closeMenu(){ menuEl.hidden = true; menuOpenFor = null; }
+  document.addEventListener('pointerdown', function(e){ if (!menuEl.hidden && !menuEl.contains(e.target) && e.target !== menuOpenFor && !(menuOpenFor && menuOpenFor.contains(e.target))) closeMenu(); });
+  window.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menuEl.hidden) closeMenu(); });
 
   // ---------- knobs ----------
   var KNOB_DEFS = {
@@ -1090,12 +1281,12 @@ if (typeof registerProcessor === 'function') {
   };
   function fmt(def, v){
     if (def.unit === 'Hz') return fmtHz(v);
-    if (def.unit === 'dB') { var r = Math.round(v * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r).toFixed(1) + 'dB'; }
+    if (def.unit === 'dB') { var r = Math.round(v * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r).toFixed(1) + ' dB'; }
     if (def.unit === 'q') return v < 10 ? v.toFixed(2) : v.toFixed(1);
     if (def.unit === 'pan') return Math.abs(v) < 0.5 ? 'C' : (v < 0 ? 'L' : 'R') + Math.round(Math.abs(v));
     return Math.round(v) + def.unit;
   }
-  function fmtHz(v){ return v >= 10000 ? (v / 1000).toFixed(1) + 'k' : v >= 1000 ? (v / 1000).toFixed(2) + 'k' : v >= 100 ? Math.round(v) + 'Hz' : v.toFixed(1) + 'Hz'; }
+  function fmtHz(v){ return v >= 10000 ? (v / 1000).toFixed(1) + ' kHz' : v >= 1000 ? (v / 1000).toFixed(2) + ' kHz' : v >= 100 ? Math.round(v) + ' Hz' : v.toFixed(1) + ' Hz'; }
   function toT(def, v){ return def.log ? Math.log(v / def.min) / Math.log(def.max / def.min) : (v - def.min) / (def.max - def.min); }
   function fromT(def, t){
     t = Math.min(1, Math.max(0, t));
@@ -1115,12 +1306,35 @@ if (typeof registerProcessor === 'function') {
     if (m[2] === 'k' || m[2] === 'khz') v *= 1000;
     return Math.min(def.max, Math.max(def.min, v));
   }
+  // Click a value to type one: Enter or clicking away sets it, Escape keeps the old one.
+  function typeInto(readout, def, get, set, after){
+    if (readout.parentNode.querySelector('.knob-input')) return;
+    var input = document.createElement('input'), done = false;
+    input.className = 'knob-input'; input.type = 'text'; input.setAttribute('aria-label', def.label + ' value');
+    input.value = def.unit === 'pan' ? fmt(def, get()) : String(Math.round(get() * 100) / 100);
+    readout.hidden = true; readout.parentNode.insertBefore(input, readout.nextSibling);
+    input.focus(); input.select();
+    function finish(apply){
+      if (done) return;
+      done = true;
+      var v = apply ? parseKnobValue(def, input.value) : null;
+      input.remove(); readout.hidden = false;
+      if (v !== null) set(v);
+      after();
+    }
+    input.addEventListener('keydown', function(ev){
+      ev.stopPropagation();
+      if (ev.key === 'Enter') finish(true);
+      else if (ev.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', function(){ finish(true); });
+  }
   // get/set: the value the knob shows and moves (the band knobs follow the selected band).
   function buildKnob(def, get, set){
     var el = document.createElement('div');
     el.className = 'knob'; el.tabIndex = 0; el.setAttribute('role', 'slider'); el.setAttribute('aria-label', def.label);
     el.innerHTML = '<div class="knob-dial"><div class="knob-cap"><div class="knob-pointer"></div></div></div>' +
-                   '<div class="knob-label"></div><div class="knob-readout"></div>';
+                   '<div class="knob-readout"></div><div class="knob-label"></div>';
     el.querySelector('.knob-label').textContent = def.label;
     var cap = el.querySelector('.knob-cap'), readout = el.querySelector('.knob-readout');
     function render(){
@@ -1128,38 +1342,20 @@ if (typeof registerProcessor === 'function') {
       el.style.setProperty('--angle', (-135 + toT(def, v) * 270) + 'deg');
       readout.textContent = fmt(def, v); el.setAttribute('aria-valuetext', fmt(def, v));
     }
-    readout.addEventListener('click', function(e){
-      e.stopPropagation();
-      if (el.querySelector('.knob-input')) return;
-      var input = document.createElement('input'), done = false;
-      input.className = 'knob-input'; input.type = 'text'; input.setAttribute('aria-label', def.label + ' value');
-      input.value = def.unit === 'pan' ? fmt(def, get()) : String(Math.round(get() * 100) / 100);
-      readout.hidden = true; readout.parentNode.insertBefore(input, readout.nextSibling);
-      input.focus(); input.select();
-      function finish(apply){
-        if (done) return;
-        done = true;
-        var v = apply ? parseKnobValue(def, input.value) : null;
-        input.remove(); readout.hidden = false;
-        if (v !== null) { set(v); render(); }
-      }
-      input.addEventListener('keydown', function(ev){
-        ev.stopPropagation();
-        if (ev.key === 'Enter') finish(true);
-        else if (ev.key === 'Escape') finish(false);
-      });
-      input.addEventListener('blur', function(){ finish(true); });
-    });
+    readout.addEventListener('click', function(e){ e.stopPropagation(); typeInto(readout, def, get, set, render); });
     var drag = null;
-    cap.addEventListener('pointerdown', function(e){ drag = { y: e.clientY, t: toT(def, get()) }; cap.setPointerCapture(e.pointerId); });
+    cap.addEventListener('pointerdown', function(e){ drag = { y: e.clientY, t: toT(def, get()) }; cap.setPointerCapture(e.pointerId); beginGesture(); });
     cap.addEventListener('pointermove', function(e){
       if (!drag) return;
-      var fine = e.shiftKey ? 0.2 : 1;
-      drag.t += (drag.y - e.clientY) / 150 * fine; drag.y = e.clientY;
+      drag.t += (drag.y - e.clientY) / 150 * (e.shiftKey ? 0.2 : 1); drag.y = e.clientY;
       set(fromT(def, drag.t)); render();
     });
-    cap.addEventListener('pointerup', function(){ drag = null; });
+    cap.addEventListener('pointerup', function(){ drag = null; endGesture(); });
     cap.addEventListener('dblclick', function(){ set(def.def); render(); });
+    el.addEventListener('wheel', function(e){
+      e.preventDefault();
+      set(fromT(def, toT(def, get()) - e.deltaY * (e.shiftKey ? 0.0002 : 0.001))); render();
+    }, { passive: false });
     el.addEventListener('keydown', function(e){
       var d = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
       if (!d) return;
@@ -1169,58 +1365,144 @@ if (typeof registerProcessor === 'function') {
     render();
     return { el: el, render: render };
   }
+  // A value in the bottom bar: drag it up or down, scroll it, double-click to reset, click to type.
+  function buildDragValue(el, def, prefix, get, set){
+    function render(){ el.innerHTML = '<span class="dim"></span>'; el.firstChild.textContent = prefix; el.append(fmt(def, get())); el.setAttribute('aria-valuetext', fmt(def, get())); }
+    var drag = null, moved = false;
+    el.addEventListener('pointerdown', function(e){ drag = { y: e.clientY, t: toT(def, get()) }; moved = false; el.setPointerCapture(e.pointerId); beginGesture(); });
+    el.addEventListener('pointermove', function(e){
+      if (!drag) return;
+      if (Math.abs(drag.y - e.clientY) > 2) moved = true;
+      drag.t += (drag.y - e.clientY) / 200 * (e.shiftKey ? 0.2 : 1); drag.y = e.clientY;
+      set(fromT(def, drag.t)); render();
+    });
+    el.addEventListener('pointerup', function(){
+      drag = null; endGesture();
+      if (!moved) {   // a click: type a value
+        var span = document.createElement('span'); span.className = 'knob-readout'; el.textContent = ''; el.appendChild(span);
+        typeInto(span, def, get, set, render);
+      }
+    });
+    el.addEventListener('dblclick', function(){ set(def.def); render(); });
+    el.addEventListener('wheel', function(e){ e.preventDefault(); set(fromT(def, toT(def, get()) - e.deltaY * (e.shiftKey ? 0.0002 : 0.001))); render(); }, { passive: false });
+    el.addEventListener('keydown', function(e){
+      var d = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      e.preventDefault(); set(fromT(def, toT(def, get()) + d * (e.shiftKey ? 0.004 : 0.02))); render();
+    });
+    render();
+    return render;
+  }
+
   var knobRenders = [];
   function bandParam(name){ return bandKey(selected, name); }
   [['freq', 'Freq'], ['gain', 'Gain'], ['q', 'Q']].forEach(function(k){
     var def = KNOB_DEFS[k[0]];
     var kn = buildKnob(def, function(){ return selected < 0 ? def.def : params[bandParam(k[1])]; },
                             function(v){ if (selected >= 0) { params[bandParam(k[1])] = v; changed(); } });
-    kn.el.style.setProperty('--accent', 'var(--teal)');
     kn.el.dataset.knob = k[0];
     $('band-knobs').appendChild(kn.el); knobRenders.push(kn.render);
   });
-  ['gainScale', 'outGain', 'outPan'].forEach(function(id){
-    var kn = buildKnob(KNOB_DEFS[id], function(){ return params[id]; }, function(v){ params[id] = v; changed(); });
-    kn.el.style.setProperty('--accent', 'var(--mustard)');
-    $('out-knobs').appendChild(kn.el); knobRenders.push(kn.render);
-  });
+  knobRenders.push(buildDragValue($('dv-scale'), KNOB_DEFS.gainScale, 'Scale', function(){ return params.gainScale; }, function(v){ params.gainScale = v; changed(); }));
+  knobRenders.push(buildDragValue($('dv-gain'), KNOB_DEFS.outGain, 'Out', function(){ return params.outGain; }, function(v){ params.outGain = v; changed(); }));
+  knobRenders.push(buildDragValue($('dv-pan'), KNOB_DEFS.outPan, 'Pan', function(){ return params.outPan; }, function(v){ params.outPan = v; changed(); }));
 
-  // ---------- chip rows ----------
-  function chipRow(boxId, values, labels, isOn, pick){
-    var buttons = values.map(function(v, i){
-      var b = document.createElement('button');
-      b.type = 'button'; b.className = 'chip-btn'; b.textContent = labels[i];
-      b.addEventListener('click', function(){ pick(v); });
-      $(boxId).appendChild(b);
-      return b;
-    });
-    return function(){ buttons.forEach(function(b, i){ var on = isOn(values[i]); b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }); };
-  }
+  // ---------- the band panel ----------
   function setBand(name, v){ if (selected < 0) return; params[bandParam(name)] = v; changed(); }
-  var chipRenders = [
-    chipRow('shape-chips', SHAPES, SHAPE_LABELS, function(v){ return selected >= 0 && params[bandParam('Shape')] === v; }, function(v){ setBand('Shape', v); }),
-    chipRow('slope-chips', SLOPES, SLOPES.map(String), function(v){ return selected >= 0 && params[bandParam('Slope')] === v; }, function(v){ setBand('Slope', v); }),
-    chipRow('place-chips', PLACEMENTS, PLACEMENT_LABELS, function(v){ return selected >= 0 && params[bandParam('Place')] === v; }, function(v){ setBand('Place', v); }),
-    chipRow('ana-mode', ['off', 'pre', 'post', 'both'], ['OFF', 'PRE', 'POST', 'BOTH'], function(v){ return ui.anaMode === v; }, function(v){ ui.anaMode = v; uiChanged(); }),
-    chipRow('ana-res', ['low', 'med', 'high', 'max'], ['LOW', 'MED', 'HIGH', 'MAX'], function(v){ return ui.anaRes === v; }, function(v){ ui.anaRes = v; uiChanged(); }),
-    chipRow('ana-speed', ['vfast', 'fast', 'med', 'slow', 'vslow'], ['V.FAST', 'FAST', 'MED', 'SLOW', 'V.SLOW'], function(v){ return ui.anaSpeed === v; }, function(v){ ui.anaSpeed = v; uiChanged(); }),
-    chipRow('ana-range', [60, 90, 120], ['60', '90', '120'], function(v){ return ui.anaRange === v; }, function(v){ ui.anaRange = v; uiChanged(); }),
-    chipRow('disp-range', [3, 6, 12, 30], ['3', '6', '12', '30'], function(v){ return ui.dispRange === v; }, function(v){ ui.dispRange = v; uiChanged(); })
-  ];
+  var SLOPE_LABELS = SLOPES.map(function(s){ return s + ' dB/oct'; });
+  $('bp-shape').addEventListener('click', function(){
+    showMenu($('bp-shape'), SHAPES.map(function(s, i){ return { label: SHAPE_LABELS[i], checked: params[bandParam('Shape')] === s, action: function(){ setBand('Shape', s); } }; }));
+  });
+  $('bp-slope').addEventListener('click', function(){
+    showMenu($('bp-slope'), SLOPES.map(function(s, i){ return { label: SLOPE_LABELS[i], checked: params[bandParam('Slope')] === s, action: function(){ setBand('Slope', s); } }; }));
+  });
+  $('bp-place').addEventListener('click', function(){
+    var names = ['Stereo', 'Left', 'Right', 'Mid', 'Side'];
+    showMenu($('bp-place'), PLACEMENTS.map(function(s, i){ return { label: names[i], checked: params[bandParam('Place')] === s, action: function(){ setBand('Place', s); } }; }));
+  });
+  $('bp-bypass').addEventListener('click', function(){ if (selected >= 0) setBand('On', !params[bandParam('On')]); });
+  $('bp-solo').addEventListener('click', function(){ if (selected >= 0) { solo = solo === selected ? -1 : selected; sendParams(); renderAll(); } });
+  $('bp-delete').addEventListener('click', function(){ deleteBand(selected); });
+  function stepBand(d){
+    var used = [];
+    for (var i = 0; i < MAX_BANDS; i++) if (params[bandKey(i, 'Used')]) used.push(i);
+    if (!used.length) return;
+    var k = used.indexOf(selected);
+    select(used[((k < 0 ? 0 : k + d) % used.length + used.length) % used.length]);
+  }
+  $('bp-prev').addEventListener('click', function(){ stepBand(-1); });
+  $('bp-next').addEventListener('click', function(){ stepBand(1); });
+
+  function renderBandPanel(){
+    var panel = $('band-panel'), has = selected >= 0 && params[bandKey(selected, 'Used')];
+    panel.hidden = !has;
+    if (!has) return;
+    var shape = params[bandParam('Shape')], c = bandColor(selected);
+    panel.style.setProperty('--band', c);
+    $('bp-title').textContent = 'BAND ' + (selected + 1);
+    $('bp-shape').textContent = SHAPE_LABELS[SHAPES.indexOf(shape)];
+    $('bp-slope').textContent = shapeHasSlope(shape) ? params[bandParam('Slope')] + ' dB/oct' : '—';
+    $('bp-slope').disabled = !shapeHasSlope(shape);
+    $('bp-place').textContent = { stereo: 'Stereo', left: 'Left', right: 'Right', mid: 'Mid', side: 'Side' }[params[bandParam('Place')]];
+    document.querySelector('[data-knob="gain"]').classList.toggle('is-disabled', !shapeHasGain(shape));
+    document.querySelector('[data-knob="q"]').classList.toggle('is-disabled', !shapeHasQ(shape));
+    var on = params[bandParam('On')];
+    $('bp-bypass').classList.toggle('is-on', on); $('bp-bypass').setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('bp-solo').classList.toggle('is-on', solo === selected); $('bp-solo').disabled = !shapeCanSolo(shape);
+    $('bp-solo').setAttribute('aria-pressed', solo === selected ? 'true' : 'false');
+    placeBandPanel();
+  }
+  // Under the band, like Pro-Q's: centred on its dot, or at the top when the dot is low.
+  function placeBandPanel(){
+    var panel = $('band-panel');
+    if (panel.hidden || !view.w) return;
+    var p = nodePos(selected), pw = panel.offsetWidth, ph = panel.offsetHeight;
+    var x = Math.max(8, Math.min(view.plotW - pw - 8, p.x - pw / 2));
+    panel.style.left = x + 'px';
+    if (p.y > view.h - view.bottom - ph - 30) { panel.style.top = '34px'; panel.style.bottom = 'auto'; }
+    else { panel.style.top = 'auto'; panel.style.bottom = (view.bottom + 8) + 'px'; }
+  }
+
+  // ---------- top and bottom bars ----------
+  $('range-box').addEventListener('click', function(){
+    showMenu($('range-box'), [{ header: 'Display range' }].concat([3, 6, 12, 30].map(function(r){ return { label: '±' + r + ' dB', checked: ui.dispRange === r, action: function(){ ui.dispRange = r; uiChanged(); } }; })));
+  });
+  $('phase-btn').addEventListener('click', function(){
+    showMenu($('phase-btn'), [{ header: 'Processing mode' }, { label: 'Zero Latency', checked: true, action: function(){} },
+      { label: 'Natural Phase (coming)', disabled: true }, { label: 'Linear Phase (coming)', disabled: true }]);
+  });
+  function anaMenu(){
+    var pre = ui.anaMode === 'pre' || ui.anaMode === 'both', post = ui.anaMode === 'post' || ui.anaMode === 'both';
+    function setMode(p, q){ ui.anaMode = p && q ? 'both' : p ? 'pre' : q ? 'post' : 'off'; uiChanged(); }
+    var items = [{ header: 'Show' },
+      { label: 'Pre (input)', checked: pre, action: function(){ setMode(!pre, post); } },
+      { label: 'Post (output)', checked: post, action: function(){ setMode(pre, !post); } },
+      { sep: true }, { header: 'Resolution' }];
+    [['low', 'Low'], ['med', 'Medium'], ['high', 'High'], ['max', 'Maximum']].forEach(function(o){ items.push({ label: o[1], checked: ui.anaRes === o[0], action: function(){ ui.anaRes = o[0]; uiChanged(); } }); });
+    items.push({ header: 'Speed' });
+    [['vfast', 'Very fast'], ['fast', 'Fast'], ['med', 'Medium'], ['slow', 'Slow'], ['vslow', 'Very slow']].forEach(function(o){ items.push({ label: o[1], checked: ui.anaSpeed === o[0], action: function(){ ui.anaSpeed = o[0]; uiChanged(); } }); });
+    items.push({ header: 'Range' });
+    [60, 90, 120].forEach(function(r){ items.push({ label: r + ' dB', checked: ui.anaRange === r, action: function(){ ui.anaRange = r; uiChanged(); } }); });
+    items.push({ sep: true },
+      { label: 'Tilt 4.5 dB/oct', checked: ui.anaTilt, action: function(){ ui.anaTilt = !ui.anaTilt; uiChanged(); } },
+      { label: 'Freeze', checked: freeze, action: function(){ freeze = !freeze; renderAll(); } });
+    showMenu($('ana-btn'), items);
+  }
+  $('ana-btn').addEventListener('click', anaMenu);
   var freeze = false;
-  $('ana-tilt').addEventListener('click', function(){ ui.anaTilt = !ui.anaTilt; uiChanged(); });
-  $('ana-freeze').addEventListener('click', function(){ freeze = !freeze; renderToggles(); });
   $('auto-gain').addEventListener('click', function(){ params.autoGain = !params.autoGain; changed(); });
-  $('band-bypass').addEventListener('click', function(){ if (selected >= 0) setBand('On', !params[bandParam('On')]); });
-  $('band-solo').addEventListener('click', function(){ if (selected >= 0) { solo = solo === selected ? -1 : selected; sendParams(); renderAll(); } });
-  $('band-delete').addEventListener('click', function(){ deleteBand(selected); });
-  function renderToggles(){
-    [['ana-tilt', ui.anaTilt], ['ana-freeze', freeze], ['auto-gain', params.autoGain]].forEach(function(t){
-      var b = $(t[0]); b.classList.toggle('is-active', !!t[1]); b.setAttribute('aria-pressed', t[1] ? 'true' : 'false');
-    });
-    $('ana-tilt').style.setProperty('--accent', 'var(--lavender)'); $('ana-freeze').style.setProperty('--accent', 'var(--lavender)');
-    $('auto-gain').style.setProperty('--accent', 'var(--mustard)');
-    $('auto-readout').textContent = params.autoGain ? fmt(KNOB_DEFS.outGain, autoGainDb(params, sampleRateNow())) : '';
+  $('fullscreen').addEventListener('click', function(){
+    var pl = $('plugin');
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (pl.requestFullscreen) pl.requestFullscreen();
+  });
+  document.addEventListener('fullscreenchange', function(){ setTimeout(fitEq, 50); });
+  function renderBars(){
+    $('ana-label').textContent = { off: 'Off', pre: 'Pre', post: 'Post', both: 'Pre+Post' }[ui.anaMode] + (freeze ? ' (frozen)' : '');
+    $('range-box').textContent = ui.dispRange + ' dB';
+    var ag = $('auto-gain');
+    ag.classList.toggle('is-on', params.autoGain); ag.setAttribute('aria-pressed', params.autoGain ? 'true' : 'false');
+    ag.textContent = params.autoGain ? 'Auto Gain ' + fmt(KNOB_DEFS.outGain, autoGainDb(params, sampleRateNow())) : 'Auto Gain';
   }
   function uiChanged(){ applyAnalyzer(); save(); renderAll(); }
 
@@ -1228,7 +1510,7 @@ if (typeof registerProcessor === 'function') {
   function usedCount(){ var n = 0; for (var i = 0; i < MAX_BANDS; i++) if (params[bandKey(i, 'Used')]) n++; return n; }
   function addBand(freq, gain, shape){
     for (var i = 0; i < MAX_BANDS; i++) if (!params[bandKey(i, 'Used')]) break;
-    if (i === MAX_BANDS) { setStatus('All 24 bands are in use'); return -1; }
+    if (i === MAX_BANDS) { setInfoText('All 24 bands are in use'); return -1; }
     params[bandKey(i, 'Used')] = true; params[bandKey(i, 'On')] = true; params[bandKey(i, 'Shape')] = shape;
     params[bandKey(i, 'Freq')] = freq; params[bandKey(i, 'Gain')] = shapeHasGain(shape) ? gain : 0;
     params[bandKey(i, 'Q')] = shape === 'bell' ? 1 : 0.71; params[bandKey(i, 'Slope')] = shape === 'lowcut' || shape === 'highcut' ? 24 : 12;
@@ -1240,130 +1522,71 @@ if (typeof registerProcessor === 'function') {
     if (i < 0 || !params[bandKey(i, 'Used')]) return;
     ['Used', 'On', 'Shape', 'Freq', 'Gain', 'Q', 'Slope', 'Place'].forEach(function(n){ params[bandKey(i, n)] = DEFAULTS[bandKey(i, n)]; });
     if (solo === i) solo = -1;
-    if (selected === i) { selected = -1; for (var k = 0; k < MAX_BANDS; k++) if (params[bandKey(k, 'Used')]) { selected = k; break; } }
+    if (selected === i) selected = -1;
     changed();
   }
   function select(i){ selected = i; if (solo >= 0 && solo !== i) solo = -1; sendParams(); renderAll(); }
 
-  var stripEl = $('band-strip');
-  function renderStrip(){
-    stripEl.textContent = '';
-    for (var i = 0; i < MAX_BANDS; i++) {
-      if (!params[bandKey(i, 'Used')]) continue;
-      (function(i){
-        var b = document.createElement('button');
-        b.type = 'button'; b.className = 'band-chip'; b.style.setProperty('--c', bandColor(i));
-        b.innerHTML = '<span class="dot"></span>' + (i + 1);
-        b.classList.toggle('is-active', i === selected);
-        b.classList.toggle('is-off', !params[bandKey(i, 'On')]);
-        b.setAttribute('aria-label', 'Band ' + (i + 1));
-        b.addEventListener('click', function(){ select(i); });
-        stripEl.appendChild(b);
-      })(i);
-    }
-    var add = document.createElement('button');
-    add.type = 'button'; add.className = 'band-chip'; add.textContent = '+'; add.title = 'Add a band';
-    add.style.setProperty('--c', 'var(--teal)');
-    add.addEventListener('click', function(){ addBand(1000, 0, 'bell'); });
-    stripEl.appendChild(add);
-  }
-  function renderBand(){
-    var has = selected >= 0 && params[bandKey(selected, 'Used')];
-    $('band-empty').hidden = has; $('band-body').hidden = !has;
-    $('band-title').textContent = has ? 'Band ' + (selected + 1) : 'Band';
-    $('band-module').style.setProperty('--accent', has ? bandColorInk(selected) : 'var(--teal)');
-    if (!has) return;
-    var shape = params[bandParam('Shape')];
-    $('slope-row').classList.toggle('is-disabled', !shapeHasSlope(shape));
-    document.querySelector('[data-knob="gain"]').classList.toggle('is-disabled', !shapeHasGain(shape));
-    document.querySelector('[data-knob="q"]').classList.toggle('is-disabled', !shapeHasQ(shape));
-    var on = params[bandParam('On')];
-    $('band-bypass').classList.toggle('is-active', !on); $('band-bypass').setAttribute('aria-pressed', on ? 'false' : 'true');
-    $('band-solo').classList.toggle('is-active', solo === selected); $('band-solo').disabled = !shapeCanSolo(shape);
-    $('band-solo').setAttribute('aria-pressed', solo === selected ? 'true' : 'false');
-  }
-  // The band colours are for the dark screen; on the light panel a darker one reads better.
-  function bandColorInk(i){
-    var c = bandColor(i), r = parseInt(c.substr(1, 2), 16), g = parseInt(c.substr(3, 2), 16), b = parseInt(c.substr(5, 2), 16);
-    return 'rgb(' + Math.round(r * 0.62) + ',' + Math.round(g * 0.62) + ',' + Math.round(b * 0.62) + ')';
-  }
-
   function renderAll(){
     knobRenders.forEach(function(r){ r(); });
-    chipRenders.forEach(function(r){ r(); });
-    renderToggles(); renderStrip(); renderBand();
-    $('bands-readout').textContent = usedCount();
-    renderUndo(); renderAB();
+    renderBandPanel(); renderBars(); renderUndo(); renderAB();
     invalidateCurves(); requestDraw();
   }
 
   // Every change: tell the engine, mark the preset edited, remember it for UNDO.
   function changed(){
     sendParams(); save(); scheduleCommit();
-    if (presetName && presetName.slice(-9) !== ' (edited)') { presetName += ' (edited)'; renderPresetSelect(); }
+    if (presetName && presetName.slice(-9) !== ' (edited)') presetName += ' (edited)';
+    renderPresetName();
     renderAll();
   }
 
   // ---------- undo / redo ----------
-  var undoStack = [], redoStack = [], committed = clone(params), undoTimer = null, dragging = false;
+  var undoStack = [], redoStack = [], committed = clone(params), undoTimer = null, gestures = 0;
+  function beginGesture(){ gestures++; }
+  function endGesture(){ gestures = Math.max(0, gestures - 1); if (!gestures) commitUndo(); }
   function scheduleCommit(){ clearTimeout(undoTimer); undoTimer = setTimeout(commitUndo, 400); }
   function commitUndo(){
     clearTimeout(undoTimer); undoTimer = null;
-    if (dragging) { scheduleCommit(); return; }
+    if (gestures) { scheduleCommit(); return; }
     if (same(committed, params)) return;
     undoStack.push(committed); if (undoStack.length > 100) undoStack.shift();
     redoStack = []; committed = clone(params); renderUndo();
   }
-  function restore(p){ params = clone(p); committed = clone(p); if (selected >= 0 && !params[bandKey(selected, 'Used')]) selected = -1; if (solo >= 0 && !params[bandKey(solo, 'Used')]) solo = -1; sendParams(); save(); renderAll(); }
+  function restore(p){
+    params = clone(p); committed = clone(p);
+    if (selected >= 0 && !params[bandKey(selected, 'Used')]) selected = -1;
+    if (solo >= 0 && !params[bandKey(solo, 'Used')]) solo = -1;
+    sendParams(); save(); renderAll();
+  }
   function undo(){ if (undoTimer) commitUndo(); if (!undoStack.length) return; redoStack.push(clone(params)); restore(undoStack.pop()); }
   function redo(){ if (undoTimer) commitUndo(); if (!redoStack.length) return; undoStack.push(clone(params)); restore(redoStack.pop()); }
   function renderUndo(){ $('undo').disabled = !undoStack.length && !undoTimer; $('redo').disabled = !redoStack.length; }
   $('undo').addEventListener('click', undo); $('redo').addEventListener('click', redo);
 
   // ---------- A / B ----------
-  function renderAB(){
-    var other = ab.cur === 'A' ? 'B' : 'A';
-    $('ab-a').classList.toggle('is-active', ab.cur === 'A'); $('ab-b').classList.toggle('is-active', ab.cur === 'B');
-    $('ab-a').setAttribute('aria-pressed', ab.cur === 'A' ? 'true' : 'false'); $('ab-b').setAttribute('aria-pressed', ab.cur === 'B' ? 'true' : 'false');
-    $('ab-copy').innerHTML = ab.cur + '&rarr;' + other;
-  }
-  function switchAB(to){
-    if (ab.cur === to) return;
+  function renderAB(){ $('ab-cur').textContent = ab.cur; $('ab-copy').textContent = 'Copy ' + ab.cur + '→' + (ab.cur === 'A' ? 'B' : 'A'); }
+  $('ab').addEventListener('click', function(){
+    var to = ab.cur === 'A' ? 'B' : 'A';
     if (undoTimer) commitUndo();
     ab[ab.cur] = clone(params);
     ab.cur = to;
     var next = ab[to] || clone(params);
     undoStack.push(clone(params)); redoStack = [];
     restore(next);
-  }
-  $('ab-a').addEventListener('click', function(){ switchAB('A'); });
-  $('ab-b').addEventListener('click', function(){ switchAB('B'); });
-  $('ab-copy').addEventListener('click', function(){ var other = ab.cur === 'A' ? 'B' : 'A'; ab[other] = clone(params); save(); setStatus('Copied ' + ab.cur + ' to ' + other); });
+  });
+  $('ab-copy').addEventListener('click', function(){ var other = ab.cur === 'A' ? 'B' : 'A'; ab[other] = clone(params); save(); setInfoText('Copied ' + ab.cur + ' to ' + other); });
 
   // ---------- presets ----------
-  var presetSelect = $('preset-select'), presetNameInput = $('preset-name');
-  function setStatus(text){ $('preset-status').textContent = text; }
   function storeUser(){ try { localStorage.setItem(USER_KEY, JSON.stringify(userPresets)); return true; } catch (err) { return false; } }
   function allPresetKeys(){
     return FACTORY_PRESETS.map(function(p){ return 'f:' + p[0]; }).concat(Object.keys(userPresets).sort().map(function(n){ return 'u:' + n; }));
   }
-  function renderPresetSelect(){
-    presetSelect.textContent = '';
-    var factory = document.createElement('optgroup'); factory.label = 'Factory';
-    FACTORY_PRESETS.forEach(function(p){ factory.appendChild(new Option(p[0], 'f:' + p[0])); });
-    presetSelect.appendChild(factory);
-    var names = Object.keys(userPresets).sort();
-    if (names.length) {
-      var mine = document.createElement('optgroup'); mine.label = 'Your presets';
-      names.forEach(function(n){ mine.appendChild(new Option(n, 'u:' + n)); });
-      presetSelect.appendChild(mine);
-    }
-    var value = userPresets[presetName] ? 'u:' + presetName
-              : FACTORY_PRESETS.some(function(p){ return p[0] === presetName; }) ? 'f:' + presetName : '';
-    if (!value) { presetSelect.appendChild(new Option(presetName || '—', 'x:')); value = 'x:'; }
-    presetSelect.value = value;
-    $('preset-delete').disabled = !userPresets[presetName];
+  function currentPresetKey(){
+    var base = presetName.replace(/ \(edited\)$/, '');
+    return userPresets[base] ? 'u:' + base : FACTORY_PRESETS.some(function(p){ return p[0] === base; }) ? 'f:' + base : '';
   }
+  function renderPresetName(){ $('preset-name').textContent = presetName || '—'; }
   function loadPreset(key){
     var name = key.slice(2), p;
     if (key.indexOf('f:') === 0) { var f = FACTORY_PRESETS.filter(function(x){ return x[0] === name; })[0]; if (f) p = presetParams(f[1]); }
@@ -1373,42 +1596,48 @@ if (typeof registerProcessor === 'function') {
     undoStack.push(clone(params)); redoStack = [];
     presetName = name; solo = -1; selected = -1;
     for (var i = 0; i < MAX_BANDS; i++) if (p[bandKey(i, 'Used')]) { selected = i; break; }
-    restore(p); renderPresetSelect(); saveNow(); setStatus('');
+    restore(p); renderPresetName(); saveNow();
   }
-  presetSelect.addEventListener('change', function(){ if (presetSelect.value !== 'x:') loadPreset(presetSelect.value); });
   function stepPreset(d){
-    var keys = allPresetKeys(), i = keys.indexOf(presetSelect.value);
+    var keys = allPresetKeys(), i = keys.indexOf(currentPresetKey());
     loadPreset(keys[((i < 0 ? 0 : i + d) % keys.length + keys.length) % keys.length]);
   }
   $('preset-prev').addEventListener('click', function(){ stepPreset(-1); });
   $('preset-next').addEventListener('click', function(){ stepPreset(1); });
-  function savePreset(){
+  function savePreset(name){
     var base = presetName.replace(/ \(edited\)$/, '');
-    var name = presetNameInput.value.trim() || (userPresets[base] ? base : 'My preset ' + (Object.keys(userPresets).length + 1));
+    name = name || (userPresets[base] ? base : 'My preset ' + (Object.keys(userPresets).length + 1));
     if (FACTORY_PRESETS.some(function(p){ return p[0] === name; })) name += ' (mine)';
     var existed = !!userPresets[name];
     userPresets[name] = clone(params);
     var stored = storeUser();
-    presetName = name; presetNameInput.value = '';
-    renderPresetSelect(); saveNow();
-    setStatus(!stored ? 'Saved for this session only (browser storage is unavailable)' : (existed ? 'Updated “' : 'Saved “') + name + '”');
+    presetName = name; renderPresetName(); saveNow();
+    setInfoText(!stored ? 'Saved for this session only (browser storage is unavailable)' : (existed ? 'Updated “' : 'Saved “') + name + '”');
   }
-  $('preset-save').addEventListener('click', savePreset);
-  presetNameInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); savePreset(); } });
-  $('preset-delete').addEventListener('click', function(){
-    var name = presetName;
-    if (!userPresets[name] || !window.confirm('Delete your preset “' + name + '”?')) return;
-    delete userPresets[name]; storeUser();
-    loadPreset('f:Flat');
-    setStatus('Deleted “' + name + '”');
+  $('preset-btn').addEventListener('click', function(){
+    var cur = currentPresetKey(), items = [{ header: 'Factory' }];
+    FACTORY_PRESETS.forEach(function(p){ items.push({ label: p[0], checked: cur === 'f:' + p[0], action: function(){ loadPreset('f:' + p[0]); } }); });
+    var names = Object.keys(userPresets).sort();
+    if (names.length) {
+      items.push({ header: 'Your presets' });
+      names.forEach(function(n){ items.push({ label: n, checked: cur === 'u:' + n, action: function(){ loadPreset('u:' + n); } }); });
+    }
+    items.push({ sep: true }, { header: 'Save as' }, { input: 'Preset name, then Enter', value: cur.indexOf('u:') === 0 ? cur.slice(2) : '', action: savePreset });
+    if (cur.indexOf('u:') === 0) items.push({ label: 'Delete “' + cur.slice(2) + '”', action: function(){
+      var name = cur.slice(2);
+      if (!window.confirm('Delete your preset “' + name + '”?')) return;
+      delete userPresets[name]; storeUser(); loadPreset('f:Flat'); setInfoText('Deleted “' + name + '”');
+    } });
+    showMenu($('preset-btn'), items);
   });
 
   // ---------- the display ----------
   var eqCanvas = $('eq'), eg = eqCanvas.getContext('2d');
-  var view = { w: 0, h: 0, dpr: 1, top: 8, bottom: 18 };
+  var SCALE_W = 58;   // the dB scales on the right
+  var view = { w: 0, h: 0, plotW: 0, dpr: 1, top: 10, bottom: 20 };
   var LOG_MIN = Math.log(FREQ_MIN), LOG_SPAN = Math.log(FREQ_MAX / FREQ_MIN);
-  function fx(f){ return (Math.log(f) - LOG_MIN) / LOG_SPAN * view.w; }
-  function xf(x){ return Math.exp(LOG_MIN + x / view.w * LOG_SPAN); }
+  function fx(f){ return (Math.log(f) - LOG_MIN) / LOG_SPAN * view.plotW; }
+  function xf(x){ return Math.exp(LOG_MIN + x / view.plotW * LOG_SPAN); }
   function plotH(){ return view.h - view.top - view.bottom; }
   function gy(db){ var R = ui.dispRange; return view.top + (R - db) / (2 * R) * plotH(); }
   function yg(y){ var R = ui.dispRange; return R - (y - view.top) / plotH() * 2 * R; }
@@ -1428,14 +1657,14 @@ if (typeof registerProcessor === 'function') {
   function fitEq(){
     var dpr = window.devicePixelRatio || 1, r = eqCanvas.getBoundingClientRect();
     if (!r.width) return;
-    view.dpr = dpr; view.w = r.width; view.h = r.height;
+    view.dpr = dpr; view.w = r.width; view.h = r.height; view.plotW = r.width - SCALE_W;
     eqCanvas.width = Math.round(r.width * dpr); eqCanvas.height = Math.round(r.height * dpr);
     var mr = meterCanvas.getBoundingClientRect();
     meterCanvas.width = Math.round(mr.width * dpr); meterCanvas.height = Math.round(mr.height * dpr);
-    colFs = 0; invalidateCurves(); requestDraw();
+    colFs = 0; invalidateCurves(); placeBandPanel(); requestDraw();
   }
   function prepareColumns(){
-    var fs = sampleRateNow(), n = Math.max(2, Math.round(view.w));
+    var fs = sampleRateNow(), n = Math.max(2, Math.round(view.plotW));
     if (n === cols && fs === colFs) return;
     cols = n; colFs = fs;
     colCos = new Float64Array(n); colSin = new Float64Array(n); colCos2 = new Float64Array(n); colSin2 = new Float64Array(n);
@@ -1490,112 +1719,128 @@ if (typeof registerProcessor === 'function') {
     preBuf.fill(-200); postBuf.fill(-200);
   }
   function spectrumPath(buf, close){
-    var fs = sampleRateNow(), binHz = fs / (buf.length * 2), step = 2, pts = [];
-    for (var x = 0; x <= view.w; x += step) {
+    var fs = sampleRateNow(), binHz = fs / (buf.length * 2), step = 2, pts = [], bottom = view.h - view.bottom;
+    for (var x = 0; x <= view.plotW; x += step) {
       var f0 = xf(x - step / 2), f1 = xf(x + step / 2), k0 = f0 / binHz, k1 = f1 / binHz, v;
       if (f0 >= fs / 2) break;
       if (k1 - k0 < 1) { var kc = Math.min(buf.length - 2, (k0 + k1) / 2), i0 = Math.floor(kc), fr = kc - i0; v = buf[i0] * (1 - fr) + buf[i0 + 1] * fr; }
       else { v = -200; for (var k = Math.ceil(k0); k <= Math.min(buf.length - 1, Math.floor(k1)); k++) if (buf[k] > v) v = buf[k]; }
       v += ANA_CAL + (ui.anaTilt ? 4.5 * Math.log2(xf(x) / 1000) : 0);
-      pts.push(x, Math.min(view.h - view.bottom, Math.max(view.top, ay(v))));
+      pts.push(x, Math.min(bottom, Math.max(view.top, ay(v))));
     }
     eg.beginPath();
-    eg.moveTo(pts[0], view.h - view.bottom);
+    eg.moveTo(pts[0], bottom);
     for (var j = 0; j < pts.length; j += 2) eg.lineTo(pts[j], pts[j + 1]);
-    eg.lineTo(pts[pts.length - 2], view.h - view.bottom);
+    eg.lineTo(pts[pts.length - 2], bottom);
     if (close) eg.closePath();
   }
 
-  var hover = -1, hoverPos = null, drag = null;
+  var hover = -1, drag = null;
+  var PLACE_BADGE = { left: 'L', right: 'R', mid: 'M', side: 'S' };
   function drawEq(){
     if (!view.w) return;
     if (!curvesValid) computeCurves();
-    var dpr = view.dpr, W = view.w, H = view.h, fs = sampleRateNow(), R = ui.dispRange;
+    var dpr = view.dpr, W = view.w, PW = view.plotW, H = view.h, fs = sampleRateNow(), R = ui.dispRange, bottom = H - view.bottom;
     eg.setTransform(dpr, 0, 0, dpr, 0, 0);
-    eg.fillStyle = '#171308'; eg.fillRect(0, 0, W, H);
+    var bg = eg.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, T.bgTop); bg.addColorStop(1, T.bgBottom);
+    eg.fillStyle = bg; eg.fillRect(0, 0, W, H);
+    eg.fillStyle = T.scaleBg; eg.fillRect(PW, 0, W - PW, H);
     // above Nyquist: nothing to hear
     var xn = fx(fs / 2);
-    if (xn < W) { eg.fillStyle = 'rgba(0,0,0,0.45)'; eg.fillRect(xn, 0, W - xn, H); }
+    if (xn < PW) { eg.fillStyle = T.nyquist; eg.fillRect(xn, 0, PW - xn, H); }
     // grid
     eg.lineWidth = 1;
     [20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000].forEach(function(f){
       var major = [100, 1000, 10000].indexOf(f) >= 0, x = Math.round(fx(f)) + 0.5;
-      eg.strokeStyle = major ? 'rgba(240,168,48,0.16)' : 'rgba(240,168,48,0.07)';
-      eg.beginPath(); eg.moveTo(x, view.top); eg.lineTo(x, H - view.bottom); eg.stroke();
+      eg.strokeStyle = major ? T.gridMajor : T.gridMinor;
+      eg.beginPath(); eg.moveTo(x, 0); eg.lineTo(x, bottom); eg.stroke();
     });
-    var step = { 3: 1, 6: 2, 12: 3, 30: 6 }[R];
+    var step = { 3: 1, 6: 1, 12: 1, 30: 5 }[R], labelStep = { 3: 1, 6: 1, 12: 2, 30: 5 }[R];
     for (var d = -R; d <= R + 1e-9; d += step) {
       var y = Math.round(gy(d)) + 0.5;
-      eg.strokeStyle = d === 0 ? 'rgba(240,168,48,0.32)' : 'rgba(240,168,48,0.08)';
-      eg.beginPath(); eg.moveTo(0, y); eg.lineTo(W, y); eg.stroke();
+      eg.strokeStyle = d === 0 ? T.zero : T.hline;
+      eg.beginPath(); eg.moveTo(0, y); eg.lineTo(PW, y); eg.stroke();
     }
-    eg.font = '500 9px "IBM Plex Mono", monospace'; eg.textBaseline = 'middle';
-    eg.fillStyle = 'rgba(240,168,48,0.5)'; eg.textAlign = 'right';
-    for (d = -R; d <= R + 1e-9; d += step) if (d !== -R && d !== R) eg.fillText((d > 0 ? '+' : '') + d, W - 4, gy(d));
+    // the scales: EQ dB in amber, analyzer dB in grey
+    eg.font = '500 10px "IBM Plex Mono", monospace'; eg.textBaseline = 'middle'; eg.textAlign = 'right';
+    for (d = -R; d <= R + 1e-9; d += labelStep) {
+      if (Math.abs(d) === R) continue;
+      eg.fillStyle = d === 0 ? T.eqLabel0 : T.eqLabel;
+      eg.fillText((d > 0 ? '+' : '') + d, PW + 24, gy(d));
+    }
     if (ui.anaMode !== 'off') {
-      eg.textAlign = 'left'; eg.fillStyle = 'rgba(126,196,190,0.4)';
-      for (var a = -30; a > -ui.anaRange; a -= 30) eg.fillText(String(a), 4, ay(a));
+      eg.fillStyle = T.anaLabel;
+      for (var a = -10; a > -ui.anaRange; a -= 10) if (a % (ui.anaRange > 60 ? 20 : 10) === 0 || ui.anaRange === 60) eg.fillText(String(a), W - 4, ay(a));
     }
-    eg.textAlign = 'center'; eg.textBaseline = 'alphabetic'; eg.fillStyle = 'rgba(240,168,48,0.55)';
+    eg.textAlign = 'center'; eg.textBaseline = 'alphabetic'; eg.fillStyle = T.freqLabel;
     [[20, '20'], [50, '50'], [100, '100'], [200, '200'], [500, '500'], [1000, '1k'], [2000, '2k'], [5000, '5k'], [10000, '10k'], [20000, '20k']].forEach(function(l){
-      eg.fillText(l[1], fx(l[0]), H - 5);
+      eg.fillText(l[1], fx(l[0]), H - 6);
     });
     // spectrum
+    eg.save(); eg.beginPath(); eg.rect(0, 0, PW, H); eg.clip();
     if (preBuf && ui.anaMode !== 'off') {
-      if (ui.anaMode === 'pre' || ui.anaMode === 'both') { spectrumPath(preBuf, true); eg.fillStyle = 'rgba(126,196,190,0.16)'; eg.fill(); }
+      if (ui.anaMode === 'pre' || ui.anaMode === 'both') { spectrumPath(preBuf, true); eg.fillStyle = T.preFill; eg.fill(); }
       if (ui.anaMode === 'post' || ui.anaMode === 'both') {
-        spectrumPath(postBuf, true); eg.fillStyle = 'rgba(240,168,48,0.14)'; eg.fill();
-        spectrumPath(postBuf, false); eg.strokeStyle = 'rgba(240,168,48,0.45)'; eg.lineWidth = 1; eg.stroke();
+        spectrumPath(postBuf, true); eg.fillStyle = T.postFill; eg.fill();
+        spectrumPath(postBuf, false); eg.strokeStyle = T.postLine; eg.lineWidth = 1; eg.stroke();
       }
     }
     // each band's own curve, filled to 0 dB
-    var y0 = gy(0), clip = function(v){ return Math.max(view.top - 2, Math.min(H - view.bottom + 2, gy(v))); };
+    var y0 = gy(0), clip = function(v){ return Math.max(-2, Math.min(bottom + 2, gy(v))); };
     for (var i = 0; i < MAX_BANDS; i++) {
       var db = curveCache[i] && params[bandKey(i, 'Used')] ? curveCache[i].db : null;
       if (!db) continue;
-      var on = params[bandKey(i, 'On')], col = bandColor(i), sel = i === selected;
+      var on = params[bandKey(i, 'On')], col = bandColor(i), sel = i === selected || i === hover;
       eg.beginPath(); eg.moveTo(0, y0);
       for (var k = 0; k < cols; k++) eg.lineTo(k, clip(db[k]));
       eg.lineTo(cols - 1, y0); eg.closePath();
-      eg.globalAlpha = on ? (sel ? 0.24 : 0.11) : 0.05; eg.fillStyle = col; eg.fill();
-      if (sel) {
-        eg.globalAlpha = on ? 0.9 : 0.4; eg.strokeStyle = col; eg.lineWidth = 1.2;
-        eg.beginPath(); for (k = 0; k < cols; k++) { if (k) eg.lineTo(k, clip(db[k])); else eg.moveTo(k, clip(db[k])); } eg.stroke();
-      }
+      eg.globalAlpha = on ? (sel ? 0.28 : 0.12) : 0.05; eg.fillStyle = col; eg.fill();
+      eg.globalAlpha = on ? (sel ? 0.95 : 0.45) : 0.25; eg.strokeStyle = col; eg.lineWidth = sel ? 1.4 : 1;
+      eg.beginPath(); for (k = 0; k < cols; k++) { if (k) eg.lineTo(k, clip(db[k])); else eg.moveTo(k, clip(db[k])); } eg.stroke();
       eg.globalAlpha = 1;
     }
     // the sum
     eg.beginPath();
     for (k = 0; k < cols; k++) { var yy = clip(totalCurve[k]); if (k) eg.lineTo(k, yy); else eg.moveTo(k, yy); }
-    eg.strokeStyle = '#f2ecd9'; eg.lineWidth = 2; eg.shadowColor = 'rgba(242,236,217,0.5)'; eg.shadowBlur = 6; eg.stroke(); eg.shadowBlur = 0;
-    // dots
+    eg.strokeStyle = T.curve; eg.lineWidth = 2; eg.shadowColor = T.curveGlow; eg.shadowBlur = 6; eg.stroke(); eg.shadowBlur = 0;
+    // dots, with Pro-Q style badges for the stereo placement
     eg.textAlign = 'center'; eg.textBaseline = 'middle';
     for (i = 0; i < MAX_BANDS; i++) {
       if (!params[bandKey(i, 'Used')]) continue;
       var p = nodePos(i), c = bandColor(i), active = params[bandKey(i, 'On')];
-      if (i === selected) { eg.beginPath(); eg.arc(p.x, p.y, 11, 0, 2 * Math.PI); eg.strokeStyle = '#f2ecd9'; eg.lineWidth = 1.5; eg.stroke(); }
-      else if (i === hover) { eg.beginPath(); eg.arc(p.x, p.y, 10.5, 0, 2 * Math.PI); eg.strokeStyle = 'rgba(242,236,217,0.45)'; eg.lineWidth = 1; eg.stroke(); }
-      eg.beginPath(); eg.arc(p.x, p.y, 7.5, 0, 2 * Math.PI);
-      if (active) { eg.fillStyle = c; eg.fill(); }
-      else { eg.fillStyle = '#171308'; eg.fill(); eg.strokeStyle = c; eg.lineWidth = 1.5; eg.stroke(); }
-      eg.fillStyle = active ? '#171308' : c; eg.font = '600 9px "IBM Plex Mono", monospace';
-      eg.fillText(String(i + 1), p.x, p.y + 0.5);
-      var place = params[bandKey(i, 'Place')];
-      if (place !== 'stereo') { eg.fillStyle = c; eg.font = '600 8px "IBM Plex Mono", monospace'; eg.fillText({ left: 'L', right: 'R', mid: 'M', side: 'S' }[place], p.x, p.y + 16); }
-      if (solo === i) { eg.fillStyle = '#c08f17'; eg.font = '600 8px "IBM Plex Mono", monospace'; eg.fillText('SOLO', p.x, p.y - 17); }
+      if (i === selected) { eg.beginPath(); eg.arc(p.x, p.y, 10.5, 0, 2 * Math.PI); eg.strokeStyle = T.ring; eg.lineWidth = 1.5; eg.stroke(); }
+      else if (i === hover) { eg.beginPath(); eg.arc(p.x, p.y, 10, 0, 2 * Math.PI); eg.strokeStyle = T.ringHover; eg.lineWidth = 1; eg.stroke(); }
+      eg.beginPath(); eg.arc(p.x, p.y, 6.5, 0, 2 * Math.PI);
+      if (active) { eg.fillStyle = c; eg.fill(); eg.strokeStyle = T.dotEdge; eg.lineWidth = 1; eg.stroke(); }
+      else { eg.fillStyle = T.offFill; eg.fill(); eg.strokeStyle = c; eg.lineWidth = 1.5; eg.stroke(); }
+      var badge = PLACE_BADGE[params[bandKey(i, 'Place')]] || (solo === i ? '' : null);
+      var tags = [];
+      if (badge) tags.push(badge);
+      if (solo === i) tags.push('SOLO');
+      var bx = p.x + 10;
+      tags.forEach(function(t){
+        eg.font = '600 8.5px "IBM Plex Mono", monospace';
+        var tw = eg.measureText(t).width + 7;
+        eg.fillStyle = t === 'SOLO' ? T.solo : c; eg.globalAlpha = active ? 0.85 : 0.4;
+        roundRect(eg, bx, p.y - 6, tw, 12, 3); eg.fill(); eg.globalAlpha = 1;
+        eg.fillStyle = T.badgeText; eg.fillText(t, bx + tw / 2, p.y + 0.5);
+        bx += tw + 3;
+      });
     }
+    eg.restore();
     // the hovered or dragged band's numbers
     var show = drag ? drag.band : hover;
-    if (show >= 0) {
+    if (show >= 0 && params[bandKey(show, 'Used')]) {
       var bb = bandOf(params, show), pp = nodePos(show);
-      var text = (show + 1) + ' ' + SHAPE_LABELS[SHAPES.indexOf(bb.shape)] + '  ' + fmtHz(bb.freq) + '  ' + noteName(bb.freq) +
+      var text = (show + 1) + '  ' + SHAPE_LABELS[SHAPES.indexOf(bb.shape)] + '  ' + fmtHz(bb.freq) + '  ' + noteName(bb.freq) +
                  (shapeHasGain(bb.shape) ? '  ' + fmt(KNOB_DEFS.gain, bb.gain) : '') + (shapeHasQ(bb.shape) ? '  Q ' + fmt(KNOB_DEFS.q, bb.q) : '');
-      eg.font = '500 10px "IBM Plex Mono", monospace';
-      var tw = eg.measureText(text).width + 12, tx = Math.max(2, Math.min(W - tw - 2, pp.x - tw / 2)), ty = pp.y > 40 ? pp.y - 36 : pp.y + 20;
-      eg.fillStyle = 'rgba(23,19,8,0.88)'; eg.strokeStyle = bandColor(show); eg.lineWidth = 1;
-      roundRect(eg, tx, ty, tw, 17, 4); eg.fill(); eg.stroke();
-      eg.fillStyle = '#f2ecd9'; eg.textAlign = 'left'; eg.textBaseline = 'middle';
-      eg.fillText(text, tx + 6, ty + 9);
+      eg.font = '500 10.5px "IBM Plex Mono", monospace';
+      var tw = eg.measureText(text).width + 14, tx = Math.max(2, Math.min(PW - tw - 2, pp.x - tw / 2)), ty = pp.y > 44 ? pp.y - 38 : pp.y + 20;
+      eg.fillStyle = T.tipBg; eg.strokeStyle = bandColor(show); eg.lineWidth = 1;
+      roundRect(eg, tx, ty, tw, 19, 4); eg.fill(); eg.stroke();
+      eg.fillStyle = T.tipText; eg.textAlign = 'left'; eg.textBaseline = 'middle';
+      eg.fillText(text, tx + 7, ty + 10);
     }
   }
   function roundRect(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
@@ -1605,7 +1850,7 @@ if (typeof registerProcessor === 'function') {
     return NOTE_NAMES[((r % 12) + 12) % 12] + (Math.floor(r / 12) - 1) + (cents ? (cents > 0 ? '+' : '') + cents : '');
   }
 
-  // ---------- meters ----------
+  // ---------- the output meter ----------
   var meterCanvas = $('meter'), mg = meterCanvas.getContext('2d');
   var meterShown = [0, 0, 0, 0], meterHold = [0, 0, 0, 0], holdTime = [0, 0, 0, 0], peakHold = 0, peakTime = 0;
   function onMeter(m){
@@ -1616,30 +1861,28 @@ if (typeof registerProcessor === 'function') {
     }
     var pk = Math.max(m[2], m[3]);
     if (pk >= peakHold || now - peakTime > 1500) { peakHold = pk; peakTime = now; }
-    var pr = $('peak-readout');
-    pr.textContent = peakHold > 1e-5 ? (20 * Math.log10(peakHold)).toFixed(1) : '—';
-    pr.classList.toggle('is-hot', peakHold >= 1);
   }
   function drawMeter(){
     var dpr = view.dpr, W = meterCanvas.width / dpr, H = meterCanvas.height / dpr;
     if (!W) return;
     mg.setTransform(dpr, 0, 0, dpr, 0, 0);
-    mg.fillStyle = '#171308'; mg.fillRect(0, 0, W, H);
-    var top = view.top, bottom = H - view.bottom, span = bottom - top;
+    mg.fillStyle = T.meterBg; mg.fillRect(0, 0, W, H);
+    var top = 22, bottom = H - view.bottom, span = bottom - top;
     function my(lin){ var db = lin > 1e-6 ? 20 * Math.log10(lin) : -120; return top + Math.max(0, Math.min(1, (6 - db) / 66)) * span; }
-    var xs = [4, 11, 24, 31];
-    mg.fillStyle = 'rgba(240,168,48,0.1)';
-    xs.forEach(function(x){ mg.fillRect(x, top, 6, span); });
-    for (var i = 0; i < 4; i++) {
-      var y = my(meterShown[i]), y0 = my(1);
-      mg.fillStyle = i < 2 ? 'rgba(126,196,190,0.75)' : 'rgba(240,168,48,0.85)';
-      mg.fillRect(xs[i], y, 6, bottom - y);
-      if (meterShown[i] > 1) { mg.fillStyle = '#ff6a4a'; mg.fillRect(xs[i], y, 6, Math.max(0, y0 - y)); }
-      mg.fillStyle = '#f2ecd9'; mg.fillRect(xs[i], my(meterHold[i]), 6, 1.5);
+    var xs = [8, 16];
+    for (var c = 0; c < 2; c++) {
+      var lvl = meterShown[2 + c], y = my(lvl), y0 = my(1);
+      mg.fillStyle = T.meterTrack; mg.fillRect(xs[c], top, 6, span);
+      var gr = mg.createLinearGradient(0, bottom, 0, top);
+      gr.addColorStop(0, T.meterLow); gr.addColorStop(0.75, T.meterMid); gr.addColorStop(0.92, T.meterTop);
+      mg.fillStyle = gr; mg.fillRect(xs[c], y, 6, bottom - y);
+      if (lvl > 1) { mg.fillStyle = '#ff6a4a'; mg.fillRect(xs[c], y, 6, Math.max(0, y0 - y)); }
+      mg.fillStyle = T.meterHold; mg.fillRect(xs[c], my(meterHold[2 + c]), 6, 1.5);
     }
-    mg.fillStyle = 'rgba(240,168,48,0.3)'; mg.fillRect(2, my(1), W - 4, 1);
-    mg.font = '500 8px "IBM Plex Mono", monospace'; mg.textAlign = 'center'; mg.fillStyle = 'rgba(240,168,48,0.55)';
-    mg.fillText('IN', 10, H - 5); mg.fillText('OUT', 31, H - 5);
+    mg.fillStyle = T.meterLine; mg.fillRect(4, my(1), W - 8, 1);
+    mg.font = '600 9px "IBM Plex Mono", monospace'; mg.textAlign = 'center'; mg.textBaseline = 'middle';
+    mg.fillStyle = peakHold >= 1 ? '#e0452a' : T.meterText;
+    mg.fillText(peakHold > 1e-5 ? (20 * Math.log10(peakHold)).toFixed(1) : '—', W / 2, 11);
   }
 
   // ---------- drawing loop ----------
@@ -1647,7 +1890,7 @@ if (typeof registerProcessor === 'function') {
   function requestDraw(){ if (!drawQueued) { drawQueued = true; requestAnimationFrame(frame); } }
   function frame(){
     drawQueued = false;
-    var live = document.body.classList.contains('powered') && ctx && ctx.state === 'running';
+    var live = isPowered() && ctx && ctx.state === 'running';
     if (live && preAna && !freeze && ui.anaMode !== 'off') {
       if (preBuf.length !== preAna.frequencyBinCount) applyAnalyzer();
       preAna.getFloatFrequencyData(preBuf); postAna.getFloatFrequencyData(postBuf);
@@ -1658,6 +1901,8 @@ if (typeof registerProcessor === 'function') {
   }
 
   // ---------- mouse and keys on the display ----------
+  var infoTimer = null;
+  function setInfoText(t){ $('eq-info').textContent = t; clearTimeout(infoTimer); infoTimer = setTimeout(function(){ setInfo(null); }, 2500); }
   function localPos(e){ var r = eqCanvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * view.w / r.width, y: (e.clientY - r.top) * view.h / r.height }; }
   function hitBand(p){
     var best = -1, bd = 12 * 12;
@@ -1669,20 +1914,20 @@ if (typeof registerProcessor === 'function') {
     return best;
   }
   function setInfo(p){
-    if (!p) { $('eq-info').textContent = usedCount() ? 'DRAG A DOT · SCROLL FOR Q' : 'DOUBLE-CLICK TO ADD A BAND'; return; }
+    if (!p || p.x > view.plotW) { $('eq-info').textContent = usedCount() ? '' : 'Double-click the display to add a band'; return; }
     var f = xf(p.x);
-    $('eq-info').textContent = fmtHz(f).toUpperCase() + ' · ' + noteName(f) + ' · ' + fmt(KNOB_DEFS.gain, yg(p.y)).toUpperCase();
+    $('eq-info').textContent = fmtHz(f) + ' · ' + noteName(f) + ' · ' + fmt(KNOB_DEFS.gain, yg(p.y));
   }
   eqCanvas.addEventListener('pointerdown', function(e){
     eqCanvas.focus();
     var p = localPos(e), i = hitBand(p);
     if (e.button !== 0) return;
-    if (i < 0) { if (selected >= 0) select(-1); return; }
+    if (i < 0) { if (selected >= 0 && e.detail < 2) select(-1); return; }
     if (e.altKey) { deleteBand(i); return; }
     if (i !== selected) select(i);
     var b = bandOf(params, i);
-    drag = { band: i, x: p.x, y: p.y, lastX: p.x, lastY: p.y, fx: fx(b.freq), fy: nodePos(i).y };
-    dragging = true;
+    drag = { band: i, lastX: p.x, lastY: p.y, fx: fx(b.freq), fy: nodePos(i).y };
+    beginGesture();
     eqCanvas.setPointerCapture(e.pointerId);
   });
   eqCanvas.addEventListener('pointermove', function(e){
@@ -1704,13 +1949,14 @@ if (typeof registerProcessor === 'function') {
     if (h !== hover) { hover = h; requestDraw(); }
     setInfo(p);
   });
-  function endDrag(){ if (drag) { drag = null; dragging = false; commitUndo(); requestDraw(); } }
+  function endDrag(){ if (drag) { drag = null; endGesture(); requestDraw(); } }
   eqCanvas.addEventListener('pointerup', endDrag);
   eqCanvas.addEventListener('pointercancel', endDrag);
   eqCanvas.addEventListener('pointerleave', function(){ if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
   eqCanvas.addEventListener('dblclick', function(e){
     var p = localPos(e), i = hitBand(p);
-    if (i >= 0) { setBand('On', !params[bandKey(i, 'On')]); return; }
+    if (p.x > view.plotW) return;
+    if (i >= 0) { selected = i; setBand('On', !params[bandKey(i, 'On')]); return; }
     var f = xf(p.x), shape = f <= 25 ? 'lowcut' : f >= 18000 ? 'highcut' : 'bell';
     var g = Math.round(yg(p.y) * 10) / 10;
     addBand(Math.min(FREQ_MAX, Math.max(FREQ_MIN, f)), params.gainScale > 0 ? g * 100 / params.gainScale : 0, shape);
@@ -1760,17 +2006,19 @@ if (typeof registerProcessor === 'function') {
   var bird = $('bird'), subText = $('brand-sub'), subOriginal = subText.innerHTML, birdTimer = null;
   bird.addEventListener('click', function(){
     bird.classList.remove('is-diving'); void bird.offsetWidth; bird.classList.add('is-diving');
-    subText.innerHTML = '<span class="jp" lang="ja">カワセミ</span> · Kawasemi · kingfisher';
+    subText.innerHTML = '<span class="jp" lang="ja">カワセミ</span> · Kawasemi';
     clearTimeout(birdTimer);
     birdTimer = setTimeout(function(){ subText.innerHTML = subOriginal; }, 2600);
   });
 
+  $('theme-btn').addEventListener('click', function(){ ui.theme = ui.theme === 'dark' ? 'light' : 'dark'; applyTheme(); save(); curveCache = []; renderAll(); });
   window.addEventListener('resize', fitEq);
-  renderPresetSelect();
+  applyTheme();
+  renderSource(); renderPlayer(); renderPresetName();
   renderAll();
   setInfo(null);
   fitEq();
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(requestDraw);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ fitEq(); renderBandPanel(); });
 })();
 </script>
 </body>

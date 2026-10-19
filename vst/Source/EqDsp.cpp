@@ -38,6 +38,15 @@ namespace eq
             setSection (out, (sB0 + sB1) / 2, (sB0 - sB1) / 2, 0, a1, 0);
         }
 
+        // The largest root of b0 z^2 + b1 z + b2.
+        double zeroRadius (double b0, double b1, double b2)
+        {
+            const auto d = b1 * b1 - 4 * b0 * b2;
+            if (d < 0) return std::sqrt (b2 / b0);
+            const auto sd = std::sqrt (d);
+            return std::max (std::abs ((-b1 + sd) / (2 * b0)), std::abs ((-b1 - sd) / (2 * b0)));
+        }
+
         // The web's matchSection: poles by the matched z-transform, zeros fitted
         // at DC, Nyquist and the section's own frequency (after M. Vicanek).
         void matchSection (const Proto& c, double w0, Section& out)
@@ -71,7 +80,16 @@ namespace eq
             const auto wm = std::min (W, 0.9 * pi), sm = std::sin (wm / 2), phi1 = sm * sm, phi0 = 1 - phi1, phi2 = 4 * phi0 * phi1;
             auto B2 = ((A0 * phi0 + A1 * phi1 + A2 * phi2) * analogMag2 (c, wm / w0) - B0 * phi0 - B1 * phi1) / phi2;
             const auto sq0 = std::sqrt (B0), sq1 = std::sqrt (B1), Wv = (sq0 + sq1) / 2;
-            if (Wv * Wv + B2 < 0)
+            // The fitted zeros, or the matched ones when the fit has none or puts
+            // them (almost) on the unit circle, where turning the section over
+            // would make it unstable.
+            auto fitted = Wv * Wv + B2 >= 0;
+            if (fitted && c.n2 > 0)
+            {
+                const auto fb0 = (Wv + std::sqrt (Wv * Wv + B2)) / 2, fb1 = (sq0 - sq1) / 2, fb2 = fb0 > 0 ? -B2 / (4 * fb0) : 0;
+                fitted = fb0 > 0 && zeroRadius (fb0, fb1, fb2) < 1 - 1e-6;
+            }
+            if (! fitted)
             {
                 if (c.n2 > 0)
                 {
