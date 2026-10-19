@@ -29,9 +29,10 @@
     --fg:#2a241d; --fg-soft:rgba(42,36,29,.6); --acc:#a8700a; --acc-soft:rgba(168,112,10,.6); --acc-hover:rgba(168,112,10,.14); --on-acc:#fbf8ef;
     --float:rgba(251,248,239,.96); --float-solid:#fbf8ef; --float-border:rgba(42,36,29,.16); --float-shadow:rgba(60,45,20,.25);
     --hover:rgba(42,36,29,.06); --track:rgba(42,36,29,.14); --knob-hi:#fffdf6; --knob-lo:#d9cfb5; --input-bg:#fffdf6;
-    --led-off:#c7bb9c; --solo:#d9b92a; --teal-hi:#336f6b;
+    --led-off:#c7bb9c; --solo:#d9b92a; --teal-hi:#336f6b; --badge-ink:#fbf8ef;
   }
   :root[data-eq-theme="dark"]{
+    --badge-ink:#171308;
     --scr:#171308; --bar:#211b10; --bar-hi:#2c2416; --bar-lo:#1a150c; --edge:rgba(0,0,0,.5);
     --fg:#f2ecd9; --fg-soft:rgba(242,236,217,.6); --acc:#f0a830; --acc-soft:rgba(240,168,48,.62); --acc-hover:rgba(240,168,48,.18); --on-acc:#171308;
     --float:rgba(33,27,16,.94); --float-solid:#241d12; --float-border:rgba(242,236,217,.14); --float-shadow:rgba(0,0,0,.55);
@@ -113,10 +114,38 @@
   .band-panel{
     position:absolute; bottom:26px; z-index:4; display:flex; align-items:center; gap:10px;
     background:var(--float); border:1px solid var(--float-border); border-top:2px solid var(--band, var(--acc));
-    border-radius:8px; padding:8px 10px 6px; box-shadow:0 8px 24px var(--float-shadow);
+    border-radius:8px; padding:14px 10px 6px; box-shadow:0 8px 24px var(--float-shadow);
     backdrop-filter:blur(4px);
   }
   .band-panel[hidden]{display:none;}
+  /* The grip along the top edge: drag the panel aside; double-click puts it back under the band. */
+  .bp-grip{position:absolute; left:0; right:0; top:0; height:13px; cursor:grab; touch-action:none; border-radius:8px 8px 0 0;}
+  .bp-grip::before{content:''; position:absolute; left:50%; top:4px; width:34px; height:4px; margin-left:-17px; border-radius:2px;
+    background:repeating-linear-gradient(90deg, var(--fg-soft) 0 2px, transparent 2px 5px); opacity:.55;}
+  .bp-grip:hover::before{opacity:1;}
+  .band-panel.is-moving .bp-grip{cursor:grabbing;}
+  .band-panel.is-pinned{border-top-style:dashed;}
+  /* The band list under the bottom bar: every band, at a glance. */
+  .band-list{display:flex; gap:6px; padding:6px 10px; overflow-x:auto; background:var(--bar-lo); border-top:1px solid var(--edge); flex:none;
+    scrollbar-width:thin;}
+  .band-list[hidden]{display:none;}
+  .bl-item{
+    display:flex; align-items:center; gap:6px; flex:none; padding:4px 4px 4px 8px; border-radius:6px; cursor:pointer;
+    background:var(--float); border:1px solid var(--float-border); color:var(--fg);
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; white-space:nowrap;
+  }
+  .bl-item:hover{border-color:var(--band);}
+  .bl-item.is-selected{border-color:var(--band); box-shadow:inset 0 0 0 1px var(--band);}
+  .bl-item.is-off{opacity:.5;}
+  .bl-dot{width:9px; height:9px; border-radius:50%; background:var(--band); flex:none;}
+  .bl-item.is-off .bl-dot{background:transparent; box-shadow:inset 0 0 0 1.5px var(--band);}
+  .bl-num{font-weight:600; color:var(--band);}
+  .bl-shape{color:var(--fg-soft); font-family:'IBM Plex Sans',sans-serif; font-size:10px; letter-spacing:.04em;}
+  .bl-tag{font-size:8.5px; font-weight:600; padding:1px 4px; border-radius:3px; background:var(--band); color:var(--badge-ink);}
+  .bl-x{border:none; background:none; color:var(--fg-soft); cursor:pointer; padding:0 4px; font-size:12px; line-height:1;}
+  .bl-x:hover{color:var(--fg);}
+  .bl-add{flex:none; font-size:11px;}
+  .bl-empty{font-size:11px; color:var(--fg-soft); align-self:center; white-space:nowrap;}
   .bp-col{display:flex; flex-direction:column; gap:4px;}
   .bp-sel{
     background:var(--hover); border:1px solid var(--float-border); color:var(--fg); border-radius:4px;
@@ -318,6 +347,7 @@
     <button class="tb sketch-btn" id="sketch-btn" type="button" aria-pressed="false" title="EQ Sketch: draw the curve you want, the bands follow (Esc to stop)"><svg viewBox="0 0 16 16"><path d="M2.5 13.5l1-3.5 7.5-7.5 2.5 2.5L6 12.5zM9.5 4l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
     <div class="sketch-hint" id="sketch-hint" hidden>Draw the curve you want; the bands follow</div>
     <div class="band-panel" id="band-panel" hidden>
+      <div class="bp-grip" id="bp-grip" title="Drag to move the panel aside; double-click to put it back under the band"></div>
       <div class="bp-col">
         <div class="bp-title" id="bp-title">BAND 1</div>
         <button class="bp-sel" id="bp-shape" type="button" aria-haspopup="menu" title="Shape"></button>
@@ -343,11 +373,13 @@
     <button class="tb" id="ana-btn" type="button" aria-haspopup="menu"><span class="dim">Analyzer:</span> <span id="ana-label">Pre+Post</span></button>
     <span class="status hide-narrow" id="eq-info"></span>
     <span class="spacer"></span>
+    <button class="tb" id="list-btn" type="button" aria-pressed="true" title="Show or hide the list of bands">Bands</button>
     <button class="tb" id="auto-gain" type="button" title="Keep the loudness the same while you EQ">Auto Gain</button>
     <span class="dv" id="dv-scale" tabindex="0" role="slider" aria-label="Gain scale" title="Gain scale: drag, scroll, double-click to reset"></span>
     <span class="dv" id="dv-gain" tabindex="0" role="slider" aria-label="Output gain" title="Output gain: drag, scroll, double-click to reset"></span>
     <span class="dv" id="dv-pan" tabindex="0" role="slider" aria-label="Output pan" title="Output pan: drag, scroll, double-click to reset"></span>
   </footer>
+  <div class="band-list" id="band-list" role="listbox" aria-label="Bands"></div>
 </div>
 <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
 <p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q, double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Click a value to type it. <kbd>Space</kbd> plays the source.</p>
@@ -1588,11 +1620,90 @@ if (typeof registerProcessor === 'function') {
     var panel = $('band-panel');
     if (panel.hidden || !view.w) return;
     var p = nodePos(selected), pw = panel.offsetWidth, ph = panel.offsetHeight;
+    panel.classList.toggle('is-pinned', !!ui.panelPos);
+    if (ui.panelPos) {   // moved aside: it stays where it was put (kept as a share of the screen)
+      panel.style.left = Math.max(0, Math.min(view.w - pw, ui.panelPos.x * view.w)) + 'px';
+      panel.style.top = Math.max(0, Math.min(view.h - ph, ui.panelPos.y * view.h)) + 'px';
+      panel.style.bottom = 'auto';
+      return;
+    }
     var x = Math.max(44, Math.min(view.plotW - pw - 8, p.x - pw / 2));   // clear of the Sketch button
     panel.style.left = x + 'px';
     if (p.y > view.h - view.bottom - ph - 30) { panel.style.top = '34px'; panel.style.bottom = 'auto'; }
     else { panel.style.top = 'auto'; panel.style.bottom = (view.bottom + 8) + 'px'; }
   }
+
+  // The grip: drag the panel aside; double-click puts it back under the band.
+  (function(){
+    var grip = $('bp-grip'), panel = $('band-panel'), start = null;
+    grip.addEventListener('pointerdown', function(e){
+      e.preventDefault();
+      start = { x: e.clientX, y: e.clientY, left: panel.offsetLeft, top: panel.offsetTop };
+      grip.setPointerCapture(e.pointerId); panel.classList.add('is-moving');
+    });
+    grip.addEventListener('pointermove', function(e){
+      if (!start) return;
+      var r = eqCanvas.getBoundingClientRect(), k = view.w / r.width;   // the page may be zoomed
+      var x = start.left + (e.clientX - start.x) * k, y = start.top + (e.clientY - start.y) * k;
+      ui.panelPos = { x: x / view.w, y: y / view.h };
+      placeBandPanel();
+    });
+    function end(){ if (start) { start = null; panel.classList.remove('is-moving'); save(); } }
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+    grip.addEventListener('dblclick', function(){ ui.panelPos = null; save(); placeBandPanel(); });
+  })();
+
+  // ---------- the band list ----------
+  function renderBandList(){
+    var list = $('band-list');
+    list.hidden = ui.bandList === false;
+    $('list-btn').classList.toggle('is-on', ui.bandList !== false);
+    $('list-btn').setAttribute('aria-pressed', ui.bandList !== false ? 'true' : 'false');
+    if (list.hidden) return;
+    list.textContent = '';
+    var any = false;
+    for (var i = 0; i < MAX_BANDS; i++) {
+      if (!params[bandKey(i, 'Used')]) continue;
+      any = true;
+      (function(i){
+        var b = bandOf(params, i), item = document.createElement('div');
+        item.className = 'bl-item' + (i === selected ? ' is-selected' : '') + (b.on ? '' : ' is-off');
+        item.setAttribute('role', 'option'); item.setAttribute('aria-selected', i === selected ? 'true' : 'false');
+        item.style.setProperty('--band', bandColor(i));
+        item.title = 'Click to select, double-click to switch on or off';
+        var parts = ['<span class="bl-dot"></span>', '<span class="bl-num"></span>', '<span class="bl-shape"></span>', '<span class="bl-val"></span>'];
+        item.innerHTML = parts.join('');
+        item.querySelector('.bl-num').textContent = i + 1;
+        item.querySelector('.bl-shape').textContent = SHAPE_LABELS[SHAPES.indexOf(b.shape)];
+        item.querySelector('.bl-val').textContent = fmtHz(b.freq) + (shapeHasGain(b.shape) ? '  ' + fmt(KNOB_DEFS.gain, b.gain) : '') +
+          (shapeHasQ(b.shape) ? '  Q ' + fmt(KNOB_DEFS.q, b.q) : '') + (shapeHasSlope(b.shape) ? '  ' + b.slope + ' dB/oct' : '');
+        var tags = [];
+        if (PLACE_BADGE[b.place]) tags.push(PLACE_BADGE[b.place]);
+        if (isDyn(i)) tags.push('DYN');
+        if (solo === i) tags.push('SOLO');
+        tags.forEach(function(t){ var sp = document.createElement('span'); sp.className = 'bl-tag'; sp.textContent = t; item.appendChild(sp); });
+        var x = document.createElement('button');
+        x.type = 'button'; x.className = 'bl-x'; x.textContent = '\u2715'; x.title = 'Remove the band'; x.setAttribute('aria-label', 'Remove band ' + (i + 1));
+        x.addEventListener('click', function(e){ e.stopPropagation(); deleteBand(i); });
+        item.appendChild(x);
+        item.addEventListener('click', function(){ if (i !== selected) select(i); });
+        item.addEventListener('dblclick', function(){ selected = i; setBand('On', !params[bandKey(i, 'On')]); });
+        list.appendChild(item);
+      })(i);
+    }
+    if (!any) { var empty = document.createElement('span'); empty.className = 'bl-empty'; empty.textContent = 'No bands yet: double-click the display, or'; list.appendChild(empty); }
+    var add = document.createElement('button');
+    add.type = 'button'; add.className = 'tb bl-add'; add.textContent = '+ Add band';
+    add.addEventListener('click', function(){ addBand(1000, 0, 'bell'); });
+    list.appendChild(add);
+    var sel = list.querySelector('.is-selected');
+    if (sel) {   // keep the selected band in view, sideways only (never scroll the page)
+      if (sel.offsetLeft < list.scrollLeft) list.scrollLeft = sel.offsetLeft - 10;
+      else if (sel.offsetLeft + sel.offsetWidth > list.scrollLeft + list.clientWidth) list.scrollLeft = sel.offsetLeft + sel.offsetWidth - list.clientWidth + 10;
+    }
+  }
+  $('list-btn').addEventListener('click', function(){ ui.bandList = ui.bandList === false; save(); renderBandList(); setTimeout(fitEq, 0); });
 
   // ---------- top and bottom bars ----------
   $('range-box').addEventListener('click', function(){
@@ -1667,7 +1778,7 @@ if (typeof registerProcessor === 'function') {
 
   function renderAll(){
     knobRenders.forEach(function(r){ r(); });
-    renderBandPanel(); renderBars(); renderUndo(); renderAB();
+    renderBandPanel(); renderBandList(); renderBars(); renderUndo(); renderAB();
     invalidateCurves(); requestDraw();
   }
 
