@@ -16,7 +16,7 @@ release workflow refuses to publish a version that has no section here.
 - A panel in the style of Pro-Q: the display fills the window, a floating band
   panel under the selected band (shape, slope, stereo, frequency, gain, Q,
   on/off, solo, previous/next, remove), the scales and the output meter on the
-  right; the top bar has undo/redo, A/B with copy, presets, the theme and power;
+  right; the top bar has undo/redo, A/B with copy, presets, the theme and bypass;
   the bottom bar the processing mode, the analyzer, auto gain, gain scale,
   output gain and pan. Light theme by default, dark on a click.
 - Spectrum analyzer before and after the EQ: resolution, speed, range, tilt,
@@ -25,6 +25,6 @@ release workflow refuses to publish a version that has no section here.
 - Factory presets and your own, undo/redo, A/B comparison.
 - The standalone app plays a demo loop, a file, the audio input or pink noise.
 - In the browser, ahead of the plugin (they come to it in a later version):
-  dynamic EQ per band, EQ Sketch, Character (Clean, Subtle, Warm), Bypass, a
+  dynamic EQ per band, EQ Sketch, Character (Clean, Subtle, Warm), a
   movable and see-through band panel, a list of all the bands, and a player
   beside the panel with free tracks to try settings on.

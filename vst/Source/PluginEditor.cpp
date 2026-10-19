@@ -85,20 +85,13 @@ namespace
         p.addCentredArc (8, 8.8f, 5.5f, 5.5f, 0, 0.7f, 2.0f * juce::MathConstants<float>::pi - 0.7f, true);
         return stroked (p, 1.7f);
     }
-    juce::Path moonIcon()
+    juce::Path moonIcon()   // the web page's SVG
     {
-        juce::Path p;
-        p.addEllipse (2.5f, 2.5f, 11, 11);
-        p.addEllipse (6.5f, 0.5f, 10, 10);
-        p.setUsingNonZeroWinding (false);
-        return p;
+        return juce::Drawable::parseSVGPath ("M13 9.5A5.5 5.5 0 016.5 3a5.5 5.5 0 106.5 6.5z");
     }
     juce::Path sunIcon()
     {
-        juce::Path rays;
-        const float l[][4] = { { 8, 1, 8, 3 }, { 8, 13, 8, 15 }, { 1, 8, 3, 8 }, { 13, 8, 15, 8 }, { 3, 3, 4.4f, 4.4f },
-                               { 11.6f, 11.6f, 13, 13 }, { 13, 3, 11.6f, 4.4f }, { 4.4f, 11.6f, 3, 13 } };
-        for (const auto& s : l) { rays.startNewSubPath (s[0], s[1]); rays.lineTo (s[2], s[3]); }
+        juce::Path rays = juce::Drawable::parseSVGPath ("M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6L13 13M13 3l-1.4 1.4M4.4 11.6L3 13");
         auto p = stroked (rays, 1.4f);
         p.addEllipse (5, 5, 6, 6);
         return p;
@@ -1291,7 +1284,7 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
         juce::Timer::callAfterDelay (2600, [safe] { if (safe != nullptr) { safe->brandSub = subtitleText(); safe->panel.repaint (safe->topBar); } });
     };
     panel.addAndMakeVisible (bird);
-    for (auto* b : { &undoButton, &redoButton, &abButton, &copyButton, &presetPrev, &presetButton, &presetNext, &themeButton, &powerButton,
+    for (auto* b : { &undoButton, &redoButton, &abButton, &copyButton, &presetPrev, &presetButton, &presetNext, &themeButton, &bypassButton,
                      &phaseButton, &anaButton, &sourceButton, &playButton, &autoButton })
     {
         b->view = &view;
@@ -1331,10 +1324,17 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
     presetButton.setTooltip ("Presets");
     presetButton.onClick = [this] { presetMenu(); };
     themeButton.onClick = [this] { view.dark = ! view.dark; saveView(); applyTheme(); };
-    powerButton.led = true;
-    powerButton.setTooltip ("Off passes the sound through untouched");
-    powerButton.setClickingTogglesState (true);
-    powerAttachment = std::make_unique<juce::ButtonParameterAttachment> (*audioProcessor.apvts.getParameter ("power"), powerButton);
+    bypassButton.led = true;
+    bypassButton.setTooltip ("Bypass: hear the sound without the EQ");
+    {
+        auto* power = audioProcessor.apvts.getParameter ("power");
+        bypassAttachment = std::make_unique<juce::ParameterAttachment> (*power, [this] (float v)
+        {
+            bypassButton.setToggleState (v < 0.5f, juce::dontSendNotification);
+        });
+        bypassAttachment->sendInitialUpdate();
+        bypassButton.onClick = [this] { bypassAttachment->setValueAsCompleteGesture (bypassButton.getToggleState() ? 1.0f : 0.0f); };
+    }
 
     // ---- screen
     display.onSelectionChanged = [this] { selectionChanged(); };
@@ -1680,17 +1680,18 @@ void EgretEqEditor::layoutPanel()
     const auto logoFont = sansFont (21.0f, true);
     auto x = 10 + juce::roundToInt (juce::GlyphArrangement::getStringWidth (logoFont, "EGRET EQ")) + 8;
     x += juce::roundToInt (juce::GlyphArrangement::getStringWidth (monoFont (9.0f).withExtraKerningFactor (0.14f), subtitleText())) + 4;
+    x += 10;   // the subtitle's font may draw a little wider than measured
     bird.setBounds (x, 8, 22, 22);
     x += 32;
     auto place = [&x] (juce::Component& c, int w) { c.setBounds (x, 7, w, 24); x += w + 4; };
     place (undoButton, 30); place (redoButton, 30); x += 4;
     place (abButton, 48); place (copyButton, 84);
-    const auto presetW = 230, cx = 560;
+    const auto presetW = 220, cx = 610;
     presetPrev.setBounds (cx - presetW / 2 - 26, 7, 24, 24);
     presetButton.setBounds (cx - presetW / 2, 7, presetW, 24);
     presetNext.setBounds (cx + presetW / 2 + 2, 7, 24, 24);
-    powerButton.setBounds (panelWidth - 10 - 86, 7, 86, 24);
-    themeButton.setBounds (powerButton.getX() - 34, 7, 30, 24);
+    bypassButton.setBounds (panelWidth - 10 - 90, 7, 90, 24);
+    themeButton.setBounds (bypassButton.getX() - 34, 7, 30, 24);
 
     // the screen
     display.setBounds (0, topH, panelWidth - meterW, screenH);

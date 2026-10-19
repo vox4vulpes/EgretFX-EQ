@@ -264,8 +264,8 @@ private:
     // top bar
     BirdView bird;
     juce::String brandSub;
-    BarButton undoButton, redoButton, abButton, copyButton, presetPrev { "<" }, presetButton, presetNext { ">" }, themeButton, powerButton { "POWER" };
-    std::unique_ptr<juce::ButtonParameterAttachment> powerAttachment;
+    BarButton undoButton, redoButton, abButton, copyButton, presetPrev { "<" }, presetButton, presetNext { ">" }, themeButton, bypassButton { "BYPASS" };
+    std::unique_ptr<juce::ParameterAttachment> bypassAttachment;   // lit when the "power" parameter is off
     juce::Rectangle<int> topBar, bottomBar;
     juce::String shownPresetSig;
 
