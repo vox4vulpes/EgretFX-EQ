@@ -160,6 +160,7 @@
   .bl-item:hover{border-color:var(--band);}
   .bl-item.is-selected{border-color:var(--band); box-shadow:inset 0 0 0 1px var(--band);}
   .bl-item.is-off{opacity:.45;}
+  .bl-item.is-picked{border-style:dashed; border-color:var(--band);}
   .bl-dot{width:9px; height:9px; border-radius:50%; background:var(--band); flex:none;}
   .bl-item.is-off .bl-dot{background:transparent; box-shadow:inset 0 0 0 1.5px var(--band);}
   .bl-num{font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; color:var(--band);}
@@ -398,6 +399,7 @@
     <span class="status hide-narrow" id="eq-info"></span>
     <span class="spacer"></span>
     <button class="tb" id="list-btn" type="button" aria-pressed="true" title="Show or hide the list of bands">Bands</button>
+    <button class="tb" id="gainq-btn" type="button" aria-pressed="false" title="Gain-Q: bells narrow as they boost or cut more, like an analog desk">Gain-Q</button>
     <button class="tb" id="auto-gain" type="button" title="Keep the loudness the same while you EQ">Auto Gain</button>
     <span class="dv" id="dv-scale" tabindex="0" role="slider" aria-label="Gain scale" title="Gain scale: drag, scroll, double-click to reset"></span>
     <span class="dv" id="dv-gain" tabindex="0" role="slider" aria-label="Output gain" title="Output gain: drag, scroll, double-click to reset"></span>
@@ -406,7 +408,7 @@
   <div class="band-list" id="band-list" role="listbox" aria-label="Bands"></div>
 </div>
 <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
-<p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q, double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Click a value to type it. <kbd>Space</kbd> plays the source.</p>
+<p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q, double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source.</p>
 </div>
 </div>
 
@@ -570,6 +572,8 @@ var PC = new Float64Array(6);
 function proto(n2, n1, n0, d2, d1, d0){ PC[0] = n2; PC[1] = n1; PC[2] = n0; PC[3] = d2; PC[4] = d1; PC[5] = d0; return PC; }
 function designBand(band, fs, secs){
   var shape = band.shape, f = Math.min(band.freq, FREQ_MAX), g = band.gain, q = band.q;
+  // GAIN-Q: like an analog desk, a bell narrows as it boosts or cuts more (Q x2 at 15 dB)
+  if (band.gainQ && shape === 'bell') q = Math.min(Q_MAX, q * Math.pow(2, Math.abs(g) / 15));
   var w0 = 2 * Math.PI * f / fs, n = 0, i;
   var order = Math.max(1, Math.round(band.slope / 6)), pairs = Math.max(1, Math.round(band.slope / 12));
   var fLim = 0.45 * fs;   // a resonance above this can't sit at its own frequency
@@ -667,7 +671,7 @@ function bandOf(p, i){
   return {
     used: !!p[bandKey(i, 'Used')], on: !!p[bandKey(i, 'On')], shape: shape,
     freq: p[bandKey(i, 'Freq')], gain: shapeHasGain(shape) ? p[bandKey(i, 'Gain')] * p.gainScale / 100 : 0,
-    q: p[bandKey(i, 'Q')], slope: p[bandKey(i, 'Slope')], place: p[bandKey(i, 'Place')]
+    q: p[bandKey(i, 'Q')], slope: p[bandKey(i, 'Slope')], place: p[bandKey(i, 'Place')], gainQ: !!p.gainQ
   };
 }
 
@@ -707,7 +711,7 @@ function autoGainDb(p, fs){
 
 // ---------- parameters and factory presets ----------
 function makeDefaults(){
-  var p = { outGain: 0, outPan: 0, gainScale: 100, autoGain: false, character: 'clean' };
+  var p = { outGain: 0, outPan: 0, gainScale: 100, autoGain: false, character: 'clean', gainQ: false };
   for (var i = 0; i < MAX_BANDS; i++) {
     p[bandKey(i, 'Used')] = false; p[bandKey(i, 'On')] = true; p[bandKey(i, 'Shape')] = 'bell';
     p[bandKey(i, 'Freq')] = 1000; p[bandKey(i, 'Gain')] = 0; p[bandKey(i, 'Q')] = 1;
@@ -774,6 +778,7 @@ function presetParams(spec){
     else if (key === 'pan') p.outPan = parseFloat(v[0]);
     else if (key === 'auto') p.autoGain = v[0] === '1';
     else if (key === 'char' && CHARACTERS.indexOf(v[0]) >= 0) p.character = v[0];
+    else if (key === 'gq') p.gainQ = v[0] === '1';
   });
   return p;
 }
@@ -833,7 +838,7 @@ function EqEngine(fs){
   this.meter = new Float64Array(4);   // peaks since the last read: in L, in R, out L, out R
   this.dynShown = new Float64Array(MAX_BANDS);   // each band's dynamic gain change, for the display
   // CHARACTER: soft saturation after the bands, faded like a band when it changes
-  this.character = 'clean'; this.tCharacter = 'clean'; this.charMix = 0;
+  this.character = 'clean'; this.tCharacter = 'clean'; this.charMix = 0; this.gainQ = false;
   this.dcX = new Float64Array(2); this.dcY = new Float64Array(2); this.lpZ = new Float64Array(2);
   this.started = false;
 }
@@ -854,6 +859,7 @@ EqEngine.prototype.setParams = function(p, solo){
     b.tg = b.staticG + (b.dyn ? b.dynDb : 0);
   }
   this.tCharacter = CHARACTERS.indexOf(p.character) >= 0 ? p.character : 'clean';
+  if (!!p.gainQ !== this.gainQ) { this.gainQ = !!p.gainQ; for (var gq = 0; gq < MAX_BANDS; gq++) this.bands[gq].dirty = true; }
   var s = solo === undefined ? -1 : solo;
   this.tSolo = s >= 0 && p[bandKey(s, 'Used')] && shapeCanSolo(p[bandKey(s, 'Shape')]) ? s : -1;
   this.autoDb = p.autoGain ? autoGainDb(p, this.fs) : 0;
@@ -894,7 +900,7 @@ EqEngine.prototype.updateBand = function(b){
   }
   if (b.dirty) {
     var d = b.design;
-    d.shape = b.shape; d.freq = b.f; d.gain = b.g; d.q = b.q; d.slope = b.slope;
+    d.shape = b.shape; d.freq = b.f; d.gain = b.g; d.q = b.q; d.slope = b.slope; d.gainQ = this.gainQ;
     b.n = designBand(d, this.fs, b.secs);
     b.dirty = false;
   }
@@ -1774,7 +1780,8 @@ if (typeof registerProcessor === 'function') {
       item.querySelector('.bl-shape').textContent = SHAPE_LABELS[SHAPES.indexOf(b.shape)];
       item.title = 'Click to select, double-click to switch on or off';
       item.setAttribute('aria-label', 'Band ' + (i + 1) + ', ' + SHAPE_LABELS[SHAPES.indexOf(b.shape)] + (b.on ? '' : ', off'));
-      item.addEventListener('click', function(){ if (i !== selected) select(i); });
+      item.addEventListener('click', function(e){ if (e.shiftKey || e.ctrlKey || e.metaKey) togglePick(i); else if (i !== selected || group.size > 1) select(i); });
+      if (group.has(i) && i !== selected) item.classList.add('is-picked');
       item.addEventListener('dblclick', function(){ selected = i; setBand('On', !params[bandKey(i, 'On')]); });
       list.appendChild(item);
     });
@@ -1830,6 +1837,7 @@ if (typeof registerProcessor === 'function') {
     })));
   });
   var freeze = false;
+  $('gainq-btn').addEventListener('click', function(){ params.gainQ = !params.gainQ; changed(); });
   $('auto-gain').addEventListener('click', function(){ params.autoGain = !params.autoGain; changed(); });
   $('fullscreen').addEventListener('click', function(){
     var pl = $('plugin');
@@ -1842,6 +1850,7 @@ if (typeof registerProcessor === 'function') {
     $('range-box').textContent = ui.dispRange + ' dB';
     $('char-label').textContent = CHARACTER_LABELS[Math.max(0, CHARACTERS.indexOf(params.character))];
     $('bypass').classList.toggle('is-on', bypassed); $('bypass').setAttribute('aria-pressed', bypassed ? 'true' : 'false');
+    $('gainq-btn').classList.toggle('is-on', !!params.gainQ); $('gainq-btn').setAttribute('aria-pressed', params.gainQ ? 'true' : 'false');
     var ag = $('auto-gain');
     ag.classList.toggle('is-on', params.autoGain); ag.setAttribute('aria-pressed', params.autoGain ? 'true' : 'false');
     ag.textContent = params.autoGain ? 'Auto Gain ' + fmt(KNOB_DEFS.outGain, autoGainDb(params, sampleRateNow())) : 'Auto Gain';
@@ -1860,14 +1869,101 @@ if (typeof registerProcessor === 'function') {
     selected = i; changed();
     return i;
   }
+  var BAND_FIELDS = ['Used', 'On', 'Shape', 'Freq', 'Gain', 'Q', 'Slope', 'Place', 'Dyn', 'Range', 'Thresh', 'Attack', 'Release'];
   function deleteBand(i){
     if (i < 0 || !params[bandKey(i, 'Used')]) return;
-    ['Used', 'On', 'Shape', 'Freq', 'Gain', 'Q', 'Slope', 'Place'].forEach(function(n){ params[bandKey(i, n)] = DEFAULTS[bandKey(i, n)]; });
+    BAND_FIELDS.forEach(function(n){ params[bandKey(i, n)] = DEFAULTS[bandKey(i, n)]; });
     if (solo === i) solo = -1;
-    if (selected === i) selected = -1;
+    group.delete(i);
+    if (selected === i) selected = group.size ? Array.from(group)[group.size - 1] : -1;
     changed();
   }
-  function select(i){ selected = i; if (solo >= 0 && solo !== i) solo = -1; sendParams(); renderAll(); }
+  function select(i){ selected = i; group.clear(); if (i >= 0) group.add(i); if (solo >= 0 && solo !== i) solo = -1; sendParams(); renderAll(); }
+
+  // ---------- several bands at once: a selection, copy and paste ----------
+  // group: every selected band; selected: the one the panel shows (the last picked).
+  var group = new Set();
+  if (selected >= 0) group.add(selected);
+  function isPicked(i){ return i === selected || group.has(i); }
+  function picked(){
+    if (selected >= 0) group.add(selected);
+    return Array.from(group).filter(function(i){ return params[bandKey(i, 'Used')]; }).sort(function(a, b){ return a - b; });
+  }
+  // Shift/Ctrl/Cmd-click: add a band to the selection, or take it out.
+  function togglePick(i){
+    if (group.has(i) && group.size > 1) {
+      group.delete(i);
+      if (selected === i) selected = Array.from(group)[group.size - 1];
+    } else { group.add(i); selected = i; }
+    renderAll();
+  }
+  function selectAll(){
+    group.clear();
+    for (var i = 0; i < MAX_BANDS; i++) if (params[bandKey(i, 'Used')]) { group.add(i); selected = i; }
+    renderAll();
+  }
+  function deletePicked(){
+    var list = picked();
+    if (!list.length) return;
+    list.forEach(function(i){ BAND_FIELDS.forEach(function(n){ params[bandKey(i, n)] = DEFAULTS[bandKey(i, n)]; }); if (solo === i) solo = -1; });
+    group.clear(); selected = -1;
+    changed();
+  }
+  var clipboardBands = [];
+  function copyPicked(){
+    var list = picked();
+    if (!list.length) return;
+    clipboardBands = list.map(function(i){ var b = {}; BAND_FIELDS.forEach(function(n){ b[n] = params[bandKey(i, n)]; }); return b; });
+    setInfoText('Copied ' + list.length + (list.length === 1 ? ' band' : ' bands'));
+  }
+  function pasteBands(source){
+    source = source || clipboardBands;
+    if (!source.length) { setInfoText('Nothing copied yet'); return; }
+    var placed = [];
+    source.forEach(function(b){
+      for (var i = 0; i < MAX_BANDS; i++) if (!params[bandKey(i, 'Used')]) break;
+      if (i === MAX_BANDS) return;
+      BAND_FIELDS.forEach(function(n){ params[bandKey(i, n)] = b[n]; });
+      params[bandKey(i, 'Used')] = true;
+      placed.push(i);
+    });
+    if (!placed.length) { setInfoText('All ' + MAX_BANDS + ' bands are in use'); return; }
+    group = new Set(placed); selected = placed[placed.length - 1];
+    setInfoText((source === clipboardBands ? 'Pasted ' : 'Duplicated ') + placed.length + (placed.length === 1 ? ' band' : ' bands') +
+                (placed.length < source.length ? ' (no room for the rest)' : ''));
+    changed();
+  }
+  function duplicatePicked(){
+    var list = picked();
+    pasteBands(list.map(function(i){ var b = {}; BAND_FIELDS.forEach(function(n){ b[n] = params[bandKey(i, n)]; }); return b; }));
+  }
+  // RESET: the band as it was made -- 0 dB, the shape's usual Q and slope, both channels,
+  // no dynamics; its shape and frequency stay.
+  function resetPicked(){
+    var list = picked();
+    list.forEach(function(i){
+      var shape = params[bandKey(i, 'Shape')];
+      params[bandKey(i, 'Gain')] = 0; params[bandKey(i, 'Q')] = shape === 'bell' ? 1 : 0.71;
+      params[bandKey(i, 'Slope')] = shape === 'lowcut' || shape === 'highcut' ? 24 : 12;
+      params[bandKey(i, 'Place')] = 'stereo'; params[bandKey(i, 'On')] = true;
+      ['Dyn', 'Range', 'Thresh', 'Attack', 'Release'].forEach(function(n){ params[bandKey(i, n)] = DEFAULTS[bandKey(i, n)]; });
+    });
+    if (list.length) { setInfoText('Reset ' + list.length + (list.length === 1 ? ' band' : ' bands')); changed(); }
+  }
+  // The menu on a right click: on a dot it works on the selection.
+  function bandMenu(x, y, onBand){
+    var n = picked().length, mod = /Mac/.test(navigator.platform) ? '\u2318' : 'Ctrl+';
+    var items = onBand ? [{ header: n > 1 ? n + ' bands' : 'Band ' + (selected + 1) },
+                          { label: 'Copy  ' + mod + 'C', action: copyPicked },
+                          { label: 'Paste  ' + mod + 'V', disabled: !clipboardBands.length, action: function(){ pasteBands(); } },
+                          { label: 'Duplicate  ' + mod + 'D', action: duplicatePicked },
+                          { label: 'Reset', action: resetPicked },
+                          { label: 'Delete  Del', action: deletePicked },
+                          { sep: true }]
+                        : [{ label: 'Paste  ' + mod + 'V', disabled: !clipboardBands.length, action: function(){ pasteBands(); } }];
+    items.push({ label: 'Select all  ' + mod + 'A', disabled: !usedCount(), action: selectAll });
+    showMenu({ getBoundingClientRect: function(){ return { left: x, right: x, top: y, bottom: y }; }, contains: function(){ return false; } }, items);
+  }
 
   function renderAll(){
     knobRenders.forEach(function(r){ r(); });
@@ -1909,6 +2005,7 @@ if (typeof registerProcessor === 'function') {
   }
   function restore(p){
     params = clone(p); committed = clone(p);
+    group = new Set(Array.from(group).filter(function(i){ return params[bandKey(i, 'Used')]; }));
     if (selected >= 0 && !params[bandKey(selected, 'Used')]) selected = -1;
     if (solo >= 0 && !params[bandKey(solo, 'Used')]) solo = -1;
     sendParams(); save(); renderAll();
@@ -2217,6 +2314,7 @@ if (typeof registerProcessor === 'function') {
         eg.fillStyle = c; eg.globalAlpha = 0.85; eg.fill(); eg.globalAlpha = 1;
       }
       if (i === selected) { eg.beginPath(); eg.arc(p.x, p.y, 10.5, 0, 2 * Math.PI); eg.strokeStyle = T.ring; eg.lineWidth = 1.5; eg.stroke(); }
+      else if (group.has(i)) { eg.beginPath(); eg.arc(p.x, p.y, 10.5, 0, 2 * Math.PI); eg.strokeStyle = T.ring; eg.lineWidth = 1; eg.setLineDash([3, 2]); eg.stroke(); eg.setLineDash([]); }
       else if (i === hover) { eg.beginPath(); eg.arc(p.x, p.y, 10, 0, 2 * Math.PI); eg.strokeStyle = T.ringHover; eg.lineWidth = 1; eg.stroke(); }
       eg.beginPath(); eg.arc(p.x, p.y, 6.5, 0, 2 * Math.PI);
       if (active) { eg.fillStyle = c; eg.fill(); eg.strokeStyle = T.dotEdge; eg.lineWidth = 1; eg.stroke(); }
@@ -2234,6 +2332,12 @@ if (typeof registerProcessor === 'function') {
         eg.fillStyle = T.badgeText; eg.fillText(t, bx + tw / 2, p.y + 0.5);
         bx += tw + 3;
       });
+    }
+    // the selection frame
+    if (rubber && rubber.moved) {
+      var rx = Math.min(rubber.x0, rubber.x1), ry = Math.min(rubber.y0, rubber.y1), rw = Math.abs(rubber.x1 - rubber.x0), rh = Math.abs(rubber.y1 - rubber.y0);
+      eg.fillStyle = T.eqLabel0; eg.globalAlpha = 0.08; eg.fillRect(rx, ry, rw, rh); eg.globalAlpha = 1;
+      eg.strokeStyle = T.eqLabel0; eg.lineWidth = 1; eg.setLineDash([4, 3]); eg.strokeRect(rx + 0.5, ry + 0.5, rw, rh); eg.setLineDash([]);
     }
     // EQ Sketch: the line being drawn
     if (sketch.points && sketch.points.length > 1) {
@@ -2358,11 +2462,19 @@ if (typeof registerProcessor === 'function') {
       beginGesture(); eqCanvas.setPointerCapture(e.pointerId);
       return;
     }
-    if (i < 0) { if (selected >= 0 && e.detail < 2) select(-1); return; }
+    if (i < 0) {
+      // a frame around dots selects them (Shift/Ctrl adds to the selection); a click deselects
+      if (p.x <= view.plotW) {
+        rubber = { x0: p.x, y0: p.y, x1: p.x, y1: p.y, add: e.shiftKey || e.ctrlKey || e.metaKey, base: new Set(group), moved: false, detail: e.detail };
+        eqCanvas.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
     if (e.altKey) { deleteBand(i); return; }
-    if (i !== selected) select(i);
-    var b = bandOf(params, i);
-    drag = { band: i, lastX: p.x, lastY: p.y, fx: fx(b.freq), fy: nodePos(i).y };
+    if (e.shiftKey || e.ctrlKey || e.metaKey) { togglePick(i); return; }
+    if (!group.has(i)) select(i);
+    else if (i !== selected) { selected = i; renderAll(); }
+    drag = { band: i, lastX: p.x, lastY: p.y, members: picked().map(function(j){ return { i: j, fx: fx(params[bandKey(j, 'Freq')]), fy: nodePos(j).y }; }) };
     beginGesture();
     eqCanvas.setPointerCapture(e.pointerId);
   });
@@ -2376,16 +2488,36 @@ if (typeof registerProcessor === 'function') {
       changed();
       return;
     }
+    if (rubber) {
+      rubber.x1 = p.x; rubber.y1 = p.y;
+      if (Math.abs(rubber.x1 - rubber.x0) + Math.abs(rubber.y1 - rubber.y0) > 4) rubber.moved = true;
+      if (rubber.moved) {
+        var x0 = Math.min(rubber.x0, rubber.x1), x1 = Math.max(rubber.x0, rubber.x1), y0 = Math.min(rubber.y0, rubber.y1), y1 = Math.max(rubber.y0, rubber.y1);
+        var inside = [];
+        for (var bi = 0; bi < MAX_BANDS; bi++) {
+          if (!params[bandKey(bi, 'Used')]) continue;
+          var np = nodePos(bi);
+          if (np.x >= x0 && np.x <= x1 && np.y >= y0 && np.y <= y1) inside.push(bi);
+        }
+        group = new Set(rubber.add ? Array.from(rubber.base).concat(inside) : inside);
+        selected = inside.length ? inside[inside.length - 1] : rubber.add && group.size ? Array.from(group)[group.size - 1] : -1;
+        renderAll();
+      }
+      return;
+    }
     if (drag) {
-      var k = e.shiftKey ? 0.15 : 1;
-      drag.fx += (p.x - drag.lastX) * k; drag.fy += (p.y - drag.lastY) * k;
+      // every selected dot moves together: frequency along, gain (or Q) up and down
+      var k = e.shiftKey ? 0.15 : 1, dx = (p.x - drag.lastX) * k, dy = (p.y - drag.lastY) * k, R = ui.dispRange;
       drag.lastX = p.x; drag.lastY = p.y;
-      var i = drag.band, shape = params[bandKey(i, 'Shape')], R = ui.dispRange;
-      params[bandKey(i, 'Freq')] = Math.min(FREQ_MAX, Math.max(FREQ_MIN, xf(drag.fx)));
-      if (shapeHasGain(shape)) {
-        var g = Math.max(-R, Math.min(R, yg(drag.fy)));
-        if (params.gainScale > 0) params[bandKey(i, 'Gain')] = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, g * 100 / params.gainScale));
-      } else if (shapeHasQ(shape)) params[bandKey(i, 'Q')] = qFromNorm(yg(drag.fy) / (R * 0.5));
+      drag.members.forEach(function(m){
+        m.fx += dx; m.fy += dy;
+        var shape = params[bandKey(m.i, 'Shape')];
+        params[bandKey(m.i, 'Freq')] = Math.min(FREQ_MAX, Math.max(FREQ_MIN, xf(m.fx)));
+        if (shapeHasGain(shape)) {
+          var g = Math.max(-R, Math.min(R, yg(m.fy)));
+          if (params.gainScale > 0) params[bandKey(m.i, 'Gain')] = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, g * 100 / params.gainScale));
+        } else if (shapeHasQ(shape)) params[bandKey(m.i, 'Q')] = qFromNorm(yg(m.fy) / (R * 0.5));
+      });
       changed();
       return;
     }
@@ -2460,7 +2592,7 @@ if (typeof registerProcessor === 'function') {
       }
       var gain = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, g));
       f = Math.max(FREQ_MIN, Math.min(FREQ_MAX, f));
-      var nsec = designBand({ shape: shape, freq: f, gain: gain, q: q, slope: 12 }, colFs, secs);
+      var nsec = designBand({ shape: shape, freq: f, gain: gain, q: q, slope: 12, gainQ: !!params.gainQ }, colFs, secs);
       for (x = c0; x <= c1; x++) {
         var m2 = 1;
         for (var si2 = 0; si2 < nsec; si2++) { var mg2 = sectionMag(secs[si2], 2 * Math.PI * Math.min(xf(x), colFs / 2) / colFs); m2 *= mg2 * mg2; }
@@ -2471,7 +2603,7 @@ if (typeof registerProcessor === 'function') {
       params[bandKey(free, 'Q')] = q; params[bandKey(free, 'Slope')] = 12; params[bandKey(free, 'Place')] = 'stereo';
       params[bandKey(free, 'Dyn')] = false;
       selected = free; added++;
-      fresh.push({ index: free, shape: shape, freq: f, gain: gain, q: q, slope: 12 });
+      fresh.push({ index: free, shape: shape, freq: f, gain: gain, q: q, slope: 12, gainQ: !!params.gainQ });
     }
     // The greedy pass overshoots where bands overlap: settle the gains together
     // (least squares on the drawn stretch, each band's curve per dB of gain).
@@ -2509,13 +2641,27 @@ if (typeof registerProcessor === 'function') {
     if (added) changed();
   }
 
+  var rubber = null;
   function endDrag(){
+    if (rubber) {
+      var r = rubber; rubber = null;
+      if (!r.moved && !r.add && r.detail < 2) select(-1);   // a plain click on the background
+      requestDraw();
+      return;
+    }
     if (sketch.points) { var pts = sketch.points; sketch.points = null; fitSketch(pts); endGesture(); requestDraw(); return; }
     if (drag) { drag = null; endGesture(); requestDraw(); }
   }
   eqCanvas.addEventListener('pointerup', endDrag);
   eqCanvas.addEventListener('pointercancel', endDrag);
   eqCanvas.addEventListener('pointerleave', function(){ if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
+  eqCanvas.addEventListener('contextmenu', function(e){
+    e.preventDefault();
+    var p = localPos(e), i = hitBand(p);
+    if (i >= 0 && !group.has(i)) select(i);
+    else if (i >= 0) { selected = i; renderAll(); }
+    bandMenu(e.clientX, e.clientY, i >= 0);
+  });
   eqCanvas.addEventListener('dblclick', function(e){
     var p = localPos(e), i = hitBand(p);
     if (p.x > view.plotW) return;
@@ -2536,13 +2682,15 @@ if (typeof registerProcessor === 'function') {
   }, { passive: false });
   eqCanvas.addEventListener('keydown', function(e){
     if (selected < 0) return;
-    var fine = e.shiftKey ? 0.2 : 1, used = true;
-    if (e.key === 'Delete' || e.key === 'Backspace') deleteBand(selected);
+    var fine = e.shiftKey ? 0.2 : 1, used = true, list = picked();
+    if (e.key === 'Delete' || e.key === 'Backspace') deletePicked();
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      params[bandParam('Freq')] = Math.min(FREQ_MAX, Math.max(FREQ_MIN, params[bandParam('Freq')] * Math.pow(2, (e.key === 'ArrowRight' ? 1 : -1) / 24 * fine)));
+      list.forEach(function(i){ params[bandKey(i, 'Freq')] = Math.min(FREQ_MAX, Math.max(FREQ_MIN, params[bandKey(i, 'Freq')] * Math.pow(2, (e.key === 'ArrowRight' ? 1 : -1) / 24 * fine))); });
       changed();
-    } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && shapeHasGain(params[bandParam('Shape')])) {
-      params[bandParam('Gain')] = Math.min(GAIN_MAX, Math.max(-GAIN_MAX, params[bandParam('Gain')] + (e.key === 'ArrowUp' ? 0.5 : -0.5) * fine));
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      list.forEach(function(i){
+        if (shapeHasGain(params[bandKey(i, 'Shape')])) params[bandKey(i, 'Gain')] = Math.min(GAIN_MAX, Math.max(-GAIN_MAX, params[bandKey(i, 'Gain')] + (e.key === 'ArrowUp' ? 0.5 : -0.5) * fine));
+      });
       changed();
     } else used = false;
     if (used) { e.preventDefault(); e.stopPropagation(); }
@@ -2564,6 +2712,11 @@ if (typeof registerProcessor === 'function') {
     if (e.key === ' ' && !e.repeat) { e.preventDefault(); setPlaying(!src.playing); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selected >= 0 && !String(window.getSelection())) { e.preventDefault(); copyPicked(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteBands(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicatePicked(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAll(); }
+    else if (e.key === 'Escape' && menuEl.hidden && group.size > 1) { select(selected); }
   });
 
   // ---------- easter egg: 翡翠 (kawasemi), the kingfisher ----------
