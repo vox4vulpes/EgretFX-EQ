@@ -3552,10 +3552,13 @@ if (typeof registerProcessor === 'function') {
   // Near the curve: the dot a double-click there would make, and above it the
   // shape it would be (a bell, or a cut at the very ends).
   var curveHover = null;
-  function shapeAt(f){ return f <= 25 ? 'lowshelf' : f >= 18000 ? 'highshelf' : 'bell'; }   // shelves at the very ends
+  // The shape a new band takes where it's added: the ghost (off the curve) has shelves
+  // towards the ends; on the curve, cuts at the very ends, shelves a little further in.
+  function shapeAt(f){ return f < 50 ? 'lowshelf' : f > 10000 ? 'highshelf' : 'bell'; }
+  function curveShapeAt(f){ return f < 20 ? 'lowcut' : f > 18000 ? 'highcut' : shapeAt(f); }
   function drawCurveHover(){
     if (!curveHover || drag || sketch.points || rubber || (grab && !grab.made)) return;
-    var x = curveHover.x, y = curveHover.y, shape = shapeAt(xf(x));
+    var x = curveHover.x, y = curveHover.y, shape = curveShapeAt(xf(x));
     eg.beginPath(); eg.arc(x, y, 6.5, 0, 2 * Math.PI);
     eg.fillStyle = T.eqLabel0; eg.globalAlpha = 0.9; eg.fill(); eg.globalAlpha = 1;
     eg.strokeStyle = T.dotEdge; eg.lineWidth = 1; eg.stroke();
@@ -3570,7 +3573,7 @@ if (typeof registerProcessor === 'function') {
   var lastClickAdd = 0;
   function clickAdd(x, y){
     if (x > view.plotW) return;
-    var f = Math.min(FREQ_MAX, Math.max(FREQ_MIN, xf(x))), shape = shapeAt(f);
+    var f = Math.min(FREQ_MAX, Math.max(FREQ_MIN, xf(x))), shape = curveHover ? curveShapeAt(f) : shapeAt(f);
     var g = Math.round(yg(curveHover ? curveHover.y : y) * 10) / 10;
     curveHover = null; ghost = null;
     lastClickAdd = performance.now();
@@ -3788,7 +3791,7 @@ if (typeof registerProcessor === 'function') {
     if (p.x > view.plotW) return;
     if (p.y >= view.h - view.bottom) { zoomAxis(0, 1e9); return; }   // double-click the scale: the whole range again
     if (i >= 0) { selected = i; setBand('On', !params[bandKey(i, 'On')]); return; }
-    var f = xf(p.x), shape = shapeAt(f);
+    var f = xf(p.x), shape = curveHover ? curveShapeAt(f) : shapeAt(f);
     var g = Math.round(yg(curveHover ? curveHover.y : p.y) * 10) / 10;
     curveHover = null;
     addBand(Math.min(FREQ_MAX, Math.max(FREQ_MIN, f)), params.gainScale > 0 ? g * 100 / params.gainScale : 0, shape);
@@ -3851,7 +3854,7 @@ if (typeof registerProcessor === 'function') {
   // ---------- easter egg: 翡翠 (kawasemi), the kingfisher ----------
   // A click on the bird also shows the version, big, in the middle of the screen:
   // it surfaces, floats a moment, then sinks below a water line, rings spreading.
-  var EGRET_VERSION = '1.2.0';   // this page's version: what the next release (EQ and VST) will be
+  var EGRET_VERSION = '1.2.1';   // this page's version: what the next release (EQ and VST) will be
   var versionSplash = -1;
   function drawVersion(g){
     if (versionSplash < 0) return;
