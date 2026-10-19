@@ -106,6 +106,8 @@ namespace eq
         void runBand (BandState&, double* L, double* R, int len);
         void detect (BandState&, const double* dl, const double* dr, int len, int index);
         void runCharacter (double* L, double* R, int len);
+        // Settled stereo bands in a row, all their sections sample by sample (see process).
+        void runSettled (int count, double* L, double* R, int len);
 
         double fs = 48000, fadeStep = 0, glide = 0;
         std::array<BandState, maxBands> bands {};
@@ -121,6 +123,10 @@ namespace eq
         std::array<std::atomic<float>, maxBands> dynShown {};
         std::array<std::atomic<float>, 4> meters {};
         std::array<double, 32> bufL {}, bufR {};
+        // the sections runSettled works through, each with its state, and where each band ends
+        std::array<const Section*, maxBands * maxSections> runSecs {};
+        std::array<double*, maxBands * maxSections> runZ {};
+        std::array<bool, maxBands * maxSections> runEnd {};
     };
 
     //==============================================================================

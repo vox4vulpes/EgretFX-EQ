@@ -337,6 +337,15 @@ namespace eq
             for (auto& w : t[1]) w /= sum;
             return t;
         }();
+        // This runs on the audio thread whenever a setting changes: the sines and
+        // cosines of the 64 points once per call (not once per section), and each
+        // section's power straight from them, without a square root.
+        std::array<double, points> c1, c2, s1, s2;
+        for (size_t k = 0; k < (size_t) points; ++k)
+        {
+            const auto w = 2 * pi * table[0][k] / fs;
+            c1[k] = std::cos (w); c2[k] = std::cos (2 * w); s1[k] = std::sin (w); s2[k] = std::sin (2 * w);
+        }
         std::array<double, points> pow;
         pow.fill (1);
         Section secs[maxSections];
@@ -346,12 +355,18 @@ namespace eq
             if (! b.used || ! b.on || b.place == Place::side) continue;
             const auto n = designBand (b.shape, b.freq, p.effectiveGain (i), b.q, b.slope, fs, secs);
             const auto full = b.place == Place::stereo || b.place == Place::mid;
-            for (int k = 0; k < points; ++k)
+            for (size_t k = 0; k < (size_t) points; ++k)
             {
-                if (table[0][(size_t) k] >= fs / 2) continue;
-                double m = 1;
-                for (int s = 0; s < n; ++s) m *= sectionMag (secs[s], 2 * pi * table[0][(size_t) k] / fs);
-                pow[(size_t) k] *= full ? m * m : (1 + m * m) / 2;
+                if (table[0][k] >= fs / 2) continue;
+                double m2 = 1;
+                for (int s = 0; s < n; ++s)
+                {
+                    const auto& q = secs[s];
+                    const auto nr = q.b0 + q.b1 * c1[k] + q.b2 * c2[k], ni = -(q.b1 * s1[k] + q.b2 * s2[k]);
+                    const auto dr = 1 + q.a1 * c1[k] + q.a2 * c2[k], di = -(q.a1 * s1[k] + q.a2 * s2[k]);
+                    m2 *= (nr * nr + ni * ni) / (dr * dr + di * di);
+                }
+                pow[k] *= full ? m2 : (1 + m2) / 2;
             }
         }
         double tot = 0;
@@ -453,44 +468,105 @@ namespace eq
             }
             return x;
         }
+
+        // A whole sub-block through a band's sections, one section at a time with
+        // its state held in registers: the same sums in the same order as
+        // runSections, sample by sample, so the result is identical. z: the
+        // channel's state in the first section (the right channel's is z + 2).
+        inline void runSectionsBlock (const Section* secs, int n, double* z, double* x, int len)
+        {
+            for (int s = 0; s < n; ++s)
+            {
+                const auto b0 = secs[s].b0, b1 = secs[s].b1, b2 = secs[s].b2, a1 = secs[s].a1, a2 = secs[s].a2;
+                auto* zz = z + s * 4;
+                auto z0 = zz[0], z1 = zz[1];
+                for (int i = 0; i < len; ++i)
+                {
+                    const auto in = x[i], y = b0 * in + z0;
+                    z0 = b1 * in - a1 * y + z1;
+                    z1 = b2 * in - a2 * y;
+                    x[i] = y;
+                }
+                zz[0] = z0; zz[1] = z1;
+            }
+        }
     }
 
+    // One band over a sub-block: a band fading in or out (or changing shape), or
+    // on one side only. Settled stereo bands go through runSettled instead.
     void Engine::runBand (BandState& b, double* L, double* R, int len)
     {
+        // The fade for each sample, first.
+        double mixes[subBlock];
         auto mix = b.mix;
         const auto target = b.mixTarget, step = fadeStep;
-        const auto* secs = b.secs.data();
-        auto* z = b.z.data();
-        const auto n = b.n;
         for (int i = 0; i < len; ++i)
         {
             if (mix != target) mix = mix < target ? std::min (target, mix + step) : std::max (target, mix - step);
-            const auto l = L[i], r = R[i];
-            double y;
-            switch (b.place)
-            {
-                case Place::stereo:
-                    y = runSections (secs, n, z, 0, l); L[i] = l + mix * (y - l);
-                    y = runSections (secs, n, z, 1, r); R[i] = r + mix * (y - r);
-                    break;
-                case Place::left:
-                    y = runSections (secs, n, z, 0, l); L[i] = l + mix * (y - l);
-                    break;
-                case Place::right:
-                    y = runSections (secs, n, z, 0, r); R[i] = r + mix * (y - r);
-                    break;
-                case Place::mid:
-                case Place::side:
-                {
-                    auto m = (l + r) * 0.5, sd = (l - r) * 0.5;
-                    if (b.place == Place::mid) { y = runSections (secs, n, z, 0, m); m += mix * (y - m); }
-                    else { y = runSections (secs, n, z, 0, sd); sd += mix * (y - sd); }
-                    L[i] = m + sd; R[i] = m - sd;
-                    break;
-                }
-            }
+            mixes[i] = mix;
         }
         b.mix = mix;
+        const auto* secs = b.secs.data();
+        auto* z = b.z.data();
+        const auto n = b.n;
+        double wetL[subBlock], wetR[subBlock];
+        switch (b.place)
+        {
+            case Place::stereo:
+                std::copy (L, L + len, wetL); std::copy (R, R + len, wetR);
+                runSectionsBlock (secs, n, z, wetL, len);
+                runSectionsBlock (secs, n, z + 2, wetR, len);
+                for (int i = 0; i < len; ++i) { L[i] = L[i] + mixes[i] * (wetL[i] - L[i]); R[i] = R[i] + mixes[i] * (wetR[i] - R[i]); }
+                break;
+            case Place::left:
+            case Place::right:
+            {
+                auto* x = b.place == Place::left ? L : R;
+                std::copy (x, x + len, wetL);
+                runSectionsBlock (secs, n, z, wetL, len);
+                for (int i = 0; i < len; ++i) x[i] = x[i] + mixes[i] * (wetL[i] - x[i]);
+                break;
+            }
+            case Place::mid:
+            case Place::side:
+            {
+                double m[subBlock], sd[subBlock];
+                for (int i = 0; i < len; ++i) { m[i] = (L[i] + R[i]) * 0.5; sd[i] = (L[i] - R[i]) * 0.5; }
+                auto* x = b.place == Place::mid ? m : sd;
+                std::copy (x, x + len, wetL);
+                runSectionsBlock (secs, n, z, wetL, len);
+                for (int i = 0; i < len; ++i) { x[i] += mixes[i] * (wetL[i] - x[i]); L[i] = m[i] + sd[i]; R[i] = m[i] - sd[i]; }
+                break;
+            }
+        }
+    }
+
+    // Each sample through every section in the list, left and right. A band
+    // that has settled fades at 1, and l + 1 * (y - l) is not always exactly y,
+    // so that sum stays: the sound is the same, bit for bit, as band by band.
+    void Engine::runSettled (int count, double* L, double* R, int len)
+    {
+        const auto* const* secs = runSecs.data();
+        auto* const* zs = runZ.data();
+        const auto* ends = runEnd.data();
+        for (int i = 0; i < len; ++i)
+        {
+            auto l = L[i], r = R[i], bandL = l, bandR = r;
+            for (int k = 0; k < count; ++k)
+            {
+                const auto& c = *secs[k];
+                auto* zz = zs[k];
+                const auto yl = c.b0 * l + zz[0];
+                zz[0] = c.b1 * l - c.a1 * yl + zz[1];
+                zz[1] = c.b2 * l - c.a2 * yl;
+                const auto yr = c.b0 * r + zz[2];
+                zz[2] = c.b1 * r - c.a1 * yr + zz[3];
+                zz[3] = c.b2 * r - c.a2 * yr;
+                l = yl; r = yr;
+                if (ends[k]) { l = bandL + (l - bandL); r = bandR + (r - bandR); bandL = l; bandR = r; }
+            }
+            L[i] = l; R[i] = r;
+        }
     }
 
     void Engine::process (const float* inL, const float* inR, float* outL, float* outR, int n)
@@ -511,11 +587,31 @@ namespace eq
             }
             for (int j = 0; j < maxBands; ++j)
                 if (bands[(size_t) j].dyn) detect (bands[(size_t) j], dl, dr, len, j);
+            // The bands in order. Settled stereo bands next to each other (most of
+            // them, most of the time) go through together, sample by sample: the
+            // processor then has every section's filter to work on at once instead
+            // of waiting on one band's at a time. The rest (fading, or on one side)
+            // go one band at a time.
+            for (auto& b : bands) updateBand (b);
+            int count = 0;
             for (auto& b : bands)
             {
-                updateBand (b);
-                if (b.mix > 0 || b.mixTarget > 0) runBand (b, L, R, len);
+                if (b.mix == 0 && b.mixTarget == 0) continue;
+                if (b.place == Place::stereo && b.mix == 1 && b.mixTarget == 1)
+                {
+                    for (int s = 0; s < b.n; ++s)
+                    {
+                        runSecs[(size_t) count] = &b.secs[(size_t) s];
+                        runZ[(size_t) count] = b.z.data() + s * 4;
+                        runEnd[(size_t) count] = s == b.n - 1;
+                        ++count;
+                    }
+                    continue;
+                }
+                if (count > 0) { runSettled (count, L, R, len); count = 0; }
+                runBand (b, L, R, len);
             }
+            if (count > 0) runSettled (count, L, R, len);
             // SOLO: the soloed band's part of the spectrum, from the input.
             double soloTarget = tSolo >= 0 && tSolo == solo ? 1 : 0;
             if (soloMix == 0 && tSolo != solo) { solo = tSolo; soloZ.fill (0); soloTarget = solo >= 0 ? 1 : 0; }
