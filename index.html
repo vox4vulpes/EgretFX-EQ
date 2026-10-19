@@ -20,6 +20,7 @@
     --coral:#b85540;
     --focus:#2a7f90;
     --shadow:rgba(30,25,15,.35);
+    --page-ink:rgba(42,36,29,.65);
     --hot:#ff6a4a;
   }
   /* The plugin's two themes: light (the default) and the warm dark screen. */
@@ -38,9 +39,9 @@
     --led-off:#5a4a30; --solo:#e6cf5a; --teal-hi:#7ec4be;
   }
   @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){ --page-bg:#121110; --panel:#ddd3ba; --panel-raised:#e8dec2; --groove:#b9ac8a; --groove-dark:#948666; --shadow:rgba(0,0,0,.6); }
+    :root:not([data-theme="light"]){ --page-ink:rgba(242,236,217,.62); --page-bg:#121110; --panel:#ddd3ba; --panel-raised:#e8dec2; --groove:#b9ac8a; --groove-dark:#948666; --shadow:rgba(0,0,0,.6); }
   }
-  :root[data-theme="dark"]{ --page-bg:#121110; --panel:#ddd3ba; --panel-raised:#e8dec2; --groove:#b9ac8a; --groove-dark:#948666; --shadow:rgba(0,0,0,.6); }
+  :root[data-theme="dark"]{ --page-ink:rgba(242,236,217,.62); --page-bg:#121110; --panel:#ddd3ba; --panel-raised:#e8dec2; --groove:#b9ac8a; --groove-dark:#948666; --shadow:rgba(0,0,0,.6); }
 
   *{box-sizing:border-box;}
   html,body{margin:0;}
@@ -51,7 +52,7 @@
   }
   button{font-family:inherit;}
   button:focus-visible{outline:2px solid var(--focus); outline-offset:2px;}
-  kbd{font-family:'IBM Plex Mono',monospace; background:var(--panel-raised); border:1px solid var(--groove-dark); border-radius:4px; padding:1px 5px; font-size:11px;}
+  kbd{font-family:'IBM Plex Mono',monospace; color:var(--ink); background:var(--panel-raised); border:1px solid var(--groove-dark); border-radius:4px; padding:1px 5px; font-size:11px;}
 
   .stage{margin:auto; display:flex; gap:20px; align-items:flex-start; width:100%; max-width:1400px;}
   .main{flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:10px;}
@@ -179,7 +180,7 @@
   .ms{height:1px; background:var(--float-border); margin:4px 2px;}
   .menu input{width:100%; background:var(--input-bg); color:var(--fg); border:1px solid var(--acc-soft); border-radius:4px; padding:5px 7px; font-size:12px; outline:none;}
 
-  .help{font-size:12px; color:var(--ink-soft); margin:0;}
+  .help{font-size:12px; color:var(--page-ink); margin:0;}
   .no-worklet{font-size:12px; color:var(--coral); margin:0;}
 
   /* ---------- the player: a column to the left of the plugin ---------- */
@@ -227,6 +228,8 @@
     .logo-sub, .bar .hide-narrow{display:none;}
     .preset-btn{min-width:110px;}
     .screen{aspect-ratio:auto; height:62vh;}
+    .bar.bottom{flex-wrap:wrap; height:auto; padding:4px 8px;}
+    .bar.top{flex-wrap:wrap; height:auto; padding:4px 8px;}
   }
 </style>
 </head>
