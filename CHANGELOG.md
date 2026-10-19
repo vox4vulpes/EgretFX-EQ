@@ -3,6 +3,15 @@
 Each release's notes on GitHub start with its section from this file — the
 release workflow refuses to publish a version that has no section here.
 
+## [1.1.1]
+
+### Changed
+- Lighter on the CPU, with exactly the same sound as 1.1.0 (bit for bit):
+  settled stereo bands now go through together, 15–20% less load (about 0.3%
+  of one core for 12 bands, 0.9% for 48); and AUTO GAIN, worked out again on
+  the audio thread whenever a setting moves (automation included), is 4–6
+  times quicker.
+
 ## [1.1.0]
 
 ### Added
