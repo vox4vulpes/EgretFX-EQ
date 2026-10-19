@@ -2433,7 +2433,7 @@ void EgretEqEditor::layoutPanel()
     auto place = [&x] (juce::Component& c, int w) { c.setBounds (x, 7, w, 24); x += w + 4; };
     place (undoButton, 30); place (redoButton, 30); x += 4;
     place (abButton, 48); place (copyButton, 84);
-    const auto presetW = 210, cx = 590;
+    const auto presetW = 200, cx = 615;
     presetPrev.setBounds (cx - presetW / 2 - 26, 7, 24, 24);
     presetButton.setBounds (cx - presetW / 2, 7, presetW, 24);
     presetNext.setBounds (cx + presetW / 2 + 2, 7, 24, 24);
