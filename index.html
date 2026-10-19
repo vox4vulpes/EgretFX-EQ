@@ -2960,6 +2960,7 @@ if (typeof registerProcessor === 'function') {
         }
       });
     }
+    drawCurveHover();
     eg.restore();
     drawVersion(eg);
     // the hovered or dragged band's numbers
@@ -3195,9 +3196,15 @@ if (typeof registerProcessor === 'function') {
     }
     var h = hitBand(p);
     if (h !== hover) { hover = h; requestDraw(); }
-    var g0 = ghost;
-    ghost = usedCount() === 0 && h < 0 && p.x <= view.plotW && !sketch.on ? p : null;
-    if (ghost || g0) requestDraw();
+    // near the curve: the dot a double-click would make there; elsewhere, with no bands, the ghost
+    var g0 = ghost, c0 = curveHover;
+    curveHover = null;
+    if (h < 0 && p.x <= view.plotW && !sketch.on && totalCurve && hitArrow(p) < 0 && hitRange(p) < 0) {
+      var col = Math.max(0, Math.min(cols - 1, Math.round(p.x))), cy = gy(Math.max(-ui.dispRange, Math.min(ui.dispRange, totalCurve[col])));
+      if (Math.abs(p.y - cy) < 8) curveHover = { x: p.x, y: cy };
+    }
+    ghost = usedCount() === 0 && h < 0 && p.x <= view.plotW && !sketch.on && !curveHover ? p : null;
+    if (ghost || g0 || curveHover || c0) requestDraw();
     var pp = p.x <= view.plotW ? p.x : -1, noteAt = function(x){ return x < 0 ? null : Math.round(midiOf(xf(x))); };
     if (ui.piano && noteAt(pp) !== noteAt(pianoPointer)) requestDraw();
     pianoPointer = pp;
@@ -3328,6 +3335,24 @@ if (typeof registerProcessor === 'function') {
       if (n) out[x] = sum / n;
     }
     return out;
+  }
+  // Near the curve: the dot a double-click there would make, and above it the
+  // shape it would be (a bell, or a cut at the very ends).
+  var curveHover = null;
+  function shapeAt(f){ return f <= 25 ? 'lowcut' : f >= 18000 ? 'highcut' : 'bell'; }
+  function drawCurveHover(){
+    if (!curveHover || drag || sketch.points || rubber || (grab && grab.active)) return;
+    var x = curveHover.x, y = curveHover.y, shape = shapeAt(xf(x));
+    eg.beginPath(); eg.arc(x, y, 6.5, 0, 2 * Math.PI);
+    eg.fillStyle = T.eqLabel0; eg.globalAlpha = 0.9; eg.fill(); eg.globalAlpha = 1;
+    eg.strokeStyle = T.dotEdge; eg.lineWidth = 1; eg.stroke();
+    // the shape's icon
+    var iy = y > 40 ? y - 20 : y + 20;
+    eg.beginPath();
+    if (shape === 'bell') { eg.moveTo(x - 7, iy + 3); eg.bezierCurveTo(x - 3, iy + 3, x - 3, iy - 4, x, iy - 4); eg.bezierCurveTo(x + 3, iy - 4, x + 3, iy + 3, x + 7, iy + 3); }
+    else if (shape === 'lowcut') { eg.moveTo(x - 6, iy + 4); eg.lineTo(x - 2, iy - 3); eg.lineTo(x + 7, iy - 3); }
+    else { eg.moveTo(x - 7, iy - 3); eg.lineTo(x + 2, iy - 3); eg.lineTo(x + 6, iy + 4); }
+    eg.strokeStyle = T.curve; eg.lineWidth = 1.5; eg.lineJoin = 'round'; eg.lineCap = 'round'; eg.globalAlpha = 0.85; eg.stroke(); eg.globalAlpha = 1;
   }
   // No bands yet: over the empty screen, a ghost of the curve a band added there would make.
   var ghost = null;
@@ -3525,7 +3550,7 @@ if (typeof registerProcessor === 'function') {
   }
   eqCanvas.addEventListener('pointerup', endDrag);
   eqCanvas.addEventListener('pointercancel', endDrag);
-  eqCanvas.addEventListener('pointerleave', function(){ pianoPointer = -1; ghost = null; if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
+  eqCanvas.addEventListener('pointerleave', function(){ pianoPointer = -1; ghost = null; curveHover = null; if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
   eqCanvas.addEventListener('contextmenu', function(e){
     e.preventDefault();
     var p = localPos(e), i = hitBand(p);
@@ -3537,8 +3562,9 @@ if (typeof registerProcessor === 'function') {
     var p = localPos(e), i = hitBand(p);
     if (p.x > view.plotW) return;
     if (i >= 0) { selected = i; setBand('On', !params[bandKey(i, 'On')]); return; }
-    var f = xf(p.x), shape = f <= 25 ? 'lowcut' : f >= 18000 ? 'highcut' : 'bell';
-    var g = Math.round(yg(p.y) * 10) / 10;
+    var f = xf(p.x), shape = shapeAt(f);
+    var g = Math.round(yg(curveHover ? curveHover.y : p.y) * 10) / 10;
+    curveHover = null;
     addBand(Math.min(FREQ_MAX, Math.max(FREQ_MIN, f)), params.gainScale > 0 ? g * 100 / params.gainScale : 0, shape);
   });
   eqCanvas.addEventListener('wheel', function(e){
