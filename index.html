@@ -126,25 +126,25 @@
   .band-panel.is-moving .bp-grip{cursor:grabbing;}
   .band-panel.is-pinned{border-top-style:dashed;}
   /* The band list under the bottom bar: every band, at a glance. */
-  .band-list{display:flex; gap:6px; padding:6px 10px; overflow-x:auto; background:var(--bar-lo); border-top:1px solid var(--edge); flex:none;
-    scrollbar-width:thin;}
+  .band-list{display:flex; gap:5px; padding:6px 10px 5px; overflow-x:auto; overflow-y:hidden; background:var(--bar-lo); border-top:1px solid var(--edge); flex:none;
+    scrollbar-width:thin; scrollbar-color:var(--acc-soft) transparent;}
+  .band-list::-webkit-scrollbar{height:6px;}
+  .band-list::-webkit-scrollbar-track{background:transparent;}
+  .band-list::-webkit-scrollbar-thumb{background:var(--acc-soft); border-radius:3px;}
+  .band-list::-webkit-scrollbar-thumb:hover{background:var(--acc);}
   .band-list[hidden]{display:none;}
   .bl-item{
-    display:flex; align-items:center; gap:6px; flex:none; padding:4px 4px 4px 8px; border-radius:6px; cursor:pointer;
-    background:var(--float); border:1px solid var(--float-border); color:var(--fg);
-    font-family:'IBM Plex Mono',monospace; font-size:10.5px; white-space:nowrap;
+    display:flex; align-items:center; gap:6px; flex:none; height:24px; padding:0 10px 0 8px; border-radius:12px; cursor:pointer;
+    background:var(--float); border:1px solid var(--float-border); color:var(--fg); white-space:nowrap;
   }
   .bl-item:hover{border-color:var(--band);}
   .bl-item.is-selected{border-color:var(--band); box-shadow:inset 0 0 0 1px var(--band);}
-  .bl-item.is-off{opacity:.5;}
+  .bl-item.is-off{opacity:.45;}
   .bl-dot{width:9px; height:9px; border-radius:50%; background:var(--band); flex:none;}
   .bl-item.is-off .bl-dot{background:transparent; box-shadow:inset 0 0 0 1.5px var(--band);}
-  .bl-num{font-weight:600; color:var(--band);}
-  .bl-shape{color:var(--fg-soft); font-family:'IBM Plex Sans',sans-serif; font-size:10px; letter-spacing:.04em;}
-  .bl-tag{font-size:8.5px; font-weight:600; padding:1px 4px; border-radius:3px; background:var(--band); color:var(--badge-ink);}
-  .bl-x{border:none; background:none; color:var(--fg-soft); cursor:pointer; padding:0 4px; font-size:12px; line-height:1;}
-  .bl-x:hover{color:var(--fg);}
-  .bl-add{flex:none; font-size:11px;}
+  .bl-num{font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; color:var(--band);}
+  .bl-shape{font-size:10.5px; letter-spacing:.04em; color:var(--fg);}
+  .bl-add{flex:none; font-size:12px; min-width:32px; justify-content:center; border-radius:12px; height:24px;}
   .bl-empty{font-size:11px; color:var(--fg-soft); align-self:center; white-space:nowrap;}
   .bp-col{display:flex; flex-direction:column; gap:4px;}
   .bp-sel{
@@ -1662,39 +1662,28 @@ if (typeof registerProcessor === 'function') {
     $('list-btn').setAttribute('aria-pressed', ui.bandList !== false ? 'true' : 'false');
     if (list.hidden) return;
     list.textContent = '';
-    var any = false;
-    for (var i = 0; i < MAX_BANDS; i++) {
-      if (!params[bandKey(i, 'Used')]) continue;
-      any = true;
-      (function(i){
-        var b = bandOf(params, i), item = document.createElement('div');
-        item.className = 'bl-item' + (i === selected ? ' is-selected' : '') + (b.on ? '' : ' is-off');
-        item.setAttribute('role', 'option'); item.setAttribute('aria-selected', i === selected ? 'true' : 'false');
-        item.style.setProperty('--band', bandColor(i));
-        item.title = 'Click to select, double-click to switch on or off';
-        var parts = ['<span class="bl-dot"></span>', '<span class="bl-num"></span>', '<span class="bl-shape"></span>', '<span class="bl-val"></span>'];
-        item.innerHTML = parts.join('');
-        item.querySelector('.bl-num').textContent = i + 1;
-        item.querySelector('.bl-shape').textContent = SHAPE_LABELS[SHAPES.indexOf(b.shape)];
-        item.querySelector('.bl-val').textContent = fmtHz(b.freq) + (shapeHasGain(b.shape) ? '  ' + fmt(KNOB_DEFS.gain, b.gain) : '') +
-          (shapeHasQ(b.shape) ? '  Q ' + fmt(KNOB_DEFS.q, b.q) : '') + (shapeHasSlope(b.shape) ? '  ' + b.slope + ' dB/oct' : '');
-        var tags = [];
-        if (PLACE_BADGE[b.place]) tags.push(PLACE_BADGE[b.place]);
-        if (isDyn(i)) tags.push('DYN');
-        if (solo === i) tags.push('SOLO');
-        tags.forEach(function(t){ var sp = document.createElement('span'); sp.className = 'bl-tag'; sp.textContent = t; item.appendChild(sp); });
-        var x = document.createElement('button');
-        x.type = 'button'; x.className = 'bl-x'; x.textContent = '\u2715'; x.title = 'Remove the band'; x.setAttribute('aria-label', 'Remove band ' + (i + 1));
-        x.addEventListener('click', function(e){ e.stopPropagation(); deleteBand(i); });
-        item.appendChild(x);
-        item.addEventListener('click', function(){ if (i !== selected) select(i); });
-        item.addEventListener('dblclick', function(){ selected = i; setBand('On', !params[bandKey(i, 'On')]); });
-        list.appendChild(item);
-      })(i);
-    }
+    // left to right as on the display: by frequency
+    var order = [];
+    for (var i = 0; i < MAX_BANDS; i++) if (params[bandKey(i, 'Used')]) order.push(i);
+    order.sort(function(x, y){ return params[bandKey(x, 'Freq')] - params[bandKey(y, 'Freq')] || x - y; });
+    var any = order.length > 0;
+    order.forEach(function(i){
+      var b = bandOf(params, i), item = document.createElement('div');
+      item.className = 'bl-item' + (i === selected ? ' is-selected' : '') + (b.on ? '' : ' is-off');
+      item.setAttribute('role', 'option'); item.setAttribute('aria-selected', i === selected ? 'true' : 'false');
+      item.style.setProperty('--band', bandColor(i));
+      item.innerHTML = '<span class="bl-dot"></span><span class="bl-num"></span><span class="bl-shape"></span>';
+      item.querySelector('.bl-num').textContent = i + 1;
+      item.querySelector('.bl-shape').textContent = SHAPE_LABELS[SHAPES.indexOf(b.shape)];
+      item.title = 'Click to select, double-click to switch on or off';
+      item.setAttribute('aria-label', 'Band ' + (i + 1) + ', ' + SHAPE_LABELS[SHAPES.indexOf(b.shape)] + (b.on ? '' : ', off'));
+      item.addEventListener('click', function(){ if (i !== selected) select(i); });
+      item.addEventListener('dblclick', function(){ selected = i; setBand('On', !params[bandKey(i, 'On')]); });
+      list.appendChild(item);
+    });
     if (!any) { var empty = document.createElement('span'); empty.className = 'bl-empty'; empty.textContent = 'No bands yet: double-click the display, or'; list.appendChild(empty); }
     var add = document.createElement('button');
-    add.type = 'button'; add.className = 'tb bl-add'; add.textContent = '+ Add band';
+    add.type = 'button'; add.className = 'tb bl-add'; add.textContent = '+'; add.title = 'Add a band'; add.setAttribute('aria-label', 'Add a band');
     add.addEventListener('click', function(){ addBand(1000, 0, 'bell'); });
     list.appendChild(add);
     var sel = list.querySelector('.is-selected');
@@ -1703,6 +1692,13 @@ if (typeof registerProcessor === 'function') {
       else if (sel.offsetLeft + sel.offsetWidth > list.scrollLeft + list.clientWidth) list.scrollLeft = sel.offsetLeft + sel.offsetWidth - list.clientWidth + 10;
     }
   }
+  // The mouse wheel scrolls the list sideways.
+  $('band-list').addEventListener('wheel', function(e){
+    var list = $('band-list');
+    if (list.scrollWidth <= list.clientWidth) return;
+    e.preventDefault();
+    list.scrollLeft += (Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * (e.deltaMode === 1 ? 30 : 1);
+  }, { passive: false });
   $('list-btn').addEventListener('click', function(){ ui.bandList = ui.bandList === false; save(); renderBandList(); setTimeout(fitEq, 0); });
 
   // ---------- top and bottom bars ----------
