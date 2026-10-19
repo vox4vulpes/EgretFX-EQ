@@ -11,7 +11,8 @@
 // version's scripts (dsp-shared and dsp-engine in index.html).
 namespace eq
 {
-    constexpr int maxBands = 24, maxSections = 8;
+    constexpr int maxBands = 48, maxSections = 8;
+    constexpr int bandsLight = 24;   // past this the editor warns about the extra load
     constexpr double freqMin = 10, freqMax = 30000, gainMax = 30, qMin = 0.025, qMax = 40;
 
     enum class Shape { bell, lowshelf, lowcut, highshelf, highcut, notch, bandpass, tiltshelf, flattilt, allpass };

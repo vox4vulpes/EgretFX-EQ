@@ -6,17 +6,25 @@ release workflow refuses to publish a version that has no section here.
 ## [1.0.0]
 
 ### Added
-- **Egret EQ** (web and VST3/standalone): 翡翠 · Parametric Equalizer with up
-  to 24 bands — bell, low/high shelf, low/high cut, notch, band pass, tilt
-  shelf, flat tilt and all pass; slopes from 6 to 96 dB/oct; each band on both
-  channels, left, right, mid or side.
+- **Egret EQ** (VST3 and standalone app, and in the browser): 翡翠 · Parametric
+  Equalizer with up to 48 bands — bell, low/high shelf, low/high cut, notch,
+  band pass, tilt shelf, flat tilt and all pass; slopes from 6 to 96 dB/oct;
+  each band on both channels, left, right, mid or side. Past 24 bands a note
+  says the EQ may use noticeably more CPU.
 - Analog-matched filters: curves keep their analog shape up to Nyquist, cuts
   mirror boosts; zero latency; gliding, click-free changes.
-- The interactive display: add, drag, scroll for Q, switch off, delete; the
-  hovered band's numbers and note.
+- A panel in the style of Pro-Q: the display fills the window, a floating band
+  panel under the selected band (shape, slope, stereo, frequency, gain, Q,
+  on/off, solo, previous/next, remove), the scales and the output meter on the
+  right; the top bar has undo/redo, A/B with copy, presets, the theme and power;
+  the bottom bar the processing mode, the analyzer, auto gain, gain scale,
+  output gain and pan. Light theme by default, dark on a click.
 - Spectrum analyzer before and after the EQ: resolution, speed, range, tilt,
-  freeze; display range ±3/6/12/30 dB; in and out level meters.
+  freeze; display range ±3/6/12/30 dB; output level meter with peak.
 - Band solo, gain scale, output gain and pan, auto gain.
 - Factory presets and your own, undo/redo, A/B comparison.
-- Sources in the browser and the standalone app: a demo loop, a file, the
-  audio input, pink noise.
+- The standalone app plays a demo loop, a file, the audio input or pink noise.
+- In the browser, ahead of the plugin (they come to it in a later version):
+  dynamic EQ per band, EQ Sketch, Character (Clean, Subtle, Warm), Bypass, a
+  movable and see-through band panel, a list of all the bands, and a player
+  beside the panel with free tracks to try settings on.

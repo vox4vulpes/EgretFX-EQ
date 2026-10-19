@@ -744,7 +744,7 @@ void EqDisplay::addBand (double freq, double gain, eq::Shape shape)
 {
     int i = 0;
     while (i < eq::maxBands && params.bands[(size_t) i].used) ++i;
-    if (i == eq::maxBands) { info = "All 24 bands are in use"; return; }
+    if (i == eq::maxBands) { info = "All " + juce::String (eq::maxBands) + " bands are in use"; return; }
     processor.undo.beginNewTransaction();
     const auto cut = shape == eq::Shape::lowcut || shape == eq::Shape::highcut;
     setBandParam (i, "Used", 1); setBandParam (i, "On", 1); setBandParam (i, "Shape", (float) shape);
@@ -1022,6 +1022,19 @@ void EqDisplay::paint (juce::Graphics& g)
         g.drawText (text, box.withTrimmedLeft (7), juce::Justification::centredLeft, false);
     }
     if (dragOver) { g.setColour (t.acc); g.drawRect (getLocalBounds().reduced (3), 2); }
+    // past 24 bands, for a few seconds: the EQ may use more CPU
+    if (juce::Time::getMillisecondCounterHiRes() < view.loadWarnUntil)
+    {
+        const juce::String text ("More than 24 bands: the EQ may use noticeably more CPU");
+        const auto font = sansFont (11.5f);
+        const auto w = juce::GlyphArrangement::getStringWidth (font, text) + 26;
+        const juce::Rectangle<float> box ((PW - w) / 2, 8, w, 26);
+        g.setColour (t.floatShadow); g.fillRoundedRectangle (box.translated (0, 2), 5.0f);
+        g.setColour (t.floatSolid); g.fillRoundedRectangle (box, 5.0f);
+        g.setColour (t.solo); g.drawRoundedRectangle (box, 5.0f, 1.0f); g.fillRect (box.withWidth (4.0f));
+        g.setColour (t.fg); g.setFont (font);
+        g.drawText (text, box.withTrimmedLeft (14), juce::Justification::centredLeft, false);
+    }
 }
 
 void EqDisplay::setInfo (juce::Point<float>* p)
@@ -1604,6 +1617,12 @@ void EgretEqEditor::refreshAll()
 void EgretEqEditor::timerCallback()
 {
     const auto p = audioProcessor.readParams();
+    int count = 0;
+    for (const auto& b : p.bands) count += b.used ? 1 : 0;
+    if (lastBandCount >= 0 && count > eq::bandsLight && lastBandCount <= eq::bandsLight)
+        view.loadWarnUntil = juce::Time::getMillisecondCounterHiRes() + 5000;
+    if (count <= eq::bandsLight) view.loadWarnUntil = 0;
+    lastBandCount = count;
     display.tick (p);
     meter.push (audioProcessor.takeMeters());
     bird.tick();

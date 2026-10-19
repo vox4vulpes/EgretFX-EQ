@@ -4,7 +4,7 @@
 **[Download the VST3 plugin and standalone app](https://github.com/vox4vulpes/EgretFX-EQ/releases/latest)** ·
 part of the [Egret FX Bundle](https://github.com/vox4vulpes/EgretFX)
 
-翡翠 · Parametric Equalizer: up to 24 bands on a big interactive curve, with a
+翡翠 · Parametric Equalizer: up to 48 bands on a big interactive curve, with a
 live spectrum behind it. It runs entirely in the browser via the Web Audio
 API — no plugins, no install. Open `index.html` in any modern browser.
 
@@ -50,7 +50,7 @@ Click a knob's value to type one: `2.5k`, `-3`, `0.7`, `L20`.
 JUCE: the filter design and the engine are the web version's, ported line for
 line (the coefficients match exactly), with the same panel.
 
-- Every band setting is an automatable parameter (24 bands); the analyzer and
+- Every band setting is an automatable parameter (48 bands); the analyzer and
   display settings and A/B are saved with the project. User presets are files
   under your user app-data folder in `Egret/Egret EQ/Presets`.
 - In a DAW it works on its track (stereo or mono); the standalone app adds the

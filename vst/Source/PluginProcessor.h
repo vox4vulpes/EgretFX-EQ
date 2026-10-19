@@ -6,7 +6,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "EqDsp.h"
 
-// Egret EQ as a plugin: every band setting a parameter (24 bands), the web
+// Egret EQ as a plugin: every band setting a parameter (48 bands), the web
 // version's engine, factory presets and user presets as files, undo, A/B.
 // In the standalone app it can also play the demo loop, a file or pink noise.
 class EgretEqProcessor : public juce::AudioProcessor

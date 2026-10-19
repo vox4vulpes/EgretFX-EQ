@@ -41,6 +41,7 @@ struct EqView
     int selected = -1;
     int anaMode = 3, anaRes = 2, anaSpeed = 2, anaRange = 90, dispRange = 12;   // as the web page's ui settings
     bool anaTilt = true, freeze = false, dark = false;
+    double loadWarnUntil = 0;   // the "more than 24 bands" note shows until then (ms)
     const EqTheme& theme() const { return EqTheme::get (dark); }
 };
 
@@ -276,6 +277,7 @@ private:
     BarButton phaseButton { "Zero Latency" }, anaButton, sourceButton, playButton, autoButton;
     std::unique_ptr<DragValue> scaleValue, gainValue, panValue;
     juce::String shownInfo, shownAuto;
+    int lastBandCount = -1;
     std::unique_ptr<juce::FileChooser> chooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EgretEqEditor)

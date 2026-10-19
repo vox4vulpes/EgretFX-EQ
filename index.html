@@ -189,6 +189,9 @@
   .sketch-hint{position:absolute; left:8px; top:8px; z-index:3; font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--acc);
     background:var(--float); border:1px solid var(--float-border); border-radius:4px; padding:3px 7px; pointer-events:none;}
   .sketch-hint[hidden]{display:none;}
+  .load-warn{position:absolute; left:50%; top:8px; transform:translateX(-50%); z-index:5; font-size:11.5px; color:var(--fg);
+    background:var(--float-solid); border:1px solid var(--solo); border-left:4px solid var(--solo); border-radius:5px; padding:6px 10px; box-shadow:0 6px 18px var(--float-shadow); white-space:nowrap;}
+  .load-warn[hidden]{display:none;}
   .bp-title{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--band, var(--acc)); letter-spacing:.08em; text-align:center;}
 
   /* knobs, dark, inside the panel */
@@ -365,6 +368,7 @@
     <canvas id="meter" aria-hidden="true"></canvas>
     <button class="range-box" id="range-box" type="button" title="Display range">12 dB</button>
     <button class="tb sketch-btn" id="sketch-btn" type="button" aria-pressed="false" title="EQ Sketch: draw the curve you want, the bands follow (Esc to stop)"><svg viewBox="0 0 16 16"><path d="M2.5 13.5l1-3.5 7.5-7.5 2.5 2.5L6 12.5zM9.5 4l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+    <div class="load-warn" id="load-warn" role="status" hidden>More than 24 bands: the EQ may use noticeably more CPU</div>
     <div class="sketch-hint" id="sketch-hint" hidden>Draw the curve you want; the bands follow</div>
     <div class="band-panel" id="band-panel" hidden>
       <div class="bp-grip" id="bp-grip" title="Drag to move the panel aside; double-click to put it back under the band"></div>
@@ -418,7 +422,7 @@
 // own frequency (after M. Vicanek, "Matched Second Order Digital Filters").
 // Bells and shelves keep their analog shape right up to the top of the
 // spectrum instead of squeezing towards Nyquist. The VST uses the same code.
-var MAX_BANDS = 24, MAX_SECTIONS = 8;
+var MAX_BANDS = 48, MAX_SECTIONS = 8, BANDS_LIGHT = 24;   // past BANDS_LIGHT the page warns about the extra load
 var SHAPES = ['bell', 'lowshelf', 'lowcut', 'highshelf', 'highcut', 'notch', 'bandpass', 'tiltshelf', 'flattilt', 'allpass'];
 var SHAPE_LABELS = ['BELL', 'LO SHELF', 'LO CUT', 'HI SHELF', 'HI CUT', 'NOTCH', 'BAND PASS', 'TILT', 'FLAT TILT', 'ALL PASS'];
 var SLOPES = [6, 12, 18, 24, 30, 36, 48, 72, 96];
@@ -1848,7 +1852,7 @@ if (typeof registerProcessor === 'function') {
   function usedCount(){ var n = 0; for (var i = 0; i < MAX_BANDS; i++) if (params[bandKey(i, 'Used')]) n++; return n; }
   function addBand(freq, gain, shape){
     for (var i = 0; i < MAX_BANDS; i++) if (!params[bandKey(i, 'Used')]) break;
-    if (i === MAX_BANDS) { setInfoText('All 24 bands are in use'); return -1; }
+    if (i === MAX_BANDS) { setInfoText('All ' + MAX_BANDS + ' bands are in use'); return -1; }
     params[bandKey(i, 'Used')] = true; params[bandKey(i, 'On')] = true; params[bandKey(i, 'Shape')] = shape;
     params[bandKey(i, 'Freq')] = freq; params[bandKey(i, 'Gain')] = shapeHasGain(shape) ? gain : 0;
     params[bandKey(i, 'Q')] = shape === 'bell' ? 1 : 0.71; params[bandKey(i, 'Slope')] = shape === 'lowcut' || shape === 'highcut' ? 24 : 12;
@@ -1867,8 +1871,20 @@ if (typeof registerProcessor === 'function') {
 
   function renderAll(){
     knobRenders.forEach(function(r){ r(); });
-    renderBandPanel(); renderBandList(); renderBars(); renderUndo(); renderAB();
+    renderBandPanel(); renderBandList(); renderBars(); renderUndo(); renderAB(); checkLoad();
     invalidateCurves(); requestDraw();
+  }
+
+  // Past 24 bands: a note that the EQ may use more CPU, shown when the count goes over.
+  var lastCount = -1, warnTimer = null;
+  function checkLoad(){
+    var n = usedCount();
+    if (lastCount >= 0 && n > BANDS_LIGHT && lastCount <= BANDS_LIGHT) {
+      $('load-warn').hidden = false; clearTimeout(warnTimer);
+      warnTimer = setTimeout(function(){ $('load-warn').hidden = true; }, 5000);
+    }
+    if (n <= BANDS_LIGHT) $('load-warn').hidden = true;
+    lastCount = n;
   }
 
   // Every change: tell the engine, mark the preset edited, remember it for UNDO.
