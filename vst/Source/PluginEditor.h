@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <functional>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
@@ -15,7 +16,8 @@ struct EqTheme
     // the screen
     juce::Colour bgTop, bgBottom, scaleBg, nyquist, gridMajor, gridMinor, zero, hline, eqLabel, eqLabel0, anaLabel, freqLabel,
                  preFill, postFill, postLine, curve, curveGlow, dotEdge, ring, ringHover, offFill, badgeText, tipBg, tipText,
-                 meterBg, meterTrack, meterLow, meterMid, meterTop, meterHold, meterLine, meterText;
+                 meterBg, meterTrack, meterLow, meterMid, meterTop, meterHold, meterLine, meterText,
+                 scLine, keyWhite, keyBlack, keyEdge, keyLabel;
     float bandDarken = 1.0f;
     juce::Colour band (int index) const;
     static const EqTheme& get (bool dark);
@@ -44,7 +46,9 @@ struct EqView
     bool anaTilt = true, freeze = false, dark = false;
     double loadWarnUntil = 0;   // the "more than 24 bands" note shows until then (ms)
     // the band panel moved aside (as a share of the screen), see-through; the band list; EQ Sketch
-    bool panelPinned = false, panelGhost = false, bandList = true, sketch = false;
+    bool panelPinned = false, panelGhost = false, bandList = true, sketch = false, piano = true;
+    // several bands at once: every picked band (the selected one is the one the panel shows)
+    std::bitset<eq::maxBands> group;
     float panelX = 0, panelY = 0;
     const EqTheme& theme() const { return EqTheme::get (dark); }
 };
@@ -154,11 +158,11 @@ public:
     std::function<void()> onViewChanged;   // moved, put back, see-through
 
 private:
-    int wantedWidth() const { return showDyn ? 640 : 420; }
+    int wantedWidth() const { return showDyn ? 692 : 420; }
     EgretEqProcessor& processor;
     EqView& view;
     EqDisplay& display;
-    BarButton shape, slope, place, bypass, solo, prev, next, remove, ghost;
+    BarButton shape, slope, place, bypass, solo, prev, next, remove, ghost, scButton { "SC" }, specButton { "SPEC" };
     EqKnob freq, gain, q, thresh, attack, release;
     DynSwitch dynSwitch;
     int bound = -2;
@@ -191,6 +195,7 @@ private:
     juce::Rectangle<float> addBox;
     float scroll = 0, contentWidth = 0;
     int shownSelected = -2;
+    std::bitset<eq::maxBands> shownGroup;
 };
 
 // "Egret EQ x.y.z is out": Update, Later. Over the top of the display.
@@ -233,12 +238,26 @@ public:
     void filesDropped (const juce::StringArray& files, int, int) override;
 
     void tick (const eq::Params&);   // the editor's timer: analyzer frame, panel, repaint
+    // A click on the bird: the version, big, in the middle of the screen; then it sinks.
+    void showVersion (const juce::String& version) { versionText = "v" + version; versionStart = juce::Time::getMillisecondCounterHiRes(); }
     void placePanel();
     void setSketch (bool);
     BarButton sketchButton;
     juce::String info;               // the hint in the bottom bar
     void addBand (double freq, double gain, eq::Shape);
     void deleteBand (int band);
+    // several bands: the picked ones, by number; select one; Shift/Ctrl-click
+    std::vector<int> picked() const;
+    void select (int band);
+    void togglePick (int band);
+    void selectAll();
+    void copyPicked();
+    void pastePicked();
+    void duplicatePicked();
+    void resetPicked();
+    void deletePicked();
+    void bandMenu (juce::Point<int> screenPos, bool onBand);
+    bool commandKey (const juce::KeyPress&);   // Ctrl+C/V/D/A, Esc
     void setBandParam (int band, const char* name, float plainValue);   // one gesture
     juce::Point<float> nodePos (int band) const;
     int plotWidth() const { return getWidth() - scaleWidth; }
@@ -275,12 +294,35 @@ private:
     bool sketching = false;
     std::vector<float> total;
     double curveFs = 0, curveScale = -1;
+    eq::Phase curvePhase = eq::Phase::zero;
+    bool curveGainQ = false;
     int curveCols = 0;
     eq::Analyzer pre, post;
     std::vector<float> pull;
     int hover = -1;
-    struct Drag { int band = -1; bool range = false; float fx = 0, fy = 0; juce::Point<float> last; } drag;
+    void writeBand (int index, const eq::Band&);
+    void clearBand (int index);   // back to the defaults (no undo step of its own)
+    void paintPiano (juce::Graphics&, float top);
+    struct Member { int band; float fx, fy; };
+    // xk: how fast it moves sideways (a grabbed bell creeps, to stay on its peak)
+    struct Drag { int band = -1; bool range = false; float fx = 0, fy = 0, xk = 1; juce::Point<float> last; std::vector<Member> members; } drag;
+    void beginBandGestures (bool begin);
+    // the selection frame
+    struct Rubber { bool on = false, moved = false, add = false; juce::Point<float> a, b; std::bitset<eq::maxBands> base; } rubber;
+    // SPECTRUM GRAB: hold the mouse still on the background, the spectrum holds
+    // and its peaks light; pull one up or down and a bell appears on it.
+    struct Peak { float x, y; double freq, q, prom; };
+    struct Grab { bool armed = false, active = false, made = false; double since = 0; juce::Point<float> start, at; int hot = -1; std::vector<Peak> peaks; } grab;
+    void startGrab();
+    void moveGrab (juce::Point<float>);
+    std::vector<Peak> findPeaks (const std::vector<float>& db, double binHz) const;
+    void spectrumColumns (const std::vector<float>& db, double binHz, std::vector<float>& xs, std::vector<double>& vs) const;
+    float pointerX = -1;
+    eq::Analyzer scAna;
     bool dragOver = false;
+    juce::String versionText;
+    double versionStart = -1;
+    void paintVersion (juce::Graphics&);
 };
 
 class MeterView : public juce::Component
@@ -367,7 +409,7 @@ private:
     MeterView meter;
 
     // bottom bar
-    BarButton phaseButton { "Zero Latency" }, charButton, anaButton, sourceButton, playButton, listButton { "Bands" }, autoButton;
+    BarButton phaseButton { "Zero Latency" }, charButton, anaButton, sourceButton, playButton, listButton { "Bands" }, gainQButton { "Gain-Q" }, autoButton;
     BandListView bandList;
     juce::SharedResourcePointer<UpdateChecker> updates;
     UpdateBanner updateBanner;

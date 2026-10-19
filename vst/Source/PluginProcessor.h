@@ -9,16 +9,19 @@
 
 // Egret EQ as a plugin: every band setting a parameter (48 bands), the web
 // version's engine, factory presets and user presets as files, undo, A/B.
-// In the standalone app it can also play the demo loop, a file or pink noise.
-class EgretEqProcessor : public juce::AudioProcessor
+// A second input is the sidechain for dynamic bands with SC on. In the
+// standalone app it can also play the demo loop, a file or pink noise, and
+// feed the sidechain from the demo loop, pink noise or a file.
+class EgretEqProcessor : public juce::AudioProcessor, private juce::Timer
 {
 public:
     EgretEqProcessor();
-    ~EgretEqProcessor() override = default;
+    ~EgretEqProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     bool isBusesLayoutSupported (const BusesLayout&) const override;
 
     juce::AudioProcessorEditor* createEditor() override;
@@ -46,6 +49,8 @@ public:
     // SOLO: not a parameter, it's for listening.
     std::atomic<int> soloBand { -1 };
     std::array<float, 4> takeMeters() { return engine.takeMeters(); }
+    int getLatencyNow() const { return engine.getLatency(); }
+    bool isSidechainOn() const { return sidechainOn.load(); }
     float getDynamicChange (int band) const { return engine.getDynamicChange (band); }
     double getAutoGainDb() const { return eq::autoGainDb (readParams(), sampleRate); }
 
@@ -57,7 +62,7 @@ public:
         void push (const float* x, int n);
         int pull (float* dest, int max);
     };
-    Tap preTap, postTap;
+    Tap preTap, postTap, scTap;
 
     //==============================================================================
     // The standalone app's sources (in a DAW the EQ works on its track).
@@ -67,8 +72,14 @@ public:
     Source getSource() const { return (Source) source.load(); }
     void setPlaying (bool on) { playing = on; }
     bool isPlaying() const { return playing; }
-    bool loadFile (const juce::File&);
+    bool loadFile (const juce::File&, bool asSidechain = false);
     juce::String getFileName() const { return fileName; }
+    // The standalone app's sidechain (in a DAW it's the plugin's second input).
+    enum class ScSource { off, demo, noise, file };
+    void setScSource (ScSource s) { scSource = (int) s; }
+    ScSource getScSource() const { return (ScSource) scSource.load(); }
+    bool loadScFile (const juce::File&);
+    juce::String getScFileName() const { return scFileName; }
 
     //==============================================================================
     // Presets and A/B
@@ -88,6 +99,7 @@ public:
     juce::ValueTree uiState { "UI" };
 
 private:
+    void timerCallback() override;   // the latency the host is told
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void rememberPreset (const juce::String& name);
     static juce::String paramsToSpec (const eq::Params&);
@@ -99,9 +111,31 @@ private:
     double sampleRate = 48000;
     juce::AudioBuffer<float> scratch;
 
-    struct BandRefs { std::atomic<float> *used, *on, *shape, *freq, *gain, *q, *slope, *place, *dyn, *range, *thresh, *attack, *release; };
+    struct BandRefs { std::atomic<float> *used, *on, *shape, *freq, *gain, *q, *slope, *place, *dyn, *range, *thresh, *attack, *release, *sc, *spectral, *brick; };
     std::array<BandRefs, eq::maxBands> refs {};
-    std::atomic<float> *outGain = nullptr, *outPan = nullptr, *gainScale = nullptr, *autoGain = nullptr, *power = nullptr, *character = nullptr;
+    std::atomic<float> *outGain = nullptr, *outPan = nullptr, *gainScale = nullptr, *autoGain = nullptr, *power = nullptr, *character = nullptr,
+                       *gainQ = nullptr, *phase = nullptr, *phaseRes = nullptr;
+    bool lastScOn = false;
+    std::atomic<bool> sidechainOn { false };
+
+    // NATURAL / LINEAR PHASE: a thread builds the long filter whenever the bands
+    // change, and hands it to the audio thread; the kernels the engine is done
+    // with come back to be freed here, never on the audio thread.
+    struct Builder : juce::Thread
+    {
+        explicit Builder (EgretEqProcessor& p) : juce::Thread ("Egret EQ filters"), owner (p) {}
+        void run() override;
+        void sweep();
+        EgretEqProcessor& owner;
+        eq::Params built;
+        double builtFs = 0;
+        bool hasBuilt = false;
+        std::atomic<double> fs { 48000 };
+    };
+    Builder builder { *this };
+    std::atomic<eq::Kernel*> freshKernel { nullptr };
+    std::array<std::atomic<eq::Kernel*>, 32> spentKernels {};
+    void handOverKernels();   // audio thread
 
     struct Clip { std::vector<float> left, right; };
     std::atomic<int> source { (int) Source::demo };
@@ -110,6 +144,11 @@ private:
     std::shared_ptr<const Clip> playingClip;
     size_t clipPos = 0;
     juce::String fileName;
+    std::atomic<int> scSource { (int) ScSource::off };
+    std::shared_ptr<const Clip> scFileClip, scPlayingClip;
+    size_t scPos = 0;
+    juce::String scFileName;
+    juce::AudioBuffer<float> scScratch;
     juce::AudioFormatManager formats;
 
     juce::String presetName { "Flat" };

@@ -834,6 +834,8 @@ namespace eq
         firLatency = mode != Phase::zero && fir.kern != nullptr ? fir.kern->latency : 0;
         latency = firLatency + (specOn ? spec.N : 0);
         latencyNow.store (latency, std::memory_order_relaxed);
+        starving.store (tMode != Phase::zero && ! kernelFits (fir.kern.get(), tMode, tRes) && ! kernelFits (fir.next.get(), tMode, tRes)
+                        && ! kernelFits (waiting.get(), tMode, tRes), std::memory_order_relaxed);
         const double target = want || (mode != Phase::zero && fir.kern == nullptr) ? 0 : 1, g0 = gate;
         gate = target > g0 ? std::min (1.0, g0 + len * fadeStep) : target < g0 ? std::max (0.0, g0 - len * fadeStep) : g0;
         return g0;

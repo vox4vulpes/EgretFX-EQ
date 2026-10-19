@@ -131,6 +131,8 @@ const EqTheme& EqTheme::get (bool dark)
         t.meterBg = juce::Colour (0xffece4cf); t.meterTrack = rgba (42, 36, 29, 0.08f); t.meterLow = juce::Colour (0xffc9a35a); t.meterMid = juce::Colour (0xffa8700a);
         t.meterTop = juce::Colour (0xff6b4a10); t.meterHold = juce::Colour (0xff2a241d); t.meterLine = rgba (168, 112, 10, 0.45f); t.meterText = rgba (42, 36, 29, 0.75f);
         t.bandDarken = 0.72f;
+        t.scLine = rgba (178, 70, 40, 0.75f);
+        t.keyWhite = juce::Colour (0xfffbf8ef); t.keyBlack = juce::Colour (0xff3a3226); t.keyEdge = rgba (42, 36, 29, 0.22f); t.keyLabel = rgba (42, 36, 29, 0.5f);
         return t;
     }();
     static const EqTheme darkTheme = []
@@ -153,6 +155,8 @@ const EqTheme& EqTheme::get (bool dark)
         t.meterBg = juce::Colour (0xff120e06); t.meterTrack = rgba (240, 168, 48, 0.08f); t.meterLow = juce::Colour (0xff7a5a18); t.meterMid = juce::Colour (0xfff0a830);
         t.meterTop = juce::Colour (0xfff2ecd9); t.meterHold = juce::Colour (0xfff2ecd9); t.meterLine = rgba (240, 168, 48, 0.35f); t.meterText = rgba (242, 236, 217, 0.75f);
         t.bandDarken = 1.0f;
+        t.scLine = rgba (240, 130, 90, 0.8f);
+        t.keyWhite = juce::Colour (0xff3d3322); t.keyBlack = juce::Colour (0xff0c0904); t.keyEdge = rgba (240, 168, 48, 0.16f); t.keyLabel = rgba (242, 236, 217, 0.45f);
         return t;
     }();
     return dark ? darkTheme : light;
@@ -274,6 +278,17 @@ void BarButton::paintButton (juce::Graphics& g, bool over, bool down)
         g.drawText (prefix, a.removeFromLeft (w), juce::Justification::centredLeft, false);
         g.setColour (ink.withMultipliedAlpha (alpha));
         g.drawText (label, a, juce::Justification::centredLeft, true);
+        return;
+    }
+    if (getProperties().contains ("dimSuffix") && getProperties()["dimSuffix"].toString().isNotEmpty())
+    {
+        const auto suffix = " " + getProperties()["dimSuffix"].toString();
+        const auto w = juce::GlyphArrangement::getStringWidth (font, label);
+        const auto full = w + juce::GlyphArrangement::getStringWidth (font, suffix);
+        auto a = area.withSizeKeepingCentre (juce::jmin (full + 1, area.getWidth()), area.getHeight());
+        g.drawText (label, a.removeFromLeft (w + 1), juce::Justification::centredLeft, false);
+        g.setColour (t.fgSoft.withMultipliedAlpha (alpha));
+        g.drawText (suffix, a, juce::Justification::centredLeft, true);
         return;
     }
     if (panelSel)
@@ -631,6 +646,26 @@ BandPanel::BandPanel (EgretEqProcessor& p, EqView& v, EqDisplay& d)
         b->setWantsKeyboardFocus (false);
         addAndMakeVisible (*b);
     }
+    // SC and SPEC beside the dynamics knobs
+    for (auto* b : { &scButton, &specButton })
+    {
+        b->view = &view;
+        b->setWantsKeyboardFocus (false);
+        b->getProperties().set ("boxed", true);
+        b->getProperties().set ("mono", true);
+        addChildComponent (*b);
+    }
+    scButton.setTooltip ("Sidechain: listen to the sidechain (the plugin's second input) instead of the sound itself");
+    specButton.setTooltip ("Spectral: work frequency by frequency, so only what passes the threshold moves (a resonance, not the whole band)");
+    auto toggle = [this] (const char* id)
+    {
+        if (view.selected < 0) return;
+        processor.undo.beginNewTransaction();
+        const auto on = processor.apvts.getRawParameterValue (EgretEqProcessor::bandId (view.selected, id))->load() > 0.5f;
+        display.setBandParam (view.selected, id, on ? 0.0f : 1.0f);
+    };
+    scButton.onClick = [toggle] { toggle ("SC"); };
+    specButton.onClick = [toggle] { toggle ("Spectral"); };
     for (auto* b : { &shape, &slope, &place }) { b->getProperties().set ("boxed", true); b->getProperties().set ("panelSel", true); }
     shape.setTooltip ("Shape"); slope.setTooltip ("Slope"); place.setTooltip ("Stereo placement");
     bypass.icon = powerIcon(); bypass.filledWhenOn = true; bypass.setTooltip ("Band on/off (or double-click its dot)");
@@ -680,8 +715,23 @@ BandPanel::BandPanel (EgretEqProcessor& p, EqView& v, EqDisplay& d)
     for (auto s : eq::slopes) slopeNames.add (juce::String (s) + " dB/oct");
     for (auto* l : placeNames) places.add (l);
     menu (shape, "Shape", shapes);
-    menu (slope, "Slope", slopeNames);
     menu (place, "Place", places);
+    // SLOPE, and for a cut BRICKWALL: a wall in Natural and Linear Phase, 96 dB/oct in Zero Latency
+    slope.onClick = [this, slopeNames]
+    {
+        if (view.selected < 0) return;
+        const auto b = processor.readParams().bands[(size_t) view.selected];
+        juce::PopupMenu m;
+        for (int i = 0; i < slopeNames.size(); ++i) m.addItem (i + 1, slopeNames[i], true, b.slope == eq::slopes[i]);
+        if (eq::isCut (b.shape)) m.addItem (100, "Brickwall", true, b.slope >= eq::brickSlope);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&slope), [this] (int r)
+        {
+            if (r <= 0 || view.selected < 0) return;
+            processor.undo.beginNewTransaction();
+            if (r == 100) display.setBandParam (view.selected, "Brick", 1.0f);
+            else { display.setBandParam (view.selected, "Slope", (float) (r - 1)); display.setBandParam (view.selected, "Brick", 0.0f); }
+        });
+    };
     bypass.onClick = [this]
     {
         if (view.selected < 0) return;
@@ -712,7 +762,7 @@ void BandPanel::refresh (const eq::Params& p)
     for (auto* k : { &freq, &gain, &q, &thresh, &attack, &release }) k->setAccent (colour);
     for (auto* s : { &shape, &slope, &place }) s->setColour (juce::TextButton::buttonOnColourId, colour);
     shape.setButtonText (eq::shapeLabels[(int) b.shape]);
-    slope.setButtonText (eq::hasSlope (b.shape) ? juce::String (b.slope) + " dB/oct" : utf8 ("\xe2\x80\x94"));
+    slope.setButtonText (! eq::hasSlope (b.shape) ? utf8 ("\xe2\x80\x94") : b.slope >= eq::brickSlope ? juce::String ("Brickwall") : juce::String (b.slope) + " dB/oct");
     slope.setEnabled (eq::hasSlope (b.shape));
     place.setButtonText (placeNames[(int) b.place]);
     gain.setEnabled (eq::hasGain (b.shape)); gain.setAlpha (eq::hasGain (b.shape) ? 1.0f : 0.35f);
@@ -724,10 +774,13 @@ void BandPanel::refresh (const eq::Params& p)
     dynSwitch.setEnabled (eq::hasGain (b.shape));
     dynSwitch.setToggleState (dyn, juce::dontSendNotification);
     ghost.setToggleState (view.panelGhost, juce::dontSendNotification);
+    scButton.setToggleState (b.sc, juce::dontSendNotification);
+    specButton.setToggleState (b.spectral, juce::dontSendNotification);
     if (dyn != showDyn)
     {
         showDyn = dyn;
         for (auto* k : { &thresh, &attack, &release }) k->setVisible (dyn);
+        scButton.setVisible (dyn); specButton.setVisible (dyn);
         setSize (wantedWidth(), getHeight());
     }
     repaint();
@@ -779,6 +832,8 @@ void BandPanel::resized()
         dynDividerX = kx + 4;
         kx += 10;
         for (auto* k : { &thresh, &attack, &release }) { k->setBounds (kx, 24, 66, 68); kx += 70; }
+        scButton.setBounds (kx, 30, 46, 22); specButton.setBounds (kx, 58, 46, 22);
+        kx += 52;
     }
     const auto bx = kx + 6;
     bypass.setBounds (bx, 28, 26, 22); solo.setBounds (bx + 30, 28, 26, 22);
@@ -872,20 +927,24 @@ void EqDisplay::setSketch (bool on)
 
 namespace
 {
-    constexpr float viewTop = 10, viewBottom = 20;
+    // every setting of a band (copy, paste, reset, delete)
+    const char* const bandFields[] = { "Used", "On", "Shape", "Freq", "Gain", "Q", "Slope", "Place", "Dyn", "Range", "Thresh", "Attack", "Release", "SC", "Spectral", "Brick" };
+    constexpr float viewTop = 10, pianoH = 14;
+    // the frequency labels under the screen, and the piano above them when it's shown
+    float viewBottomOf (const EqView& v) { return v.piano ? 20 + pianoH : 20; }
     const double logMin = std::log (eq::freqMin), logSpan = std::log (eq::freqMax / eq::freqMin);
 }
 
 float EqDisplay::fx (double f) const { return (float) ((std::log (f) - logMin) / logSpan * plotWidth()); }
 double EqDisplay::xf (float x) const { return std::exp (logMin + x / plotWidth() * logSpan); }
-float EqDisplay::gy (double db) const { const auto R = view.dispRange; return (float) (viewTop + (R - db) / (2.0 * R) * (getHeight() - viewTop - viewBottom)); }
-double EqDisplay::yg (float y) const { const auto R = view.dispRange; return R - (y - viewTop) / (getHeight() - viewTop - viewBottom) * 2.0 * R; }
-float EqDisplay::ay (double db) const { return (float) (viewTop + (-db / view.anaRange) * (getHeight() - viewTop - viewBottom)); }
+float EqDisplay::gy (double db) const { const auto R = view.dispRange; return (float) (viewTop + (R - db) / (2.0 * R) * (getHeight() - viewTop - viewBottomOf (view))); }
+double EqDisplay::yg (float y) const { const auto R = view.dispRange; return R - (y - viewTop) / (getHeight() - viewTop - viewBottomOf (view)) * 2.0 * R; }
+float EqDisplay::ay (double db) const { return (float) (viewTop + (-db / view.anaRange) * (getHeight() - viewTop - viewBottomOf (view))); }
 
 void EqDisplay::resized()
 {
     rangeBox.setBounds (getWidth() - 12 - 54, 8, 54, 22);
-    sketchButton.setBounds (8, getHeight() - 24 - 28, 28, 28);
+    sketchButton.setBounds (8, getHeight() - juce::roundToInt (viewBottomOf (view)) - 4 - 28, 28, 28);
     placePanel();
 }
 
@@ -935,16 +994,15 @@ void EqDisplay::addBand (double freq, double gain, eq::Shape shape)
     setBandParam (i, "Freq", (float) freq); setBandParam (i, "Gain", eq::hasGain (shape) ? (float) gain : 0.0f);
     setBandParam (i, "Q", shape == eq::Shape::bell ? 1.0f : 0.71f); setBandParam (i, "Slope", cut ? 3.0f : 1.0f);
     setBandParam (i, "Place", 0);
+    for (auto* n : { "Dyn", "SC", "Spectral", "Brick" }) setBandParam (i, n, 0);
     params = processor.readParams();
     view.selected = i;
     if (onSelectionChanged) onSelectionChanged();
 }
 
-void EqDisplay::deleteBand (int i)
+void EqDisplay::clearBand (int i)
 {
-    if (i < 0 || ! params.bands[(size_t) i].used) return;
-    processor.undo.beginNewTransaction();
-    for (auto* n : { "Used", "On", "Shape", "Freq", "Gain", "Q", "Slope", "Place" })
+    for (auto* n : bandFields)
     {
         auto* p = bandParam (i, n);
         p->beginChangeGesture();
@@ -952,8 +1010,20 @@ void EqDisplay::deleteBand (int i)
         p->endChangeGesture();
     }
     if (processor.soloBand == i) processor.soloBand = -1;
+    view.group.reset ((size_t) i);
+}
+
+void EqDisplay::deleteBand (int i)
+{
+    if (i < 0 || ! params.bands[(size_t) i].used) return;
+    processor.undo.beginNewTransaction();
+    clearBand (i);
     params = processor.readParams();
-    if (view.selected == i) view.selected = -1;
+    if (view.selected == i)
+    {
+        view.selected = -1;
+        for (int j = 0; j < eq::maxBands; ++j) if (view.group[(size_t) j]) view.selected = j;
+    }
     if (onSelectionChanged) onSelectionChanged();
 }
 
@@ -961,8 +1031,8 @@ void EqDisplay::computeCurves()
 {
     const auto fs = processor.getSampleRateNow();
     const auto cols = juce::jmax (2, plotWidth());
-    const auto fresh = cols != curveCols || fs != curveFs || params.gainScale != curveScale;
-    curveCols = cols; curveFs = fs; curveScale = params.gainScale;
+    const auto fresh = cols != curveCols || fs != curveFs || params.gainScale != curveScale || params.phase != curvePhase || params.gainQ != curveGainQ;
+    curveCols = cols; curveFs = fs; curveScale = params.gainScale; curvePhase = params.phase; curveGainQ = params.gainQ;
     total.assign ((size_t) cols, 0.0f);
     eq::Section secs[eq::maxSections];
     for (int i = 0; i < eq::maxBands; ++i)
@@ -997,9 +1067,20 @@ std::vector<float> EqDisplay::bandCurveAt (const eq::Band& b, double gain) const
 {
     const auto fs = processor.getSampleRateNow();
     const auto cols = juce::jmax (2, plotWidth());
-    eq::Section secs[eq::maxSections];
-    const auto n = eq::designBand (b.shape, b.freq, gain, b.q, b.slope, fs, secs);
     std::vector<float> db ((size_t) cols);
+    if (params.phase != eq::Phase::zero)
+    {
+        // Natural and Linear Phase play the analog curve (a brickwall is a wall)
+        std::vector<double> freqs ((size_t) cols), re ((size_t) cols, 1.0), im ((size_t) cols, 0.0);
+        for (int k = 0; k < cols; ++k) freqs[(size_t) k] = xf ((float) k);
+        eq::analogBand ({ b.shape, b.freq, gain, b.q, b.slope, params.gainQ }, freqs.data(), cols, re.data(), im.data());
+        for (int k = 0; k < cols; ++k)
+            db[(size_t) k] = freqs[(size_t) k] >= fs / 2 && k > 0 ? db[(size_t) k - 1]
+                                                                 : (float) (10 * std::log10 (juce::jmax (re[(size_t) k] * re[(size_t) k] + im[(size_t) k] * im[(size_t) k], 1e-30)));
+        return db;
+    }
+    eq::Section secs[eq::maxSections];
+    const auto n = eq::designBand (b.shape, b.freq, gain, b.q, b.slope, fs, secs, params.gainQ);
     for (int k = 0; k < cols; ++k)
     {
         const auto w = 2 * pi * juce::jmin (xf ((float) k), fs / 2) / fs;
@@ -1026,7 +1107,7 @@ juce::Point<float> EqDisplay::rangePos (int i) const
 juce::Point<float> EqDisplay::arrowPos (int i) const
 {
     const auto p = nodePos (i);
-    return { p.x, p.y > getHeight() - viewBottom - 34 ? p.y - 20 : p.y + 20 };
+    return { p.x, p.y > getHeight() - viewBottomOf (view) - 34 ? p.y - 20 : p.y + 20 };
 }
 
 int EqDisplay::hitArrow (juce::Point<float> p) const
@@ -1187,7 +1268,7 @@ void EqDisplay::placePanel()
         return;
     }
     const auto x = juce::jlimit (44, juce::jmax (44, plotWidth() - pw - 8), juce::roundToInt (p.x - pw / 2.0f));   // clear of the Sketch button
-    const auto y = p.y > getHeight() - viewBottom - ph - 30 ? 34 : juce::roundToInt (getHeight() - viewBottom - 8 - ph);
+    const auto y = p.y > getHeight() - viewBottomOf (view) - ph - 30 ? 34 : juce::roundToInt (getHeight() - viewBottomOf (view) - 8 - ph);
     panel->setTopLeftPosition (x, y);
 }
 
@@ -1200,12 +1281,18 @@ void EqDisplay::tick (const eq::Params& p)
         const auto got = tap->pull (pull.data(), (int) pull.size());
         if (got > 0) a.push (pull.data(), got);
     }
+    // the sidechain's spectrum, when there is one
+    if (const auto got = processor.scTap.pull (pull.data(), (int) pull.size()); got > 0) scAna.push (pull.data(), got);
     const auto size = anaSizes[juce::jlimit (0, 3, view.anaRes)];
-    if (pre.getSize() != size) { pre.setSize (size); post.setSize (size); }
-    if (! view.freeze && view.anaMode != 0)
+    if (pre.getSize() != size) { pre.setSize (size); post.setSize (size); scAna.setSize (size); }
+    // SPECTRUM GRAB: held still long enough on the background
+    if (grab.armed && ! grab.active && rubber.on && ! rubber.moved && juce::Time::getMillisecondCounterHiRes() - grab.since >= 350)
+        startGrab();
+    if (! view.freeze && ! grab.active && view.anaMode != 0)   // a grab holds the spectrum
     {
         pre.compute (anaSmooth[juce::jlimit (0, 4, view.anaSpeed)]);
         post.compute (anaSmooth[juce::jlimit (0, 4, view.anaSpeed)]);
+        if (processor.isSidechainOn()) scAna.compute (anaSmooth[juce::jlimit (0, 4, view.anaSpeed)]);
     }
     rangeBox.setButtonText (juce::String (view.dispRange) + " dB");
     panel->refresh (params);
@@ -1215,32 +1302,17 @@ void EqDisplay::tick (const eq::Params& p)
 
 juce::Path EqDisplay::spectrumPath (const std::vector<float>& db, double binHz, bool close) const
 {
-    const auto fs = processor.getSampleRateNow();
-    const auto bottom = getHeight() - viewBottom;
+    const auto bottom = getHeight() - viewBottomOf (view);
     juce::Path path;
     path.startNewSubPath (0, bottom);
+    std::vector<float> xs;
+    std::vector<double> vs;
+    spectrumColumns (db, binHz, xs, vs);
     float lastX = 0;
-    const auto bins = (int) db.size();
-    for (float x = 0; x <= plotWidth(); x += 2)
+    for (size_t k = 0; k < xs.size(); ++k)
     {
-        const auto f0 = xf (x - 1), f1 = xf (x + 1), k0 = f0 / binHz, k1 = f1 / binHz;
-        if (f0 >= fs / 2) break;
-        double v;
-        if (k1 - k0 < 1)
-        {
-            const auto kc = juce::jmin ((double) bins - 2, (k0 + k1) / 2);
-            const auto i0 = (int) std::floor (kc);
-            const auto fr = kc - i0;
-            v = db[(size_t) i0] * (1 - fr) + db[(size_t) i0 + 1] * fr;
-        }
-        else
-        {
-            v = -200;
-            for (auto k = (int) std::ceil (k0); k <= juce::jmin (bins - 1, (int) std::floor (k1)); ++k) v = juce::jmax (v, (double) db[(size_t) k]);
-        }
-        v += anaCal + (view.anaTilt ? 4.5 * std::log2 (xf (x) / 1000) : 0);
-        path.lineTo (x, juce::jlimit (viewTop, bottom, ay (v)));
-        lastX = x;
+        path.lineTo (xs[k], juce::jlimit (viewTop, bottom, ay (vs[k])));
+        lastX = xs[k];
     }
     path.lineTo (lastX, bottom);
     if (close) path.closeSubPath();
@@ -1254,7 +1326,7 @@ void EqDisplay::paint (juce::Graphics& g)
     const auto W = (float) getWidth(), H = (float) getHeight(), PW = (float) plotWidth();
     const auto fs = processor.getSampleRateNow();
     const double R = view.dispRange;
-    const auto bottom = H - viewBottom;
+    const auto bottom = H - viewBottomOf (view);
     g.setGradientFill (juce::ColourGradient (t.bgTop, 0, 0, t.bgBottom, 0, H, false));
     g.fillAll();
     g.setColour (t.scaleBg);
@@ -1294,6 +1366,7 @@ void EqDisplay::paint (juce::Graphics& g)
                                                    { 2000, "2k" }, { 5000, "5k" }, { 10000, "10k" }, { 20000, "20k" } };
     for (const auto& [f, text] : labels)
         g.drawText (text, juce::Rectangle<float> (fx (f) - 20, H - 16, 40, 12), juce::Justification::centred, false);
+    if (view.piano) paintPiano (g, bottom);
 
     {
         juce::Graphics::ScopedSaveState clip (g);
@@ -1307,6 +1380,14 @@ void EqDisplay::paint (juce::Graphics& g)
             {
                 g.setColour (t.postFill); g.fillPath (spectrumPath (post.getDb(), binHz, true));
                 g.setColour (t.postLine); g.strokePath (spectrumPath (post.getDb(), binHz, false), juce::PathStrokeType (1.0f));
+            }
+            if (processor.isSidechainOn())   // the sidechain, a dashed line of its own
+            {
+                juce::Path dashed;
+                const float dashes[] = { 5.0f, 3.0f };
+                juce::PathStrokeType (1.2f).createDashedStroke (dashed, spectrumPath (scAna.getDb(), fs / scAna.getSize(), false), dashes, 2);
+                g.setColour (t.scLine);
+                g.fillPath (dashed);
             }
         }
         const auto y0 = gy (0);
@@ -1399,6 +1480,14 @@ void EqDisplay::paint (juce::Graphics& g)
                 g.setColour (c.withAlpha (0.85f)); g.fillPath (arrow);
             }
             if (i == view.selected) { g.setColour (t.ring); g.drawEllipse (juce::Rectangle<float> (21, 21).withCentre (p), 1.5f); }
+            else if (view.group[(size_t) i])   // picked with others: a dashed ring
+            {
+                juce::Path ring, dashed;
+                ring.addEllipse (juce::Rectangle<float> (21, 21).withCentre (p));
+                const float dashes[] = { 3.0f, 2.0f };
+                juce::PathStrokeType (1.0f).createDashedStroke (dashed, ring, dashes, 2);
+                g.setColour (t.ring); g.fillPath (dashed);
+            }
             else if (i == hover) { g.setColour (t.ringHover); g.drawEllipse (juce::Rectangle<float> (20, 20).withCentre (p), 1.0f); }
             const auto dot = juce::Rectangle<float> (13, 13).withCentre (p);
             if (b.on) { g.setColour (c); g.fillEllipse (dot); g.setColour (t.dotEdge); g.drawEllipse (dot, 1.0f); }
@@ -1417,6 +1506,41 @@ void EqDisplay::paint (juce::Graphics& g)
                 g.setColour (t.badgeText);
                 g.drawText (tag, box, juce::Justification::centred, false);
                 bx += tw + 3;
+            }
+        }
+        // the selection frame
+        if (rubber.on && rubber.moved)
+        {
+            const juce::Rectangle<float> box (rubber.a, rubber.b);
+            g.setColour (t.eqLabel0.withAlpha (0.08f));
+            g.fillRect (box);
+            juce::Path outline, dashed;
+            outline.addRectangle (box);
+            const float dashes[] = { 4.0f, 3.0f };
+            juce::PathStrokeType (1.0f).createDashedStroke (dashed, outline, dashes, 2);
+            g.setColour (t.eqLabel0);
+            g.fillPath (dashed);
+        }
+        // Spectrum Grab: the held spectrum's peaks, the one under the pointer lit
+        if (grab.active && ! grab.made)
+        {
+            g.setColour (t.eqLabel0.withAlpha (0.06f));
+            g.fillRect (0.0f, viewTop, PW, bottom - viewTop);
+            for (size_t k = 0; k < grab.peaks.size(); ++k)
+            {
+                const auto& pk = grab.peaks[k];
+                const auto hot = (int) k == grab.hot;
+                const auto dot = juce::Rectangle<float> (hot ? 12.0f : 7.0f, hot ? 12.0f : 7.0f).withCentre ({ pk.x, pk.y });
+                g.setColour (hot ? t.curve : t.offFill); g.fillEllipse (dot);
+                g.setColour (t.curve); g.drawEllipse (dot, hot ? 2.0f : 1.2f);
+                if (hot)
+                {
+                    juce::Path line, dashed;
+                    line.startNewSubPath (pk.x, viewTop); line.lineTo (pk.x, bottom);
+                    const float dashes[] = { 3.0f, 3.0f };
+                    juce::PathStrokeType (1.0f).createDashedStroke (dashed, line, dashes, 2);
+                    g.setColour (t.curve.withAlpha (0.5f)); g.fillPath (dashed);
+                }
             }
         }
         // EQ Sketch: the line being drawn
@@ -1457,6 +1581,7 @@ void EqDisplay::paint (juce::Graphics& g)
         g.setColour (t.tipText); g.setFont (font);
         g.drawText (text, box.withTrimmedLeft (7), juce::Justification::centredLeft, false);
     }
+    paintVersion (g);
     if (dragOver) { g.setColour (t.acc); g.drawRect (getLocalBounds().reduced (3), 2); }
     // past 24 bands, for a few seconds: the EQ may use more CPU
     if (juce::Time::getMillisecondCounterHiRes() < view.loadWarnUntil)
@@ -1473,6 +1598,96 @@ void EqDisplay::paint (juce::Graphics& g)
     }
 }
 
+// The piano under the display: a key per semitone along the frequency scale.
+// The note of the band under the pointer (or being dragged, or selected)
+// lights in its colour; the note under the pointer, or the peak being
+// grabbed, lights faintly.
+void EqDisplay::paintPiano (juce::Graphics& g, float y0)
+{
+    const auto& t = view.theme();
+    const auto PW = (float) plotWidth(), h = pianoH;
+    auto midiOf = [] (double f) { return 69 + 12 * std::log2 (f / 440); };
+    auto freqOf = [] (double m) { return 440 * std::pow (2.0, (m - 69) / 12); };
+    static const bool black[] = { false, true, false, true, false, false, true, false, true, false, true, false };
+    auto pc = [] (int m) { return ((m % 12) + 12) % 12; };
+    const auto m0 = (int) std::floor (midiOf (eq::freqMin)), m1 = (int) std::ceil (midiOf (eq::freqMax));
+    juce::Graphics::ScopedSaveState state (g);
+    g.reduceClipRegion (juce::Rectangle<int> (0, (int) y0, (int) PW, (int) h));
+    g.setColour (t.keyWhite);
+    g.fillRect (0.0f, y0, PW, h);
+    auto span = [&] (int m) { return std::pair<float, float> { fx (freqOf (m - 0.5)), fx (freqOf (m + 0.5)) }; };
+    g.setColour (t.keyEdge);
+    for (int m = m0; m <= m1; ++m)
+    {
+        const auto c = pc (m);
+        if (c == 4 || c == 11) g.fillRect (std::round (fx (freqOf (m + 0.5))), y0, 1.0f, h);
+    }
+    g.setColour (t.keyBlack);
+    for (int m = m0; m <= m1; ++m)
+        if (black[pc (m)]) { const auto s = span (m); g.fillRect (s.first, y0, s.second - s.first, h * 0.62f); }
+    auto light = [&] (int m, juce::Colour c, float alpha)
+    {
+        const auto s = span (m);
+        const auto w = s.second - s.first;
+        g.setColour (c.withMultipliedAlpha (alpha));
+        if (black[pc (m)]) { g.fillRect (s.first, y0, w, h * 0.62f); return; }
+        g.fillRect (s.first, y0, w, h);   // a white key widens under its black neighbours
+        const auto l = black[pc (m + 11)] ? w * 0.5f : 0.0f, r = black[pc (m + 1)] ? w * 0.5f : 0.0f;
+        g.fillRect (s.first - l, y0 + h * 0.62f, w + l + r, h * 0.38f);
+    };
+    const auto show = drag.band >= 0 ? drag.band : hover >= 0 ? hover : view.selected;
+    if (show >= 0 && params.bands[(size_t) show].used) light ((int) std::lround (midiOf (params.bands[(size_t) show].freq)), t.band (show), 0.85f);
+    if (grab.active && ! grab.made && grab.hot >= 0) light ((int) std::lround (midiOf (grab.peaks[(size_t) grab.hot].freq)), t.curve, 0.45f);
+    else if (pointerX >= 0 && drag.band < 0) light ((int) std::lround (midiOf (xf (pointerX))), t.eqLabel0, 0.3f);
+    // the Cs, named when an octave has room
+    if (PW / (logSpan / std::log (2.0)) > 40)
+    {
+        g.setColour (t.keyLabel);
+        g.setFont (monoFont (7.0f, true));
+        for (int m = (int) std::ceil (m0 / 12.0) * 12; m <= m1; m += 12)
+            g.drawText ("C" + juce::String (m / 12 - 1), juce::Rectangle<float> (span (m).first + 1, y0 + h - 9, 20, 8), juce::Justification::centredLeft, false);
+    }
+    g.setColour (t.keyEdge);
+    g.fillRect (0.0f, y0, PW, 1.0f);
+    g.fillRect (0.0f, y0 + h - 1, PW, 1.0f);
+}
+
+// The version after a click on the bird: it surfaces, floats a moment, then
+// sinks below a water line, rings spreading where it went under.
+void EqDisplay::paintVersion (juce::Graphics& g)
+{
+    if (versionStart < 0) return;
+    const auto t = juce::Time::getMillisecondCounterHiRes() - versionStart;
+    if (t > 3200) { versionStart = -1; return; }
+    const auto& th = view.theme();
+    const auto PW = (float) plotWidth(), textH = 76.0f;
+    const auto cx = PW / 2, cy = getHeight() * 0.42f, water = cy + textH * 0.36f;
+    float rise = 0, alpha = 1;
+    if (t < 350) { const auto u = (float) (t / 350); rise = (1 - u) * (1 - u) * 40; alpha = u; }   // surfacing
+    else if (t < 1600) rise = 2.5f * std::sin ((float) (t - 350) / 230.0f);                          // floating
+    else { const auto u = (float) ((t - 1600) / 1600); rise = u * u * 120; alpha = 1 - u * 0.5f; }   // sinking
+    {
+        juce::Graphics::ScopedSaveState state (g);
+        g.reduceClipRegion (juce::Rectangle<int> (0, 0, plotWidth(), juce::roundToInt (water)));
+        const juce::Rectangle<float> box (0, cy - textH / 2 + rise, PW, textH);
+        g.setFont (sansFont (textH, true));
+        g.setColour (th.curveGlow.withMultipliedAlpha (0.5f * alpha));
+        g.drawText (versionText, box.translated (0, 3), juce::Justification::centred, false);
+        g.setColour (th.eqLabel0.withAlpha (alpha));
+        g.drawText (versionText, box, juce::Justification::centred, false);
+    }
+    // rings on the surface: a small one as it comes up, wider ones as it goes under
+    auto ring = [&] (float k, float width, float strength)
+    {
+        if (k <= 0 || k >= 1) return;
+        const auto w = width * (0.35f + 0.65f * k);
+        g.setColour (th.eqLabel0.withAlpha ((1 - k) * strength));
+        g.drawEllipse (juce::Rectangle<float> (w, w * 0.11f).withCentre ({ cx, water }), 1.4f);
+    };
+    ring ((float) (t / 500), 220, 0.35f);
+    for (int r = 0; r < 3; ++r) ring ((float) ((t - 1700 - r * 260) / 1100), 460, 0.55f);
+}
+
 void EqDisplay::setInfo (juce::Point<float>* p)
 {
     auto used = false;
@@ -1486,20 +1701,29 @@ void EqDisplay::mouseMove (const juce::MouseEvent& e)
 {
     const auto h = hitBand (e.position);
     if (h != hover) { hover = h; repaint(); }
+    pointerX = e.position.x <= plotWidth() ? e.position.x : -1.0f;
     auto p = e.position;
     setInfo (&p);
 }
 
 void EqDisplay::mouseExit (const juce::MouseEvent&)
 {
+    pointerX = -1;
     if (drag.band < 0) { hover = -1; setInfo (nullptr); repaint(); }
 }
 
 void EqDisplay::mouseDown (const juce::MouseEvent& e)
 {
     grabKeyboardFocus();
-    if (! e.mods.isLeftButtonDown()) return;
     const auto i = hitBand (e.position);
+    if (e.mods.isPopupMenu())   // right-click: copy, paste, duplicate, reset, delete
+    {
+        if (i >= 0 && ! view.group[(size_t) i]) select (i);
+        else if (i >= 0 && i != view.selected) { view.selected = i; if (onSelectionChanged) onSelectionChanged(); }
+        bandMenu (e.getScreenPosition(), i >= 0);
+        return;
+    }
+    if (! e.mods.isLeftButtonDown()) return;
     if (view.sketch && i < 0 && e.position.x <= plotWidth())
     {
         sketching = true;
@@ -1513,9 +1737,10 @@ void EqDisplay::mouseDown (const juce::MouseEvent& e)
         const auto ri = ai >= 0 ? ai : hitRange (e.position);
         if (ri >= 0)
         {
-            if (ri != view.selected) { view.selected = ri; if (onSelectionChanged) onSelectionChanged(); }
+            if (ri != view.selected) select (ri);
             processor.undo.beginNewTransaction();
             if (ai >= 0) { setBandParam (ai, "Range", 0.0f); setBandParam (ai, "Dyn", 1.0f); params = processor.readParams(); }
+            drag = {};
             drag.band = ri; drag.range = true;
             drag.fy = ai >= 0 ? nodePos (ri).y : rangePos (ri).y;
             drag.last = e.position;
@@ -1525,28 +1750,73 @@ void EqDisplay::mouseDown (const juce::MouseEvent& e)
     }
     if (i < 0)
     {
-        if (view.selected >= 0 && e.getNumberOfClicks() == 1) { view.selected = -1; if (onSelectionChanged) onSelectionChanged(); }
+        // The background: a frame around dots selects them (Shift/Ctrl adds to the
+        // selection), holding still grabs the spectrum, a click deselects.
+        if (e.position.x <= plotWidth())
+        {
+            rubber = {};
+            rubber.on = true;
+            rubber.add = e.mods.isShiftDown() || e.mods.isCommandDown();
+            rubber.a = rubber.b = e.position;
+            rubber.base = view.group;
+            if (view.anaMode != 0)
+            {
+                grab = {};
+                grab.armed = true;
+                grab.since = juce::Time::getMillisecondCounterHiRes();
+                grab.start = grab.at = e.position;
+            }
+        }
         return;
     }
     if (e.mods.isAltDown()) { deleteBand (i); return; }
-    if (i != view.selected)
-    {
-        view.selected = i;
-        if (processor.soloBand >= 0 && processor.soloBand != i) processor.soloBand = -1;
-        if (onSelectionChanged) onSelectionChanged();
-    }
+    if (e.mods.isShiftDown() || e.mods.isCommandDown()) { togglePick (i); return; }
+    if (! view.group[(size_t) i]) select (i);
+    else if (i != view.selected) { view.selected = i; if (onSelectionChanged) onSelectionChanged(); }
     processor.undo.beginNewTransaction();
+    drag = {};
     drag.band = i;
-    drag.range = false;
-    drag.fx = fx (params.bands[(size_t) i].freq);
-    drag.fy = nodePos (i).y;
     drag.last = e.position;
-    for (auto* n : { "Freq", "Gain", "Q" }) bandParam (i, n)->beginChangeGesture();
+    // every picked dot moves together
+    for (auto j : picked()) drag.members.push_back ({ j, fx (params.bands[(size_t) j].freq), nodePos (j).y });
+    beginBandGestures (true);
+}
+
+void EqDisplay::beginBandGestures (bool begin)
+{
+    for (const auto& m : drag.members)
+        for (auto* n : { "Freq", "Gain", "Q" })
+        {
+            if (begin) bandParam (m.band, n)->beginChangeGesture();
+            else bandParam (m.band, n)->endChangeGesture();
+        }
 }
 
 void EqDisplay::mouseDrag (const juce::MouseEvent& e)
 {
     if (sketching) { sketchPoints.push_back (e.position); repaint(); return; }
+    if (grab.active && ! grab.made) { moveGrab (e.position); return; }
+    if (rubber.on)
+    {
+        rubber.b = e.position;
+        grab.at = e.position;
+        if (rubber.b.getDistanceFrom (rubber.a) > 4) { rubber.moved = true; grab.armed = false; }
+        if (rubber.moved)
+        {
+            const juce::Rectangle<float> box (rubber.a, rubber.b);
+            std::bitset<eq::maxBands> inside;
+            int last = -1;
+            for (int i = 0; i < eq::maxBands; ++i)
+                if (params.bands[(size_t) i].used && box.contains (nodePos (i))) { inside.set ((size_t) i); last = i; }
+            view.group = rubber.add ? (rubber.base | inside) : inside;
+            if (last < 0 && rubber.add)
+                for (int i = 0; i < eq::maxBands; ++i) if (view.group[(size_t) i]) last = i;
+            view.selected = last;
+            if (onSelectionChanged) onSelectionChanged();
+        }
+        repaint();
+        return;
+    }
     if (drag.band >= 0 && drag.range)
     {
         drag.fy += (e.position.y - drag.last.y) * (e.mods.isShiftDown() ? 0.15f : 1.0f);
@@ -1564,34 +1834,57 @@ void EqDisplay::mouseDrag (const juce::MouseEvent& e)
         return;
     }
     if (drag.band < 0) return;
+    // frequency along, gain (or Q) up and down; a grabbed bell creeps sideways
     const auto k = e.mods.isShiftDown() ? 0.15f : 1.0f;
-    drag.fx += (e.position.x - drag.last.x) * k;
-    drag.fy += (e.position.y - drag.last.y) * k;
+    const auto dx = (e.position.x - drag.last.x) * k * drag.xk, dy = (e.position.y - drag.last.y) * k;
     drag.last = e.position;
-    const auto i = drag.band;
-    const auto shape = params.bands[(size_t) i].shape;
     const double R = view.dispRange;
-    auto set = [this, i] (const char* n, double v) { auto* p = bandParam (i, n); p->setValueNotifyingHost (p->convertTo0to1 ((float) v)); };
-    set ("Freq", juce::jlimit (eq::freqMin, eq::freqMax, xf (drag.fx)));
-    if (eq::hasGain (shape))
+    for (auto& m : drag.members)
     {
-        const auto gn = juce::jlimit (-R, R, yg (drag.fy));
-        if (params.gainScale > 0) set ("Gain", juce::jlimit (-eq::gainMax, eq::gainMax, gn * 100 / params.gainScale));
+        m.fx += dx; m.fy += dy;
+        const auto i = m.band;
+        const auto shape = params.bands[(size_t) i].shape;
+        auto set = [this, i] (const char* n, double v) { auto* p = bandParam (i, n); p->setValueNotifyingHost (p->convertTo0to1 ((float) v)); };
+        set ("Freq", juce::jlimit (eq::freqMin, eq::freqMax, xf (m.fx)));
+        if (eq::hasGain (shape))
+        {
+            const auto gn = juce::jlimit (-R, R, yg (m.fy));
+            if (params.gainScale > 0) set ("Gain", juce::jlimit (-eq::gainMax, eq::gainMax, gn * 100 / params.gainScale));
+        }
+        else if (eq::hasQ (shape))
+            set ("Q", qFromNorm (yg (m.fy) / (R * 0.5)));
     }
-    else if (eq::hasQ (shape))
-        set ("Q", qFromNorm (yg (drag.fy) / (R * 0.5)));
     params = processor.readParams();
     placePanel();
     repaint();
 }
 
-void EqDisplay::mouseUp (const juce::MouseEvent&)
+void EqDisplay::mouseUp (const juce::MouseEvent& e)
 {
+    if (grab.active)
+    {
+        if (drag.band >= 0) beginBandGestures (false);
+        drag = {};
+        grab = {};
+        rubber = {};
+        setMouseCursor (view.sketch ? juce::MouseCursor::CopyingCursor : juce::MouseCursor::CrosshairCursor);
+        info.clear();
+        repaint();
+        return;
+    }
+    grab.armed = false;
+    if (rubber.on)
+    {
+        const auto r = rubber;
+        rubber = {};
+        if (! r.moved && ! r.add && e.getNumberOfClicks() < 2 && view.selected >= 0) select (-1);   // a plain click on the background
+        repaint();
+        return;
+    }
     if (sketching) { sketching = false; fitSketch(); sketchPoints.clear(); repaint(); return; }
     if (drag.band >= 0 && drag.range) bandParam (drag.band, "Range")->endChangeGesture();
-    else if (drag.band >= 0)
-        for (auto* n : { "Freq", "Gain", "Q" }) bandParam (drag.band, n)->endChangeGesture();
-    drag.band = -1;
+    else if (drag.band >= 0) beginBandGestures (false);
+    drag = {};
     repaint();
 }
 
@@ -1628,26 +1921,346 @@ void EqDisplay::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWhee
 
 bool EqDisplay::keyPressed (const juce::KeyPress& key)
 {
-    if (key.getKeyCode() == juce::KeyPress::escapeKey && view.sketch) { setSketch (false); return true; }
-    const auto i = view.selected;
-    if (i < 0 || ! params.bands[(size_t) i].used) return false;
+    if (commandKey (key)) return true;
+    const auto list = picked();
+    if (list.empty()) return false;
     const auto fine = key.getModifiers().isShiftDown() ? 0.2 : 1.0;
     const auto code = key.getKeyCode();
-    if (code == juce::KeyPress::deleteKey || code == juce::KeyPress::backspaceKey) { deleteBand (i); return true; }
+    if (code == juce::KeyPress::deleteKey || code == juce::KeyPress::backspaceKey) { deletePicked(); return true; }
     if (code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey)
     {
         processor.undo.beginNewTransaction();
-        setBandParam (i, "Freq", (float) juce::jlimit (eq::freqMin, eq::freqMax, params.bands[(size_t) i].freq * std::pow (2.0, (code == juce::KeyPress::rightKey ? 1 : -1) / 24.0 * fine)));
+        for (auto i : list)
+            setBandParam (i, "Freq", (float) juce::jlimit (eq::freqMin, eq::freqMax, params.bands[(size_t) i].freq * std::pow (2.0, (code == juce::KeyPress::rightKey ? 1 : -1) / 24.0 * fine)));
         return true;
     }
-    if ((code == juce::KeyPress::upKey || code == juce::KeyPress::downKey) && eq::hasGain (params.bands[(size_t) i].shape))
+    if (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey)
     {
         processor.undo.beginNewTransaction();
-        setBandParam (i, "Gain", (float) juce::jlimit (-eq::gainMax, eq::gainMax, params.bands[(size_t) i].gain + (code == juce::KeyPress::upKey ? 0.5 : -0.5) * fine));
+        for (auto i : list)
+            if (eq::hasGain (params.bands[(size_t) i].shape))
+                setBandParam (i, "Gain", (float) juce::jlimit (-eq::gainMax, eq::gainMax, params.bands[(size_t) i].gain + (code == juce::KeyPress::upKey ? 0.5 : -0.5) * fine));
         return true;
     }
     return false;
 }
+
+// Ctrl+C / V / D copy, paste and duplicate the picked bands, Ctrl+A picks them
+// all; Esc stops EQ Sketch, or leaves just the selected band picked.
+bool EqDisplay::commandKey (const juce::KeyPress& key)
+{
+    const auto code = key.getKeyCode();
+    if (code == juce::KeyPress::escapeKey)
+    {
+        if (view.sketch) { setSketch (false); return true; }
+        if (picked().size() > 1) { select (view.selected); return true; }
+        return false;
+    }
+    if (! key.getModifiers().isCommandDown()) return false;
+    const auto c = juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) code);
+    if (c == 'c' && ! picked().empty()) { copyPicked(); return true; }
+    if (c == 'v') { pastePicked(); return true; }
+    if (c == 'd' && ! picked().empty()) { duplicatePicked(); return true; }
+    if (c == 'a') { selectAll(); return true; }
+    return false;
+}
+
+//==============================================================================
+// Several bands at once.
+namespace
+{
+    std::vector<eq::Band>& clipboard()   // shared by every Egret EQ open in the host
+    {
+        static std::vector<eq::Band> bands;
+        return bands;
+    }
+}
+
+std::vector<int> EqDisplay::picked() const
+{
+    std::vector<int> out;
+    for (int i = 0; i < eq::maxBands; ++i)
+        if ((view.group[(size_t) i] || i == view.selected) && params.bands[(size_t) i].used) out.push_back (i);
+    return out;
+}
+
+void EqDisplay::select (int i)
+{
+    view.selected = i;
+    view.group.reset();
+    if (i >= 0) view.group.set ((size_t) i);
+    if (processor.soloBand >= 0 && processor.soloBand != i) processor.soloBand = -1;
+    if (onSelectionChanged) onSelectionChanged();
+}
+
+// Shift/Ctrl-click: add a band to the selection, or take it out.
+void EqDisplay::togglePick (int i)
+{
+    if (view.group[(size_t) i] && picked().size() > 1)
+    {
+        view.group.reset ((size_t) i);
+        if (view.selected == i)
+            for (int j = 0; j < eq::maxBands; ++j) if (view.group[(size_t) j]) view.selected = j;
+    }
+    else
+    {
+        if (view.selected >= 0) view.group.set ((size_t) view.selected);
+        view.group.set ((size_t) i);
+        view.selected = i;
+    }
+    if (onSelectionChanged) onSelectionChanged();
+}
+
+void EqDisplay::selectAll()
+{
+    view.group.reset();
+    for (int i = 0; i < eq::maxBands; ++i)
+        if (params.bands[(size_t) i].used) { view.group.set ((size_t) i); view.selected = i; }
+    if (onSelectionChanged) onSelectionChanged();
+}
+
+void EqDisplay::writeBand (int i, const eq::Band& b)
+{
+    int slopeIndex = 1;
+    for (int k = 0; k < eq::numSlopes; ++k) if (eq::slopes[k] == b.slope) slopeIndex = k;
+    if (b.slope >= eq::brickSlope) slopeIndex = eq::numSlopes - 1;
+    setBandParam (i, "Used", b.used ? 1.0f : 0.0f); setBandParam (i, "On", b.on ? 1.0f : 0.0f);
+    setBandParam (i, "Shape", (float) b.shape); setBandParam (i, "Freq", (float) b.freq);
+    setBandParam (i, "Gain", (float) b.gain); setBandParam (i, "Q", (float) b.q);
+    setBandParam (i, "Slope", (float) slopeIndex); setBandParam (i, "Brick", b.slope >= eq::brickSlope ? 1.0f : 0.0f);
+    setBandParam (i, "Place", (float) b.place); setBandParam (i, "Dyn", b.dyn ? 1.0f : 0.0f);
+    setBandParam (i, "Range", (float) b.range); setBandParam (i, "Thresh", (float) b.thresh);
+    setBandParam (i, "Attack", (float) b.attack); setBandParam (i, "Release", (float) b.release);
+    setBandParam (i, "SC", b.sc ? 1.0f : 0.0f); setBandParam (i, "Spectral", b.spectral ? 1.0f : 0.0f);
+}
+
+void EqDisplay::copyPicked()
+{
+    auto& clip = clipboard();
+    clip.clear();
+    for (auto i : picked()) clip.push_back (params.bands[(size_t) i]);
+    info = "Copied " + juce::String ((int) clip.size()) + (clip.size() == 1 ? " band" : " bands");
+}
+
+// Pasted bands land in free places, picked, ready to be moved.
+void EqDisplay::pastePicked()
+{
+    const auto& clip = clipboard();
+    if (clip.empty()) { info = "Nothing copied yet"; return; }
+    processor.undo.beginNewTransaction();
+    std::bitset<eq::maxBands> fresh;
+    int last = -1;
+    size_t k = 0;
+    for (int i = 0; i < eq::maxBands && k < clip.size(); ++i)
+    {
+        if (params.bands[(size_t) i].used) continue;
+        writeBand (i, clip[k++]);
+        fresh.set ((size_t) i);
+        last = i;
+    }
+    params = processor.readParams();
+    if (last < 0) { info = "All " + juce::String (eq::maxBands) + " bands are in use"; return; }
+    info = k < clip.size() ? "Pasted " + juce::String ((int) k) + " of " + juce::String ((int) clip.size()) + ": no more free bands"
+                           : "Pasted " + juce::String ((int) k) + (k == 1 ? " band" : " bands");
+    view.group = fresh;
+    view.selected = last;
+    if (onSelectionChanged) onSelectionChanged();
+}
+
+void EqDisplay::duplicatePicked()
+{
+    auto saved = clipboard();
+    copyPicked();
+    pastePicked();
+    clipboard() = saved;
+}
+
+// Reset: 0 dB, the usual Q and slope for the shape, both channels, no dynamics; the shape and frequency stay.
+void EqDisplay::resetPicked()
+{
+    processor.undo.beginNewTransaction();
+    for (auto i : picked())
+    {
+        const auto shape = params.bands[(size_t) i].shape;
+        setBandParam (i, "Gain", 0); setBandParam (i, "Q", shape == eq::Shape::bell ? 1.0f : 0.71f);
+        setBandParam (i, "Slope", eq::isCut (shape) ? 3.0f : 1.0f); setBandParam (i, "Brick", 0); setBandParam (i, "Place", 0);
+        for (auto* n : { "Dyn", "SC", "Spectral" }) setBandParam (i, n, 0);
+        setBandParam (i, "Range", -6); setBandParam (i, "Thresh", -24); setBandParam (i, "Attack", 10); setBandParam (i, "Release", 120);
+    }
+    params = processor.readParams();
+    if (onSelectionChanged) onSelectionChanged();
+}
+
+void EqDisplay::deletePicked()
+{
+    const auto list = picked();
+    if (list.empty()) return;
+    processor.undo.beginNewTransaction();
+    for (auto i : list) clearBand (i);
+    params = processor.readParams();
+    view.group.reset();
+    view.selected = -1;
+    if (onSelectionChanged) onSelectionChanged();
+}
+
+void EqDisplay::bandMenu (juce::Point<int> screenPos, bool onBand)
+{
+    const auto list = picked();
+    const auto n = (int) list.size();
+    const juce::String mod (juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX ? utf8 ("\xe2\x8c\x98") : juce::String ("Ctrl+"));
+    auto item = [] (int id, const juce::String& text, bool enabled, const juce::String& keys)
+    {
+        juce::PopupMenu::Item it (text);
+        it.setID (id).setEnabled (enabled);
+        it.shortcutKeyDescription = keys;
+        return it;
+    };
+    const auto some = onBand && n > 0;
+    const auto many = n > 1 ? " " + juce::String (n) + " bands" : juce::String();
+    juce::PopupMenu m;
+    m.addItem (item (1, "Copy" + many, some, mod + "C"));
+    m.addItem (item (2, "Paste", ! clipboard().empty(), mod + "V"));
+    m.addItem (item (3, "Duplicate" + many, some, mod + "D"));
+    m.addItem (item (4, "Reset" + many, some, {}));
+    m.addItem (item (5, "Delete" + many, some, "Del"));
+    m.addSeparator();
+    m.addItem (item (6, "Select all", true, mod + "A"));
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }), [this] (int r)
+    {
+        if (r == 1) copyPicked();
+        if (r == 2) pastePicked();
+        if (r == 3) duplicatePicked();
+        if (r == 4) resetPicked();
+        if (r == 5) deletePicked();
+        if (r == 6) selectAll();
+        repaint();
+    });
+}
+
+//==============================================================================
+// SPECTRUM GRAB: holding still on the background for a moment holds the
+// spectrum and marks its peaks; the one nearest the pointer is lit. Pull up or
+// down and a bell appears on it, as wide as the peak, and follows the pointer
+// like any dot (sideways at a tenth of the speed, so it stays on its peak).
+void EqDisplay::spectrumColumns (const std::vector<float>& db, double binHz, std::vector<float>& xs, std::vector<double>& vs) const
+{
+    xs.clear(); vs.clear();
+    const auto fs = processor.getSampleRateNow();
+    const auto bins = (int) db.size();
+    for (float x = 0; x <= plotWidth(); x += 2)
+    {
+        const auto f0 = xf (x - 1), f1 = xf (x + 1), k0 = f0 / binHz, k1 = f1 / binHz;
+        if (f0 >= fs / 2) break;
+        double v;
+        if (k1 - k0 < 1)
+        {
+            const auto kc = juce::jmin ((double) bins - 2, (k0 + k1) / 2);
+            const auto i0 = (int) std::floor (kc);
+            const auto fr = kc - i0;
+            v = db[(size_t) i0] * (1 - fr) + db[(size_t) i0 + 1] * fr;
+        }
+        else
+        {
+            v = -200;
+            for (auto k = (int) std::ceil (k0); k <= juce::jmin (bins - 1, (int) std::floor (k1)); ++k) v = juce::jmax (v, (double) db[(size_t) k]);
+        }
+        xs.push_back (x);
+        vs.push_back (v + anaCal + (view.anaTilt ? 4.5 * std::log2 (xf (x) / 1000) : 0));
+    }
+}
+
+std::vector<EqDisplay::Peak> EqDisplay::findPeaks (const std::vector<float>& db, double binHz) const
+{
+    std::vector<float> xs;
+    std::vector<double> vs;
+    spectrumColumns (db, binHz, xs, vs);
+    const auto n = (int) vs.size();
+    std::vector<Peak> peaks;
+    if (n < 8) return peaks;
+    std::vector<double> sm ((size_t) n);
+    for (int j = 0; j < n; ++j) sm[(size_t) j] = (vs[(size_t) juce::jmax (0, j - 1)] + 2 * vs[(size_t) j] + vs[(size_t) juce::jmin (n - 1, j + 1)]) / 4;
+    const auto oct = plotWidth() / (logSpan / std::log (2.0)) / 2;   // columns (2 px each) in an octave
+    for (int j = 2; j < n - 2; ++j)
+    {
+        const auto v = sm[(size_t) j];
+        if (v < -view.anaRange + 6) continue;
+        auto top = true;
+        for (int d = -4; d <= 4 && top; ++d) if (d != 0 && sm[(size_t) juce::jlimit (0, n - 1, j + d)] > v) top = false;
+        if (! top) continue;
+        // how far it stands out: the lowest point within an octave each side, before anything higher
+        auto lo = v, ro = v;
+        for (int k = j - 1; k >= 0 && k >= j - oct && sm[(size_t) k] <= v; --k) lo = juce::jmin (lo, sm[(size_t) k]);
+        for (int k = j + 1; k < n && k <= j + oct && sm[(size_t) k] <= v; ++k) ro = juce::jmin (ro, sm[(size_t) k]);
+        const auto prom = v - juce::jmax (lo, ro);
+        if (prom < 5) continue;
+        // its width where it is half as prominent: the bell's Q
+        const auto half = v - prom / 2;
+        int a = j, b = j;
+        while (a > 0 && sm[(size_t) a - 1] > half) --a;
+        while (b < n - 1 && sm[(size_t) b + 1] > half) ++b;
+        const auto r = juce::jmax (1.05, xf (xs[(size_t) b] + 1) / xf (xs[(size_t) a] - 1));
+        peaks.push_back ({ xs[(size_t) j], juce::jmax (viewTop, ay (v)), xf (xs[(size_t) j]), juce::jlimit (0.5, 12.0, std::sqrt (r) / (r - 1)), prom });
+        j += 3;
+    }
+    std::sort (peaks.begin(), peaks.end(), [] (const Peak& x, const Peak& y) { return x.prom > y.prom; });
+    if (peaks.size() > 16) peaks.resize (16);
+    return peaks;
+}
+
+void EqDisplay::startGrab()
+{
+    const auto& src = view.anaMode == 2 ? post : pre;
+    grab.peaks = findPeaks (src.getDb(), processor.getSampleRateNow() / src.getSize());
+    if (grab.peaks.empty()) { grab = {}; return; }
+    grab.active = true;
+    rubber = {};
+    setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+    moveGrab (grab.at);
+}
+
+void EqDisplay::moveGrab (juce::Point<float> p)
+{
+    grab.at = p;
+    int best = -1;
+    float bd = 60;
+    for (size_t k = 0; k < grab.peaks.size(); ++k)
+        if (std::abs (grab.peaks[k].x - p.x) < bd) { bd = std::abs (grab.peaks[k].x - p.x); best = (int) k; }
+    grab.hot = best;
+    info = best >= 0 ? "Grab " + fmtHz (grab.peaks[(size_t) best].freq) + " " + utf8 ("\xc2\xb7") + " " + noteName (grab.peaks[(size_t) best].freq) + " " + utf8 ("\xe2\x80\x94") + " pull up or down"
+                     : juce::String ("Spectrum Grab: move to a peak, then pull up or down");
+    if (best >= 0 && std::abs (p.y - grab.start.y) > 6)
+    {
+        int i = 0;
+        while (i < eq::maxBands && params.bands[(size_t) i].used) ++i;
+        if (i == eq::maxBands) { info = "All " + juce::String (eq::maxBands) + " bands are in use"; repaint(); return; }
+        const auto& pk = grab.peaks[(size_t) best];
+        const auto f = juce::jlimit (eq::freqMin, eq::freqMax, pk.freq);
+        processor.undo.beginNewTransaction();
+        eq::Band b;
+        b.used = true; b.shape = eq::Shape::bell; b.freq = f; b.gain = 0; b.q = pk.q; b.slope = 12;
+        writeBand (i, b);
+        params = processor.readParams();
+        select (i);
+        grab.made = true;
+        drag = {};
+        drag.band = i;
+        drag.xk = 0.1f;
+        drag.last = p;
+        drag.members.push_back ({ i, fx (f), gy (0) + (p.y - grab.start.y) });
+        beginBandGestures (true);
+        // the first pull sets the gain only
+        const double R = view.dispRange;
+        const auto gn = juce::jlimit (-R, R, yg (drag.members[0].fy));
+        if (params.gainScale > 0)
+        {
+            auto* prm = bandParam (i, "Gain");
+            prm->setValueNotifyingHost (prm->convertTo0to1 ((float) juce::jlimit (-eq::gainMax, eq::gainMax, gn * 100 / params.gainScale)));
+        }
+        params = processor.readParams();
+    }
+    repaint();
+}
+
 
 void EqDisplay::filesDropped (const juce::StringArray& files, int, int)
 {
@@ -1677,7 +2290,7 @@ void MeterView::paint (juce::Graphics& g)
     g.fillAll (t.meterBg);
     g.setColour (t.edge);
     g.fillRect (0.0f, 0.0f, 1.0f, H);
-    const auto top = 22.0f, bottom = H - viewBottom, span = bottom - top;
+    const auto top = 22.0f, bottom = H - viewBottomOf (view), span = bottom - top;
     auto my = [&] (float lin)
     {
         const auto db = lin > 1e-6f ? 20 * std::log10 (lin) : -120.0f;
@@ -1752,9 +2365,10 @@ BandListView::BandListView (EgretEqProcessor& p, EqView& v, EqDisplay& d) : proc
 
 void BandListView::refresh (const eq::Params& p)
 {
-    if (p == params && view.selected == shownSelected) return;
+    if (p == params && view.selected == shownSelected && view.group == shownGroup) return;
     params = p;
     shownSelected = view.selected;
+    shownGroup = view.group;
     // left to right as on the display: by frequency
     std::vector<int> order;
     for (int i = 0; i < eq::maxBands; ++i) if (params.bands[(size_t) i].used) order.push_back (i);
@@ -1811,8 +2425,20 @@ void BandListView::paint (juce::Graphics& g)
         const auto alpha = b.on ? 1.0f : 0.45f;
         g.setColour (t.floatBg.withMultipliedAlpha (alpha));
         g.fillRoundedRectangle (c.box, 12.0f);
-        g.setColour ((c.band == view.selected ? colour : t.floatBorder).withMultipliedAlpha (alpha));
-        g.drawRoundedRectangle (c.box.reduced (0.5f), 12.0f, c.band == view.selected ? 2.0f : 1.0f);
+        if (c.band != view.selected && view.group[(size_t) c.band])   // picked with others: dashed
+        {
+            juce::Path outline, dashed;
+            outline.addRoundedRectangle (c.box.reduced (0.5f), 12.0f);
+            const float dashes[] = { 4.0f, 3.0f };
+            juce::PathStrokeType (1.5f).createDashedStroke (dashed, outline, dashes, 2);
+            g.setColour (colour.withMultipliedAlpha (alpha));
+            g.fillPath (dashed);
+        }
+        else
+        {
+            g.setColour ((c.band == view.selected ? colour : t.floatBorder).withMultipliedAlpha (alpha));
+            g.drawRoundedRectangle (c.box.reduced (0.5f), 12.0f, c.band == view.selected ? 2.0f : 1.0f);
+        }
         auto r = c.box.reduced (8, 0);
         const auto dot = juce::Rectangle<float> (9, 9).withCentre ({ r.getX() + 4.5f, r.getCentreY() });
         g.setColour (colour.withMultipliedAlpha (alpha));
@@ -1848,12 +2474,8 @@ void BandListView::mouseUp (const juce::MouseEvent& e)
     if (e.getNumberOfClicks() > 1 || e.mouseWasDraggedSinceMouseDown()) return;
     const auto c = chipAt (e.position);
     if (c == -2) { display.addBand (1000, 0, eq::Shape::bell); return; }
-    if (c >= 0 && c != view.selected)
-    {
-        view.selected = c;
-        if (processor.soloBand >= 0 && processor.soloBand != c) processor.soloBand = -1;
-        if (onSelectionChanged) onSelectionChanged();
-    }
+    if (c >= 0 && (e.mods.isShiftDown() || e.mods.isCommandDown())) { display.togglePick (c); return; }
+    if (c >= 0 && (c != view.selected || display.picked().size() > 1)) display.select (c);
 }
 
 void BandListView::mouseDoubleClick (const juce::MouseEvent& e)
@@ -1946,9 +2568,11 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
     view.anaMode = ui.getProperty ("anaMode", 3); view.anaRes = ui.getProperty ("anaRes", 2);
     view.anaSpeed = ui.getProperty ("anaSpeed", 2); view.anaRange = ui.getProperty ("anaRange", 90);
     view.dispRange = ui.getProperty ("dispRange", 12); view.anaTilt = ui.getProperty ("anaTilt", true);
-    view.dark = ui.getProperty ("theme", "light").toString() == "dark";
+    // dark unless someone picked light (projects saved before 1.2 never picked)
+    view.dark = ! (bool) ui.getProperty ("themePicked", false) || ui.getProperty ("theme", "dark").toString() == "dark";
     view.panelPinned = ui.getProperty ("panelPinned", false); view.panelX = ui.getProperty ("panelX", 0.3f); view.panelY = ui.getProperty ("panelY", 0.6f);
     view.panelGhost = ui.getProperty ("panelGhost", false); view.bandList = ui.getProperty ("bandList", true);
+    view.piano = ui.getProperty ("piano", true);
     const auto params = audioProcessor.readParams();
     for (int i = 0; i < eq::maxBands && view.selected < 0; ++i) if (params.bands[(size_t) i].used) view.selected = i;
 
@@ -1958,12 +2582,13 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
     {
         brandSub = birdNameText();
         bird.dive();
+        display.showVersion (UpdateChecker::currentVersion());
         panel.repaint (topBar);
         juce::Timer::callAfterDelay (2600, [safe] { if (safe != nullptr) { safe->brandSub = subtitleText(); safe->panel.repaint (safe->topBar); } });
     };
     panel.addAndMakeVisible (bird);
     for (auto* b : { &undoButton, &redoButton, &abButton, &copyButton, &presetPrev, &presetButton, &presetNext, &themeButton, &helpButton, &bypassButton,
-                     &phaseButton, &charButton, &anaButton, &sourceButton, &playButton, &listButton, &autoButton })
+                     &phaseButton, &charButton, &anaButton, &sourceButton, &playButton, &listButton, &gainQButton, &autoButton })
     {
         b->view = &view;
         b->setWantsKeyboardFocus (false);
@@ -2001,7 +2626,7 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
     presetNext.onClick = [stepPreset] { stepPreset (1); };
     presetButton.setTooltip ("Presets");
     presetButton.onClick = [this] { presetMenu(); };
-    themeButton.onClick = [this] { view.dark = ! view.dark; saveView(); applyTheme(); };
+    themeButton.onClick = [this] { view.dark = ! view.dark; audioProcessor.uiState.setProperty ("themePicked", true, nullptr); saveView(); applyTheme(); };
     helpButton.setTooltip ("Help, updates, about");
     helpButton.onClick = [this] { helpMenu(); };
     bypassButton.led = true;
@@ -2033,15 +2658,31 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
     charButton.onClick = [this] { characterMenu(); };
 
     // ---- bottom bar
-    phaseButton.setTooltip ("Processing mode");
+    // PHASE: Zero Latency, Natural Phase (the analog curves, a little latency),
+    // Linear Phase (no phase change; the longer RES, the finer down low, the more latency).
     phaseButton.onClick = [this]
     {
+        const auto p = audioProcessor.readParams();
         juce::PopupMenu m;
         m.addSectionHeader ("Processing mode");
-        m.addItem (1, "Zero Latency", true, true);
-        m.addItem (2, "Natural Phase (coming)", false, false);
-        m.addItem (3, "Linear Phase (coming)", false, false);
-        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&phaseButton));
+        for (int i = 0; i < eq::numPhases; ++i) m.addItem (1 + i, eq::phaseLabels[i], true, (int) p.phase == i);
+        m.addSeparator();
+        m.addSectionHeader ("Linear Phase resolution");
+        for (int i = 0; i < eq::numPhaseRes; ++i) m.addItem (10 + i, eq::phaseResLabels[i], p.phase == eq::Phase::linear, (int) p.phaseRes == i);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&phaseButton), [this] (int r)
+        {
+            if (r <= 0) return;
+            audioProcessor.undo.beginNewTransaction();
+            auto* prm = audioProcessor.apvts.getParameter (r < 10 ? "phase" : "phaseRes");
+            prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 ((float) (r < 10 ? r - 1 : r - 10))); prm->endChangeGesture();
+        });
+    };
+    gainQButton.setTooltip ("Gain-Q: bells narrow as they boost or cut more, like an analog desk");
+    gainQButton.onClick = [this]
+    {
+        audioProcessor.undo.beginNewTransaction();
+        auto* gq = audioProcessor.apvts.getParameter ("gainQ");
+        gq->beginChangeGesture(); gq->setValueNotifyingHost (gq->getValue() > 0.5f ? 0.0f : 1.0f); gq->endChangeGesture();
     };
     anaButton.getProperties().set ("dimPrefix", "Analyzer:");
     anaButton.onClick = [this] { analyzerMenu(); };
@@ -2101,6 +2742,7 @@ void EgretEqEditor::mouseDown (const juce::MouseEvent&)
 // Space plays and stops (standalone); Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) undo and redo.
 bool EgretEqEditor::keyPressed (const juce::KeyPress& key)
 {
+    if (display.commandKey (key)) return true;   // copy, paste, duplicate, select all, Esc
     const auto cmd = key.getModifiers().isCommandDown();
     if (key.getKeyCode() == juce::KeyPress::spaceKey && EgretEqProcessor::isStandalone())
     {
@@ -2125,6 +2767,7 @@ void EgretEqEditor::saveView()
     ui.setProperty ("theme", view.dark ? "dark" : "light", nullptr);
     ui.setProperty ("panelPinned", view.panelPinned, nullptr); ui.setProperty ("panelX", view.panelX, nullptr); ui.setProperty ("panelY", view.panelY, nullptr);
     ui.setProperty ("panelGhost", view.panelGhost, nullptr); ui.setProperty ("bandList", view.bandList, nullptr);
+    ui.setProperty ("piano", view.piano, nullptr);
 }
 
 void EgretEqEditor::characterMenu()
@@ -2185,6 +2828,10 @@ void EgretEqEditor::selectionChanged()
 {
     const auto p = audioProcessor.readParams();
     if (view.selected >= 0 && ! p.bands[(size_t) view.selected].used) view.selected = -1;
+    // the picked bands: used ones, and always the selected one
+    for (int i = 0; i < eq::maxBands; ++i) if (! p.bands[(size_t) i].used) view.group.reset ((size_t) i);
+    if (view.selected < 0) view.group.reset();
+    else if (! view.group[(size_t) view.selected]) { view.group.reset(); view.group.set ((size_t) view.selected); }
     saveView();
     display.tick (p);
     refreshAll();
@@ -2277,6 +2924,7 @@ void EgretEqEditor::analyzerMenu()
     for (int i = 0; i < 3; ++i) m.addItem (30 + i, juce::String (ranges[i]) + " dB", true, view.anaRange == ranges[i]);
     m.addSeparator();
     m.addItem (40, "Tilt 4.5 dB/oct", true, view.anaTilt);
+    m.addItem (42, "Piano keyboard", true, view.piano);
     m.addItem (41, "Freeze", true, view.freeze);
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&anaButton), [this, pre, post] (int r)
     {
@@ -2290,6 +2938,7 @@ void EgretEqEditor::analyzerMenu()
         if (r >= 30 && r < 33) view.anaRange = ranges[r - 30];
         if (r == 40) view.anaTilt = ! view.anaTilt;
         if (r == 41) view.freeze = ! view.freeze;
+        if (r == 42) { view.piano = ! view.piano; display.resized(); }
         saveView();
         refreshAll();
     });
@@ -2302,8 +2951,26 @@ void EgretEqEditor::sourceMenu()
     for (int i = 0; i < 4; ++i) m.addItem (i + 1, names[i], true, (int) audioProcessor.getSource() == i);
     m.addSeparator();
     m.addItem (10, "Load a file...");
+    // the sidechain for dynamic bands with SC on (in a DAW: the plugin's second input)
+    m.addSeparator();
+    m.addSectionHeader ("Sidechain");
+    const char* scNames[] = { "Off", "Demo loop", "Pink noise", "File" };
+    for (int i = 0; i < 4; ++i) m.addItem (20 + i, scNames[i], true, (int) audioProcessor.getScSource() == i);
+    m.addItem (30, "Load a sidechain file...");
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&sourceButton), [this] (int r)
     {
+        const auto scFile = r == 30 || (r == 23 && audioProcessor.getScFileName().isEmpty());
+        if (r >= 20 && r < 24 && ! scFile) { audioProcessor.setScSource ((EgretEqProcessor::ScSource) (r - 20)); return; }
+        if (scFile)
+        {
+            chooser = std::make_unique<juce::FileChooser> ("A sidechain for the dynamic bands", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
+            {
+                if (fc.getResult().existsAsFile() && ! audioProcessor.loadScFile (fc.getResult()))
+                    display.info = "Couldn" + utf8 ("\xe2\x80\x99") + "t read " + fc.getResult().getFileName();
+            });
+            return;
+        }
         if (r >= 1 && r <= 4)
         {
             audioProcessor.setSource ((EgretEqProcessor::Source) (r - 1));
@@ -2330,6 +2997,15 @@ void EgretEqEditor::refreshAll()
     static const char* modes[] = { "Off", "Pre", "Post", "Pre+Post" };
     anaButton.setButtonText (juce::String (modes[juce::jlimit (0, 3, view.anaMode)]) + (view.freeze ? " (frozen)" : ""));
     charButton.setButtonText (eq::characterLabels[(int) p.character]);
+    {
+        // the mode, and the latency it adds (in Zero Latency only the spectral dynamics add any)
+        phaseButton.setButtonText (juce::String (eq::phaseLabels[(int) p.phase]) + (p.phase == eq::Phase::linear ? utf8 (" \xc2\xb7 ") + eq::phaseResLabels[(int) p.phaseRes] : juce::String()));
+        const auto lat = eq::expectedLatency (p, audioProcessor.getSampleRateNow());
+        const auto ms = lat / audioProcessor.getSampleRateNow() * 1000;
+        phaseButton.getProperties().set ("dimSuffix", lat == 0 ? juce::String() : (p.phase == eq::Phase::zero ? "spectral " : "") + (ms < 10 ? juce::String (ms, 1) : juce::String (juce::roundToInt (ms))) + " ms");
+        phaseButton.setTooltip ("Processing mode" + (lat == 0 ? juce::String (" (no latency)") : " (latency " + juce::String (lat) + " samples)"));
+    }
+    gainQButton.setToggleState (p.gainQ, juce::dontSendNotification);
     listButton.setToggleState (view.bandList, juce::dontSendNotification);
     autoButton.setToggleState (p.autoGain, juce::dontSendNotification);
     autoButton.setButtonText (p.autoGain ? "Auto Gain " + EqKnob::format (EqKnob::Unit::dB, eq::autoGainDb (p, audioProcessor.getSampleRateNow())) : juce::String ("Auto Gain"));
@@ -2337,7 +3013,8 @@ void EgretEqEditor::refreshAll()
     {
         static const char* srcNames[] = { "Demo", "File", "Input", "Noise" };
         const auto src = (int) audioProcessor.getSource();
-        sourceButton.setButtonText (src == 1 && audioProcessor.getFileName().isNotEmpty() ? audioProcessor.getFileName() : juce::String (srcNames[src]));
+        sourceButton.setButtonText ((src == 1 && audioProcessor.getFileName().isNotEmpty() ? audioProcessor.getFileName() : juce::String (srcNames[src]))
+                                    + (audioProcessor.getScSource() != EgretEqProcessor::ScSource::off ? " + SC" : ""));
         playButton.setButtonText (audioProcessor.isPlaying() ? "Stop" : "Play");
         playButton.setToggleState (audioProcessor.isPlaying(), juce::dontSendNotification);
     }
@@ -2449,7 +3126,12 @@ void EgretEqEditor::layoutPanel()
     // bottom: mode, analyzer, (source, play) | auto gain, scale, out, pan
     const auto by = bottomBar.getY() + 4, bh = bottomH - 8;
     auto bx = 10;
-    phaseButton.setBounds (bx, by, 100, bh); bx += 104;
+    {
+        const auto font = sansFont (12.0f);
+        const auto suffix = phaseButton.getProperties()["dimSuffix"].toString();
+        const auto pw = juce::roundToInt (juce::GlyphArrangement::getStringWidth (font, phaseButton.getButtonText() + (suffix.isNotEmpty() ? " " + suffix : juce::String()))) + 18;
+        phaseButton.setBounds (bx, by, pw, bh); bx += pw + 4;
+    }
     const auto charW = juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (12.0f), "Character: " + charButton.getButtonText())) + 18;
     charButton.setBounds (bx, by, charW, bh); bx += charW + 4;
     const auto anaW = juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (12.0f), "Analyzer: " + anaButton.getButtonText())) + 18;
@@ -2469,5 +3151,6 @@ void EgretEqEditor::layoutPanel()
     }
     const auto aw = juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (12.0f), autoButton.getButtonText())) + 18;
     autoButton.setBounds (rx - aw, by, aw, bh);
-    listButton.setBounds (autoButton.getX() - 58, by, 54, bh);
+    gainQButton.setBounds (autoButton.getX() - 62, by, 58, bh);
+    listButton.setBounds (gainQButton.getX() - 58, by, 54, bh);
 }

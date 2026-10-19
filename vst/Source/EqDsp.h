@@ -162,6 +162,8 @@ namespace eq
         // with back through takeRetired, so they're freed off the audio thread.
         void setKernel (std::unique_ptr<Kernel>);
         std::unique_ptr<Kernel> takeRetired();
+        // Waiting for a kernel for the mode wanted (and holding none that fits): the builder should make one.
+        bool needsKernel() const { return starving.load (std::memory_order_relaxed); }
 
     private:
         struct BandState
@@ -260,6 +262,7 @@ namespace eq
         double gate = 1;
         int latency = 0, firLatency = 0;
         std::atomic<int> latencyNow { 0 };
+        std::atomic<bool> starving { false };
         Fir fir;
         Spec spec;
         FftTable firTable, specTable;

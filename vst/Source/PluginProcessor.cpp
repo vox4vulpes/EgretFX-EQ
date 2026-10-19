@@ -25,6 +25,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout EgretEqProcessor::createLayo
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "power", 1 }, "Power", true));
     // Added in 1.1 (new IDs only, so 1.0 projects still load).
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "character", 2 }, "Character", juce::StringArray { "Clean", "Subtle", "Warm" }, 0));
+    // Added in 1.2.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "gainQ", 3 }, "Gain-Q", false));
+    juce::StringArray phases, resolutions;
+    for (auto* l : eq::phaseLabels) phases.add (l);
+    for (auto* l : eq::phaseResLabels) resolutions.add (l);
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "phase", 3 }, "Processing Mode", phases, 0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "phaseRes", 3 }, "Linear Phase Resolution", resolutions, 1));
 
     juce::StringArray shapes, slopes, places;
     for (auto* s : eq::shapeLabels) shapes.add (s);
@@ -47,6 +54,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout EgretEqProcessor::createLayo
         group->addChild (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { bandId (i, "Thresh"), 2 }, name + "Threshold", juce::NormalisableRange<float> (-60.0f, 0.0f), -24.0f));
         group->addChild (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { bandId (i, "Attack"), 2 }, name + "Attack", logRange (0.5f, 500.0f), 10.0f));
         group->addChild (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { bandId (i, "Release"), 2 }, name + "Release", logRange (10.0f, 5000.0f), 120.0f));
+        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { bandId (i, "SC"), 3 }, name + "Sidechain", false));
+        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { bandId (i, "Spectral"), 3 }, name + "Spectral", false));
+        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { bandId (i, "Brick"), 3 }, name + "Brickwall", false));
         layout.add (std::move (group));
     }
     return layout;
@@ -54,14 +64,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout EgretEqProcessor::createLayo
 
 EgretEqProcessor::EgretEqProcessor()
     : AudioProcessor (BusesProperties().withInput ("Input", juce::AudioChannelSet::stereo(), true)
-                                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                                       .withInput ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, &undo, "EgretEq", createLayout())
 {
     for (int i = 0; i < eq::maxBands; ++i)
     {
         auto get = [this, i] (const char* n) { return apvts.getRawParameterValue (bandId (i, n)); };
         refs[(size_t) i] = { get ("Used"), get ("On"), get ("Shape"), get ("Freq"), get ("Gain"), get ("Q"), get ("Slope"), get ("Place"),
-                             get ("Dyn"), get ("Range"), get ("Thresh"), get ("Attack"), get ("Release") };
+                             get ("Dyn"), get ("Range"), get ("Thresh"), get ("Attack"), get ("Release"), get ("SC"), get ("Spectral"), get ("Brick") };
     }
     outGain = apvts.getRawParameterValue ("outGain");
     outPan = apvts.getRawParameterValue ("outPan");
@@ -69,9 +80,77 @@ EgretEqProcessor::EgretEqProcessor()
     autoGain = apvts.getRawParameterValue ("autoGain");
     power = apvts.getRawParameterValue ("power");
     character = apvts.getRawParameterValue ("character");
+    gainQ = apvts.getRawParameterValue ("gainQ");
+    phase = apvts.getRawParameterValue ("phase");
+    phaseRes = apvts.getRawParameterValue ("phaseRes");
     formats.registerBasicFormats();
     rememberPreset ("Flat");
     updates->checkOnLaunch();
+    builder.startThread (juce::Thread::Priority::low);
+    startTimerHz (10);
+}
+
+EgretEqProcessor::~EgretEqProcessor()
+{
+    stopTimer();
+    builder.stopThread (4000);
+    delete freshKernel.exchange (nullptr);
+    for (auto& slot : spentKernels) delete slot.exchange (nullptr);
+}
+
+// The latency the host is told: what the mode wanted takes, ready before the
+// engine has switched (the host lines the tracks up by it).
+void EgretEqProcessor::timerCallback()
+{
+    const auto want = eq::expectedLatency (readParams(), sampleRate);
+    if (want != getLatencySamples()) setLatencySamples (want);
+}
+
+void EgretEqProcessor::Builder::sweep()
+{
+    for (auto& slot : owner.spentKernels) delete slot.exchange (nullptr);
+}
+
+void EgretEqProcessor::Builder::run()
+{
+    int starved = 0;
+    while (! threadShouldExit())
+    {
+        sweep();
+        const auto p = owner.readParams();
+        const auto rate = fs.load();
+        if (p.phase == eq::Phase::zero) { hasBuilt = false; starved = 0; }
+        else
+        {
+            // the engine still waiting a while after a kernel was handed over (it went
+            // back to Zero Latency and forward again, say): make it another
+            starved = owner.engine.needsKernel() && owner.freshKernel.load() == nullptr ? starved + 1 : 0;
+            if (! hasBuilt || rate != builtFs || eq::kernelChanged (p, built) || starved > 6)
+            {
+                auto k = eq::buildKernel (p, rate);
+                built = p; builtFs = rate; hasBuilt = true; starved = 0;
+                delete owner.freshKernel.exchange (k.release());
+            }
+        }
+        wait (15);
+    }
+    sweep();
+}
+
+// Audio thread: take the newest kernel; pass the spent ones to the builder to free.
+void EgretEqProcessor::handOverKernels()
+{
+    if (auto* k = freshKernel.exchange (nullptr)) engine.setKernel (std::unique_ptr<eq::Kernel> (k));
+    while (auto spent = engine.takeRetired())
+    {
+        auto* raw = spent.release();
+        for (auto& slot : spentKernels)
+        {
+            eq::Kernel* empty = nullptr;
+            if (slot.compare_exchange_strong (empty, raw)) { raw = nullptr; break; }
+        }
+        delete raw;   // every slot full (the builder has stopped): a last resort
+    }
 }
 
 bool EgretEqProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -79,7 +158,16 @@ bool EgretEqProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
     const auto out = layouts.getMainOutputChannelSet();
     if (out != juce::AudioChannelSet::stereo() && out != juce::AudioChannelSet::mono())
         return false;
-    return layouts.getMainInputChannelSet() == out;
+    if (layouts.getMainInputChannelSet() != out)
+        return false;
+    // the sidechain: off, mono or stereo
+    if (layouts.inputBuses.size() > 1)
+    {
+        const auto sc = layouts.getChannelSet (true, 1);
+        if (! sc.isDisabled() && sc != juce::AudioChannelSet::stereo() && sc != juce::AudioChannelSet::mono())
+            return false;
+    }
+    return true;
 }
 
 bool EgretEqProcessor::isStandalone()
@@ -100,10 +188,12 @@ eq::Params EgretEqProcessor::readParams() const
         b.freq = r.freq->load();
         b.gain = r.gain->load();
         b.q = r.q->load();
-        b.slope = eq::slopes[juce::jlimit (0, eq::numSlopes - 1, juce::roundToInt (r.slope->load()))];
+        b.slope = r.brick->load() > 0.5f && eq::isCut (b.shape) ? eq::brickSlope
+                                                                 : eq::slopes[juce::jlimit (0, eq::numSlopes - 1, juce::roundToInt (r.slope->load()))];
         b.place = (eq::Place) juce::jlimit (0, eq::numPlaces - 1, juce::roundToInt (r.place->load()));
         b.dyn = r.dyn->load() > 0.5f;
         b.range = r.range->load(); b.thresh = r.thresh->load(); b.attack = r.attack->load(); b.release = r.release->load();
+        b.sc = r.sc->load() > 0.5f; b.spectral = r.spectral->load() > 0.5f;
     }
     p.outGain = outGain->load();
     p.outPan = outPan->load();
@@ -111,6 +201,9 @@ eq::Params EgretEqProcessor::readParams() const
     p.autoGain = autoGain->load() > 0.5f;
     p.power = power->load() > 0.5f;
     p.character = (eq::Character) juce::jlimit (0, eq::numCharacters - 1, juce::roundToInt (character->load()));
+    p.gainQ = gainQ->load() > 0.5f;
+    p.phase = (eq::Phase) juce::jlimit (0, eq::numPhases - 1, juce::roundToInt (phase->load()));
+    p.phaseRes = (eq::PhaseRes) juce::jlimit (0, eq::numPhaseRes - 1, juce::roundToInt (phaseRes->load()));
     return p;
 }
 
@@ -138,7 +231,10 @@ void EgretEqProcessor::writeParams (const eq::Params& p)
         set (bandId (i, "Q"), (float) b.q);
         int slopeIndex = 1;
         for (int k = 0; k < eq::numSlopes; ++k) if (eq::slopes[k] == b.slope) slopeIndex = k;
+        if (b.slope >= eq::brickSlope) slopeIndex = eq::numSlopes - 1;
         set (bandId (i, "Slope"), (float) slopeIndex);
+        set (bandId (i, "Brick"), b.slope >= eq::brickSlope ? 1.0f : 0.0f);
+        set (bandId (i, "SC"), b.sc ? 1.0f : 0.0f); set (bandId (i, "Spectral"), b.spectral ? 1.0f : 0.0f);
         set (bandId (i, "Place"), (float) b.place);
         set (bandId (i, "Dyn"), b.dyn ? 1.0f : 0.0f);
         set (bandId (i, "Range"), (float) b.range); set (bandId (i, "Thresh"), (float) b.thresh);
@@ -149,6 +245,9 @@ void EgretEqProcessor::writeParams (const eq::Params& p)
     set ("gainScale", (float) p.gainScale);
     set ("autoGain", p.autoGain ? 1.0f : 0.0f);
     set ("character", (float) p.character);
+    set ("gainQ", p.gainQ ? 1.0f : 0.0f);
+    set ("phase", (float) p.phase);
+    set ("phaseRes", (float) p.phaseRes);
 }
 
 //==============================================================================
@@ -156,8 +255,11 @@ void EgretEqProcessor::prepareToPlay (double newSampleRate, int samplesPerBlock)
 {
     sampleRate = newSampleRate;
     engine.prepare (sampleRate);
+    builder.fs = sampleRate;
     lastSolo = -2;
     scratch.setSize (2, juce::jmax (1, samplesPerBlock));
+    scScratch.setSize (2, juce::jmax (1, samplesPerBlock));
+    setLatencySamples (eq::expectedLatency (readParams(), sampleRate));
     if (isStandalone())
     {
         auto demo = std::make_shared<Clip>(), noise = std::make_shared<Clip>();
@@ -190,13 +292,14 @@ int EgretEqProcessor::Tap::pull (float* dest, int max)
 void EgretEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
-    const auto n = buffer.getNumSamples();
-    const auto chans = buffer.getNumChannels();
+    auto main = getBusBuffer (buffer, false, 0);
+    const auto n = main.getNumSamples();
+    const auto chans = main.getNumChannels();
     if (n == 0 || chans == 0) return;
-    if (scratch.getNumSamples() < n) return;   // the host broke its promise on block size
+    if (scratch.getNumSamples() < n || scScratch.getNumSamples() < n) return;   // the host broke its promise on block size
 
-    auto* L = buffer.getWritePointer (0);
-    auto* R = chans > 1 ? buffer.getWritePointer (1) : scratch.getWritePointer (1);
+    auto* L = main.getWritePointer (0);
+    auto* R = chans > 1 ? main.getWritePointer (1) : scratch.getWritePointer (1);
     if (chans == 1) std::copy (L, L + n, R);
 
     // The standalone app's own sources replace the input.
@@ -225,21 +328,69 @@ void EgretEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         std::fill (L, L + n, 0.0f); std::fill (R, R + n, 0.0f);
     }
 
+    // The sidechain: the standalone app's own, or the plugin's second input.
+    const float* scL = nullptr;
+    const float* scR = nullptr;
+    if (isStandalone() && getScSource() != ScSource::off)
+    {
+        const auto src = getScSource();
+        auto clip = src == ScSource::demo ? std::atomic_load (&demoClip) : src == ScSource::noise ? std::atomic_load (&noiseClip) : std::atomic_load (&scFileClip);
+        if (clip != scPlayingClip) { scPlayingClip = clip; scPos = 0; }
+        auto* a = scScratch.getWritePointer (0);
+        auto* b = scScratch.getWritePointer (1);
+        if (! playing || clip == nullptr || clip->left.empty()) { std::fill (a, a + n, 0.0f); std::fill (b, b + n, 0.0f); }
+        else
+            for (int i = 0; i < n; ++i)
+            {
+                if (scPos >= clip->left.size()) scPos = 0;
+                a[i] = clip->left[scPos]; b[i] = clip->right[scPos];
+                ++scPos;
+            }
+        scL = a; scR = b;
+    }
+    else if (auto* bus = getBus (true, 1); bus != nullptr && bus->isEnabled())
+    {
+        auto sc = getBusBuffer (buffer, true, 1);
+        if (sc.getNumChannels() > 0) { scL = sc.getReadPointer (0); scR = sc.getReadPointer (sc.getNumChannels() > 1 ? 1 : 0); }
+    }
+    const auto scOn = scL != nullptr;
+    sidechainOn = scOn;
+
     const auto p = readParams();
     const auto s = soloBand.load();
-    if (p != lastParams || s != lastSolo)
+    if (p != lastParams || s != lastSolo || scOn != lastScOn)
     {
-        engine.setParams (p, s);
+        engine.setParams (p, s, scOn);
         lastParams = p;
         lastSolo = s;
+        lastScOn = scOn;
     }
+    handOverKernels();
 
     auto* mono = scratch.getWritePointer (0);
     for (int i = 0; i < n; ++i) mono[i] = (L[i] + R[i]) * 0.5f;
     preTap.push (mono, n);
-    engine.process (L, R, L, R, n);
+    engine.process (L, R, L, R, n, scL, scR);
     for (int i = 0; i < n; ++i) mono[i] = (L[i] + R[i]) * 0.5f;
     postTap.push (mono, n);
+    if (scOn)
+    {
+        for (int i = 0; i < n; ++i) mono[i] = (scL[i] + scR[i]) * 0.5f;
+        scTap.push (mono, n);
+    }
+}
+
+// The host's bypass: the sound as it comes in, delayed by the latency the host was told.
+void EgretEqProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    auto main = getBusBuffer (buffer, false, 0);
+    const auto n = main.getNumSamples();
+    const auto chans = main.getNumChannels();
+    if (n == 0 || chans == 0 || scratch.getNumSamples() < n) return;
+    auto* L = main.getWritePointer (0);
+    auto* R = chans > 1 ? main.getWritePointer (1) : scratch.getWritePointer (1);
+    if (chans == 1) std::copy (L, L + n, R);
+    engine.processBypassed (L, R, n);
 }
 
 //==============================================================================
@@ -248,7 +399,15 @@ void EgretEqProcessor::setSource (Source s)
     source = (int) s;
 }
 
-bool EgretEqProcessor::loadFile (const juce::File& f)
+bool EgretEqProcessor::loadScFile (const juce::File& f)
+{
+    if (! loadFile (f, true)) return false;
+    scFileName = f.getFileName();
+    setScSource (ScSource::file);
+    return true;
+}
+
+bool EgretEqProcessor::loadFile (const juce::File& f, bool asSidechain)
 {
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (f));
     if (reader == nullptr || reader->lengthInSamples <= 0 || reader->lengthInSamples > (juce::int64) reader->sampleRate * 60 * 20)
@@ -273,6 +432,11 @@ bool EgretEqProcessor::loadFile (const juce::File& f)
             interp.process (ratio, raw.getReadPointer (c), dest.data(), outLen);
         }
     }
+    if (asSidechain)
+    {
+        std::atomic_store (&scFileClip, std::shared_ptr<const Clip> (clip));
+        return true;
+    }
     std::atomic_store (&fileClip, std::shared_ptr<const Clip> (clip));
     fileName = f.getFileName();
     setSource (Source::file);
@@ -290,13 +454,17 @@ juce::String EgretEqProcessor::paramsToSpec (const eq::Params& p)
         if (! b.used) continue;
         items.add ("b" + juce::String (i + 1) + "=" + eq::shapeKeys[(int) b.shape] + " " + juce::String (b.freq, 6) + " " + juce::String (b.gain, 6)
                    + " " + juce::String (b.q, 6) + " " + juce::String (b.slope) + " " + eq::placeKeys[(int) b.place] + (b.on ? "" : " off")
-                   + (b.dyn ? " dyn:" + juce::String (b.range, 4) + "," + juce::String (b.thresh, 4) + "," + juce::String (b.attack, 4) + "," + juce::String (b.release, 4) : juce::String()));
+                   + (b.dyn ? " dyn:" + juce::String (b.range, 4) + "," + juce::String (b.thresh, 4) + "," + juce::String (b.attack, 4) + "," + juce::String (b.release, 4) : juce::String())
+                   + (b.sc ? " sc" : "") + (b.spectral ? " spec" : ""));
     }
     items.add ("scale=" + juce::String (p.gainScale, 6));
     items.add ("gain=" + juce::String (p.outGain, 6));
     items.add ("pan=" + juce::String (p.outPan, 6));
     items.add (juce::String ("auto=") + (p.autoGain ? "1" : "0"));
     items.add (juce::String ("char=") + eq::characterKeys[(int) p.character]);
+    if (p.gainQ) items.add ("gq=1");
+    items.add (juce::String ("phase=") + eq::phaseKeys[(int) p.phase]);
+    items.add (juce::String ("res=") + eq::phaseResKeys[(int) p.phaseRes]);
     return items.joinIntoString ("; ");
 }
 
