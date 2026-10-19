@@ -378,7 +378,7 @@
     <button class="range-box" id="range-box" type="button" title="Display range">12 dB</button>
     <button class="tb sketch-btn" id="sketch-btn" type="button" aria-pressed="false" title="EQ Sketch: draw the curve you want, the bands follow (Esc to stop)"><svg viewBox="0 0 16 16"><path d="M2.5 13.5l1-3.5 7.5-7.5 2.5 2.5L6 12.5zM9.5 4l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
     <div class="load-warn" id="load-warn" role="status" hidden>More than 24 bands: the EQ may use noticeably more CPU</div>
-    <div class="sketch-hint" id="sketch-hint" hidden>Draw the curve you want; the bands follow</div>
+    <div class="sketch-hint" id="sketch-hint" hidden>Draw left to right, the curve follows; back to the left takes it back</div>
     <div class="band-panel" id="band-panel" hidden>
       <div class="bp-grip" id="bp-grip" title="Drag to move the panel aside; double-click to put it back under the band"></div>
       <button class="bp-ghost" id="bp-ghost" type="button" aria-pressed="false" title="See-through panel" aria-label="See-through panel"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 1.4a4.6 4.6 0 010 9.2z" fill="currentColor"/></svg></button>
@@ -416,7 +416,7 @@
   <div class="band-list" id="band-list" role="listbox" aria-label="Bands"></div>
 </div>
 <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
-<p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source. The mode at the bottom left: Zero Latency, Natural Phase (the analog curves, a little latency) or Linear Phase (no phase change, more latency); cuts can be a brickwall there. A dynamic band can listen to the sidechain (<b>SC</b>, pick a sidechain in the player) and work frequency by frequency (<b>SPEC</b>).</p>
+<p class="help">Double-click the display to add a band (with none yet, a ghost shows the curve it would make; drag instead to draw the curve with the pencil, left to right, back to the left to take it back), drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source. The mode at the bottom left: Zero Latency, Natural Phase (the analog curves, a little latency) or Linear Phase (no phase change, more latency); cuts can be a brickwall there. A dynamic band can listen to the sidechain (<b>SC</b>, pick a sidechain in the player) and work frequency by frequency (<b>SPEC</b>).</p>
 </div>
 </div>
 
@@ -2894,10 +2894,12 @@ if (typeof registerProcessor === 'function') {
       eg.beginPath(); for (k = 0; k < cols; k++) { if (k) eg.lineTo(k, clip(db[k])); else eg.moveTo(k, clip(db[k])); } eg.stroke();
       eg.globalAlpha = 1;
     }
-    // the sum
+    // the sum (while the pencil draws: the curve as drawn so far)
+    var sumNow = sketchCurve() || totalCurve;
     eg.beginPath();
-    for (k = 0; k < cols; k++) { var yy = clip(totalCurve[k]); if (k) eg.lineTo(k, yy); else eg.moveTo(k, yy); }
+    for (k = 0; k < cols; k++) { var yy = clip(sumNow[k]); if (k) eg.lineTo(k, yy); else eg.moveTo(k, yy); }
     eg.strokeStyle = T.curve; eg.lineWidth = 2; eg.shadowColor = T.curveGlow; eg.shadowBlur = 6; eg.stroke(); eg.shadowBlur = 0;
+    drawGhost(clip);
     // dots, with Pro-Q style badges for the stereo placement
     eg.textAlign = 'center'; eg.textBaseline = 'middle';
     for (i = 0; i < MAX_BANDS; i++) {
@@ -2957,12 +2959,6 @@ if (typeof registerProcessor === 'function') {
           eg.globalAlpha = 0.5; eg.setLineDash([3, 3]); eg.beginPath(); eg.moveTo(pk.x, view.top); eg.lineTo(pk.x, bottom); eg.stroke(); eg.setLineDash([]); eg.globalAlpha = 1;
         }
       });
-    }
-    // EQ Sketch: the line being drawn
-    if (sketch.points && sketch.points.length > 1) {
-      eg.beginPath(); eg.moveTo(sketch.points[0].x, sketch.points[0].y);
-      sketch.points.forEach(function(sp){ eg.lineTo(sp.x, sp.y); });
-      eg.strokeStyle = T.eqLabel0; eg.lineWidth = 3; eg.lineCap = 'round'; eg.lineJoin = 'round'; eg.globalAlpha = 0.85; eg.stroke(); eg.globalAlpha = 1;
     }
     eg.restore();
     drawVersion(eg);
@@ -3115,7 +3111,12 @@ if (typeof registerProcessor === 'function') {
     eqCanvas.focus();
     var p = localPos(e), i = hitBand(p);
     if (e.button !== 0) return;
-    if (sketch.on && i < 0 && p.x <= view.plotW) { sketch.points = [p]; beginGesture(); eqCanvas.setPointerCapture(e.pointerId); requestDraw(); return; }
+    // the pencil: EQ Sketch on, or no bands yet (then holding still still grabs the spectrum)
+    if (i < 0 && p.x <= view.plotW && (sketch.on || usedCount() === 0)) {
+      sketch.points = [p]; ghost = null; beginGesture(); eqCanvas.setPointerCapture(e.pointerId);
+      if (!sketch.on) armGrab(p);
+      requestDraw(); return;
+    }
     var ai = i < 0 ? hitArrow(p) : -1;
     if (ai >= 0) {   // pulling the arrow: the band turns dynamic, its range follows the pointer
       params[bandKey(ai, 'Dyn')] = true; params[bandKey(ai, 'Range')] = 0;
@@ -3149,7 +3150,8 @@ if (typeof registerProcessor === 'function') {
   });
   eqCanvas.addEventListener('pointermove', function(e){
     var p = localPos(e);
-    if (sketch.points) { sketch.points.push(p); requestDraw(); return; }
+    if (grab && grab.active && !grab.made) { moveGrab(p); return; }
+    if (sketch.points) { sketchMove(p); requestDraw(); return; }
     if (drag && drag.range) {
       drag.fy += (p.y - drag.lastY) * (e.shiftKey ? 0.15 : 1); drag.lastY = p.y;
       var Rr = ui.dispRange, target = Math.max(-Rr, Math.min(Rr, yg(drag.fy)));
@@ -3193,6 +3195,9 @@ if (typeof registerProcessor === 'function') {
     }
     var h = hitBand(p);
     if (h !== hover) { hover = h; requestDraw(); }
+    var g0 = ghost;
+    ghost = usedCount() === 0 && h < 0 && p.x <= view.plotW && !sketch.on ? p : null;
+    if (ghost || g0) requestDraw();
     var pp = p.x <= view.plotW ? p.x : -1, noteAt = function(x){ return x < 0 ? null : Math.round(midiOf(xf(x))); };
     if (ui.piano && noteAt(pp) !== noteAt(pianoPointer)) requestDraw();
     pianoPointer = pp;
@@ -3239,9 +3244,13 @@ if (typeof registerProcessor === 'function') {
     grab = { x0: p.x, y0: p.y, p: p, active: false, made: false, hot: -1, peaks: [] };
     grab.timer = setTimeout(function(){
       if (!grab || grab.active) return;
+      if (sketch.points) {   // the pencil started without bands: drawing wins, holding still grabs
+        if (sketch.points.length > 1) { grab = null; return; }
+      }
       grab.peaks = findPeaks(grabSource());
       if (!grab.peaks.length) { grab = null; return; }
       grab.active = true; rubber = null;
+      if (sketch.points) { sketch.points = null; endGesture(); }
       eqCanvas.style.cursor = 'grab';
       moveGrab(grab.p);
     }, GRAB_HOLD_MS);
@@ -3277,7 +3286,87 @@ if (typeof registerProcessor === 'function') {
   }
 
   // ---------- EQ Sketch: draw the curve you want, bands are found to make it ----------
+  // The pencil draws left to right and the curve follows at once; holding
+  // still holds it; going back to the left takes back what was drawn there.
+  // On letting go, bands are found to make it.
   var sketch = { on: false, points: null };
+  function sketchMove(p){
+    var pts = sketch.points, last = pts[pts.length - 1];
+    if (p.x > last.x + 0.5) { pts.push(p); if (grab && !grab.active) disarmGrab(); return; }
+    if (p.x < last.x - 0.5) {
+      while (pts.length > 1 && pts[pts.length - 1].x > p.x) pts.pop();
+      return;
+    }
+    if (pts.length > 1) last.y = p.y;   // the same spot: up and down
+  }
+  // The curve as drawn so far: what's drawn where the pencil has been (lightly
+  // smoothed, as the bands will make it), the EQ as it is elsewhere.
+  var sketchCache = { key: '', curve: null };
+  function sketchCurve(){
+    var pts = sketch.points;
+    if (!pts || pts.length < 2 || !totalCurve) return null;
+    var last = pts[pts.length - 1], key = pts.length + '|' + last.x + '|' + last.y + '|' + cols;
+    if (sketchCache.key !== key) { sketchCache.key = key; sketchCache.curve = fitSketch(pts, true) || drawnCurve(); }
+    return sketchCache.curve;
+  }
+  // before there's enough to fit: what's drawn, as drawn
+  function drawnCurve(){
+    var pts = sketch.points;
+    var out = Float64Array.from(totalCurve), want = new Float64Array(cols), has = new Uint8Array(cols);
+    for (var j = 1; j < pts.length; j++) {
+      var a = pts[j - 1], b = pts[j], x0 = Math.round(a.x), x1 = Math.round(b.x);
+      for (var x = Math.max(0, x0); x <= Math.min(cols - 1, x1); x++) {
+        var t = x1 === x0 ? 0 : (x - a.x) / (b.x - a.x);
+        want[x] = yg(a.y + (b.y - a.y) * Math.max(0, Math.min(1, t))); has[x] = 1;
+      }
+    }
+    var c0 = has.indexOf(1), c1 = has.lastIndexOf(1);
+    if (c0 < 0) return null;
+    for (x = c0; x <= c1; x++) {
+      var sum = 0, n = 0;
+      for (var d = -4; d <= 4; d++) if (x + d >= c0 && x + d <= c1 && has[x + d]) { sum += want[x + d]; n++; }
+      if (n) out[x] = sum / n;
+    }
+    return out;
+  }
+  // No bands yet: over the empty screen, a ghost of the curve a band added there would make.
+  var ghost = null;
+  function drawGhost(clip){
+    if (!ghost || drag || sketch.points || usedCount() || !colCos) return;
+    var f = Math.min(FREQ_MAX, Math.max(FREQ_MIN, xf(ghost.x))), shape = f <= 25 ? 'lowcut' : f >= 18000 ? 'highcut' : 'bell';
+    var g = shape === 'bell' ? Math.max(-ui.dispRange, Math.min(ui.dispRange, yg(ghost.y))) : 0;
+    var band = { shape: shape, freq: f, gain: g, q: shape === 'bell' ? 1 : 0.71, slope: shape === 'bell' ? 12 : 24, gainQ: !!params.gainQ };
+    var db = new Float64Array(cols);
+    if (params.phase === 'natural' || params.phase === 'linear') {
+      var re = new Float64Array(cols).fill(1), im = new Float64Array(cols);
+      analogBand(band, colF, cols, re, im);
+      for (var k = 0; k < cols; k++) db[k] = 10 * Math.log10(Math.max(re[k] * re[k] + im[k] * im[k], 1e-30));
+    } else {
+      var n = designBand(band, colFs, CURVE_SECS);
+      for (k = 0; k < cols; k++) {
+        var m2 = 1;
+        for (var s2 = 0; s2 < n; s2++) {
+          var q = CURVE_SECS[s2];
+          var nr = q[0] + q[1] * colCos[k] + q[2] * colCos2[k], ni = -(q[1] * colSin[k] + q[2] * colSin2[k]);
+          var dr = 1 + q[3] * colCos[k] + q[4] * colCos2[k], di = -(q[3] * colSin[k] + q[4] * colSin2[k]);
+          m2 *= (nr * nr + ni * ni) / (dr * dr + di * di);
+        }
+        db[k] = 10 * Math.log10(Math.max(m2, 1e-30));
+      }
+    }
+    var y0 = gy(0);
+    eg.beginPath(); eg.moveTo(0, y0);
+    for (k = 0; k < cols; k++) eg.lineTo(k, clip(db[k]));
+    eg.lineTo(cols - 1, y0); eg.closePath();
+    eg.globalAlpha = 0.06; eg.fillStyle = T.curve; eg.fill();
+    eg.beginPath(); for (k = 0; k < cols; k++) { if (k) eg.lineTo(k, clip(db[k])); else eg.moveTo(k, clip(db[k])); }
+    eg.globalAlpha = 0.35; eg.strokeStyle = T.curve; eg.lineWidth = 1.5; eg.shadowColor = T.curveGlow; eg.shadowBlur = 8; eg.stroke(); eg.shadowBlur = 0;
+    // a soft glow where the dot would be
+    var gx = fx(f), gyy = shape === 'bell' ? gy(g) : y0, glow = eg.createRadialGradient(gx, gyy, 0, gx, gyy, 22);
+    glow.addColorStop(0, T.eqLabel0); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    eg.globalAlpha = 0.35; eg.fillStyle = glow; eg.fillRect(gx - 22, gyy - 22, 44, 44);
+    eg.globalAlpha = 1;
+  }
   function setSketch(on){
     sketch.on = on; sketch.points = null;
     $('sketch-btn').classList.toggle('is-on', on); $('sketch-btn').setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -3291,9 +3380,11 @@ if (typeof registerProcessor === 'function') {
   // at the biggest difference a bell as wide as that difference (or a shelf
   // when it runs off the bottom or top of the range), then again, until it's
   // within half a dB or the bands run out.
-  function fitSketch(pts){
-    if (pts.length < 2) return;
-    prepareColumns(); computeCurves();
+  // dry: work out the bands and return the curve they'd make, without adding them.
+  function fitSketch(pts, dry){
+    if (pts.length < 2) return null;
+    prepareColumns(); if (!curvesValid) computeCurves();
+    var taken = {};
     var want = new Float64Array(cols), has = new Uint8Array(cols);
     for (var j = 1; j < pts.length; j++) {
       var a = pts[j - 1], b = pts[j], x0 = Math.round(Math.min(a.x, b.x)), x1 = Math.round(Math.max(a.x, b.x));
@@ -3303,7 +3394,7 @@ if (typeof registerProcessor === 'function') {
       }
     }
     var c0 = has.indexOf(1), c1 = has.lastIndexOf(1);
-    if (c0 < 0 || c1 - c0 < 3) return;
+    if (c0 < 0 || c1 - c0 < 3) return null;
     var res = new Float64Array(cols);
     for (x = c0; x <= c1; x++) res[x] = (has[x] ? want[x] : want[x - 1] || 0) - totalCurve[x];
     for (x = c0; x <= c1; x++) if (!has[x]) want[x] = want[x - 1];
@@ -3328,7 +3419,7 @@ if (typeof registerProcessor === 'function') {
       for (x = c0; x <= c1; x++) if (Math.abs(res[x]) > vmax) { vmax = Math.abs(res[x]); kmax = x; }
       if (kmax < 0 || vmax < 0.5) break;
       var free = -1;
-      for (var bi = 0; bi < MAX_BANDS; bi++) if (!params[bandKey(bi, 'Used')]) { free = bi; break; }
+      for (var bi = 0; bi < MAX_BANDS; bi++) if (!params[bandKey(bi, 'Used')] && !taken[bi]) { free = bi; break; }
       if (free < 0) break;
       var g = res[kmax], half = Math.abs(g) / 2, kl = kmax, kr = kmax;
       while (kl > c0 && Math.abs(res[kl - 1]) > half && res[kl - 1] * g > 0) kl--;
@@ -3349,11 +3440,7 @@ if (typeof registerProcessor === 'function') {
         for (var si2 = 0; si2 < nsec; si2++) { var mg2 = sectionMag(secs[si2], 2 * Math.PI * Math.min(xf(x), colFs / 2) / colFs); m2 *= mg2 * mg2; }
         res[x] -= 10 * Math.log10(m2);
       }
-      params[bandKey(free, 'Used')] = true; params[bandKey(free, 'On')] = true; params[bandKey(free, 'Shape')] = shape;
-      params[bandKey(free, 'Freq')] = f; params[bandKey(free, 'Gain')] = params.gainScale > 0 ? gain * 100 / params.gainScale : 0;
-      params[bandKey(free, 'Q')] = q; params[bandKey(free, 'Slope')] = 12; params[bandKey(free, 'Place')] = 'stereo';
-      params[bandKey(free, 'Dyn')] = false;
-      selected = free; added++;
+      taken[free] = true; added++;
       fresh.push({ index: free, shape: shape, freq: f, gain: gain, q: q, slope: 12, gainQ: !!params.gainQ });
     }
     // The greedy pass overshoots where bands overlap: settle the gains together
@@ -3387,9 +3474,32 @@ if (typeof registerProcessor === 'function') {
       for (rr = nb - 1; rr >= 0; rr--) { var acc = rhs[rr]; for (cc = rr + 1; cc < nb; cc++) acc -= A[rr][cc] * sol[cc]; sol[rr] = acc / A[rr][rr]; }
       fresh.forEach(function(fb, j){ fb.gain = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, sol[j])); });
     }
-    fresh.forEach(function(fb){ params[bandKey(fb.index, 'Gain')] = params.gainScale > 0 ? fb.gain * 100 / params.gainScale : 0; });
+    if (dry) {   // the curve these bands would make, over what's there now
+      var out = Float64Array.from(totalCurve);
+      fresh.forEach(function(fb){ var cv = curveOf(fb); for (var xx = c0; xx <= c1; xx++) out[xx] += cv[xx]; });
+      // past the drawn stretch too (a shelf goes on)
+      fresh.forEach(function(fb){
+        var ns = designBand(fb, colFs, secs);
+        for (var xx = 0; xx < cols; xx++) {
+          if (xx >= c0 && xx <= c1) continue;
+          var mm = 1;
+          for (var k3 = 0; k3 < ns; k3++) { var g3 = sectionMag(secs[k3], 2 * Math.PI * Math.min(xf(xx), colFs / 2) / colFs); mm *= g3 * g3; }
+          out[xx] += 10 * Math.log10(mm);
+        }
+      });
+      return out;
+    }
+    fresh.forEach(function(fb){
+      var free = fb.index;
+      params[bandKey(free, 'Used')] = true; params[bandKey(free, 'On')] = true; params[bandKey(free, 'Shape')] = fb.shape;
+      params[bandKey(free, 'Freq')] = fb.freq; params[bandKey(free, 'Gain')] = params.gainScale > 0 ? fb.gain * 100 / params.gainScale : 0;
+      params[bandKey(free, 'Q')] = fb.q; params[bandKey(free, 'Slope')] = 12; params[bandKey(free, 'Place')] = 'stereo';
+      params[bandKey(free, 'Dyn')] = false;
+      selected = free;
+    });
     setInfoText(added ? 'Sketch: ' + added + (added === 1 ? ' band' : ' bands') : 'Sketch: already there');
     if (added) changed();
+    return null;
   }
 
   var rubber = null;
@@ -3415,7 +3525,7 @@ if (typeof registerProcessor === 'function') {
   }
   eqCanvas.addEventListener('pointerup', endDrag);
   eqCanvas.addEventListener('pointercancel', endDrag);
-  eqCanvas.addEventListener('pointerleave', function(){ pianoPointer = -1; if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
+  eqCanvas.addEventListener('pointerleave', function(){ pianoPointer = -1; ghost = null; if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
   eqCanvas.addEventListener('contextmenu', function(e){
     e.preventDefault();
     var p = localPos(e), i = hitBand(p);
