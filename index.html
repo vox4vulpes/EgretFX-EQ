@@ -118,6 +118,22 @@
     backdrop-filter:blur(4px);
   }
   .band-panel[hidden]{display:none;}
+  /* the tag over the band nearest the pointer, like Pro-Q's */
+  .band-tag{position:absolute; z-index:5; width:124px; padding:3px 4px; border-radius:7px; background:var(--float); border:1px solid var(--float-border);
+    box-shadow:0 4px 14px var(--float-shadow); font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--fg); user-select:none;}
+  .band-tag[hidden]{display:none;}
+  .bt-row{display:flex; align-items:center; gap:2px; height:19px;}
+  .bt-val{flex:1; text-align:center; white-space:nowrap;}
+  .bt-btn{width:20px; height:18px; display:flex; align-items:center; justify-content:center; padding:0; border:none; background:none; color:var(--fg-soft); border-radius:4px; cursor:pointer; font-size:11px;}
+  .bt-btn:hover{background:var(--hover); color:var(--fg);}
+  .bt-btn svg{width:13px; height:13px;}
+  .bt-btn.is-on{color:var(--band, var(--acc));}
+  .bt-btn.is-held{background:var(--band, var(--acc)); color:var(--on-acc);}
+  .bt-shape{width:24px; color:var(--band, var(--acc)); border:1px solid var(--float-border);}
+  .bt-shapes{position:absolute; left:-1px; top:calc(100% + 3px); display:flex; gap:1px; padding:3px; border-radius:6px; background:var(--float); border:1px solid var(--float-border); box-shadow:0 4px 14px var(--float-shadow);}
+  .bt-shapes[hidden]{display:none;}
+  .bt-shapes .bt-btn{width:24px; height:20px;}
+  .bt-shapes .bt-btn.is-on{background:var(--band, var(--acc)); color:var(--on-acc);}
   /* The grip along the top edge: drag the panel aside; double-click puts it back under the band. */
   .bp-grip{position:absolute; left:0; right:0; top:0; height:13px; cursor:grab; touch-action:none; border-radius:8px 8px 0 0;}
   .bp-grip::before{content:''; position:absolute; left:50%; top:4px; width:34px; height:4px; margin-left:-17px; border-radius:2px;
@@ -379,6 +395,21 @@
     <button class="tb sketch-btn" id="sketch-btn" type="button" aria-pressed="false" title="EQ Sketch: draw the curve you want, the bands follow (Esc to stop)"><svg viewBox="0 0 16 16"><path d="M2.5 13.5l1-3.5 7.5-7.5 2.5 2.5L6 12.5zM9.5 4l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
     <div class="load-warn" id="load-warn" role="status" hidden>More than 24 bands: the EQ may use noticeably more CPU</div>
     <div class="sketch-hint" id="sketch-hint" hidden>Draw left to right, the curve follows; back to the left takes it back</div>
+    <div class="band-tag" id="band-tag" hidden>
+      <div class="bt-row">
+        <button class="bt-btn" id="bt-on" type="button" title="Band on/off" aria-label="Band on"><svg viewBox="0 0 16 16"><path d="M8 1.5v6M4.6 3.8a5.5 5.5 0 106.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+        <span class="bt-val" id="bt-freq"></span>
+        <button class="bt-btn" id="bt-solo" type="button" title="Hold to hear only this band (as wide as its Q)" aria-label="Solo while held"><svg viewBox="0 0 16 16"><path d="M2.5 10V8a5.5 5.5 0 0111 0v2" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="2" y="9" width="3" height="5" rx="1" fill="currentColor"/><rect x="11" y="9" width="3" height="5" rx="1" fill="currentColor"/></svg></button>
+        <button class="bt-btn" id="bt-del" type="button" title="Remove the band" aria-label="Remove the band">&#10005;</button>
+      </div>
+      <div class="bt-row"><span class="bt-val bt-mid" id="bt-gain"></span></div>
+      <div class="bt-row">
+        <button class="bt-btn bt-shape" id="bt-shape" type="button" title="Shape" aria-label="Shape"></button>
+        <span class="bt-val" id="bt-q"></span>
+        <button class="bt-btn" id="bt-more" type="button" title="More" aria-label="More" aria-haspopup="menu">&#9662;</button>
+      </div>
+      <div class="bt-shapes" id="bt-shapes" hidden></div>
+    </div>
     <div class="band-panel" id="band-panel" hidden>
       <div class="bp-grip" id="bp-grip" title="Drag to move the panel aside; double-click to put it back under the band"></div>
       <button class="bp-ghost" id="bp-ghost" type="button" aria-pressed="false" title="See-through panel" aria-label="See-through panel"><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 1.4a4.6 4.6 0 010 9.2z" fill="currentColor"/></svg></button>
@@ -416,7 +447,7 @@
   <div class="band-list" id="band-list" role="listbox" aria-label="Bands"></div>
 </div>
 <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
-<p class="help">Double-click the display to add a band (with none yet, a ghost shows the curve it would make; drag instead to draw the curve with the pencil, left to right, back to the left to take it back), drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source. The mode at the bottom left: Zero Latency, Natural Phase (the analog curves, a little latency) or Linear Phase (no phase change, more latency); cuts can be a brickwall there. A dynamic band can listen to the sidechain (<b>SC</b>, pick a sidechain in the player) and work frequency by frequency (<b>SPEC</b>).</p>
+<p class="help">Scroll over the frequency scale to zoom in around a frequency, double-click the scale for the whole range. Double-click the display to add a band (with none yet, a ghost shows the curve it would make; drag instead to draw the curve with the pencil, left to right, back to the left to take it back), drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source. The mode at the bottom left: Zero Latency, Natural Phase (the analog curves, a little latency) or Linear Phase (no phase change, more latency); cuts can be a brickwall there. A dynamic band can listen to the sidechain (<b>SC</b>, pick a sidechain in the player) and work frequency by frequency (<b>SPEC</b>).</p>
 </div>
 </div>
 
@@ -1974,8 +2005,14 @@ if (typeof registerProcessor === 'function') {
         el = document.createElement('button'); el.type = 'button'; el.className = 'mi'; el.setAttribute('role', 'menuitem');
         el.innerHTML = '<span class="chk"></span><span class="lbl"></span>';
         el.querySelector('.chk').textContent = it.checked ? '✓' : '';
-        el.querySelector('.lbl').textContent = it.label;
+        el.querySelector('.lbl').textContent = it.label + (it.submenu ? '  ›' : '');
         if (it.disabled) el.disabled = true;
+        if (it.submenu) {   // opens in place, with a way back
+          el.addEventListener('click', function(e){
+            e.stopPropagation(); closeMenu();
+            showMenu(anchor, [{ label: '‹ ' + it.label, action: function(){ showMenu(anchor, items); } }, { sep: true }].concat(it.submenu));
+          });
+        } else
         el.addEventListener('click', function(e){ e.stopPropagation(); if (!it.keepOpen) closeMenu(); it.action && it.action(); if (it.keepOpen) showMenu.refresh && showMenu.refresh(); });
       }
       menuEl.appendChild(el);
@@ -2533,18 +2570,60 @@ if (typeof registerProcessor === 'function') {
     if (list.length) { setInfoText('Reset ' + list.length + (list.length === 1 ? ' band' : ' bands')); changed(); }
   }
   // The menu on a right click: on a dot it works on the selection.
-  function bandMenu(x, y, onBand){
-    var n = picked().length, mod = /Mac/.test(navigator.platform) ? '\u2318' : 'Ctrl+';
-    var items = onBand ? [{ header: n > 1 ? n + ' bands' : 'Band ' + (selected + 1) },
-                          { label: 'Copy  ' + mod + 'C', action: copyPicked },
-                          { label: 'Paste  ' + mod + 'V', disabled: !clipboardBands.length, action: function(){ pasteBands(); } },
-                          { label: 'Duplicate  ' + mod + 'D', action: duplicatePicked },
-                          { label: 'Reset', action: resetPicked },
-                          { label: 'Delete  Del', action: deletePicked },
-                          { sep: true }]
-                        : [{ label: 'Paste  ' + mod + 'V', disabled: !clipboardBands.length, action: function(){ pasteBands(); } }];
+  function bandMenu(x, y, onBand, anchor){
+    var list = picked(), n = list.length, mod = /Mac/.test(navigator.platform) ? '\u2318' : 'Ctrl+';
+    var paste = { label: 'Paste  ' + mod + 'V', disabled: !clipboardBands.length, action: function(){ pasteBands(); } };
+    var items;
+    if (onBand) {
+      var first = list[0], all = function(fn){ list.forEach(fn); changed(); };
+      var allOn = list.every(function(i){ return params[bandKey(i, 'On')]; });
+      var withGain = list.filter(function(i){ return shapeHasGain(params[bandKey(i, 'Shape')]); });
+      var dyn = withGain.length && withGain.every(isDyn), spec = dyn && withGain.every(function(i){ return params[bandKey(i, 'Spectral')]; });
+      var cuts = list.some(function(i){ var sh = params[bandKey(i, 'Shape')]; return sh === 'lowcut' || sh === 'highcut'; });
+      var slopes = SLOPES.slice(); if (cuts) slopes.push(BRICK);
+      var names = ['Stereo', 'Left', 'Right', 'Mid', 'Side'];
+      items = [{ header: n > 1 ? n + ' bands' : 'Band ' + (first + 1) },
+        { label: allOn ? 'Disable' : 'Enable', action: function(){ all(function(i){ params[bandKey(i, 'On')] = !allOn; }); } },
+        { label: 'Invert Gain', disabled: !withGain.length, action: function(){ withGain.forEach(function(i){ params[bandKey(i, 'Gain')] = -params[bandKey(i, 'Gain')]; }); changed(); } },
+        { label: dyn ? 'Make Static' : 'Make Dynamic', disabled: !withGain.length, action: function(){
+          withGain.forEach(function(i){ params[bandKey(i, 'Dyn')] = !dyn; if (!dyn && Math.abs(params[bandKey(i, 'Range')]) < 0.1) params[bandKey(i, 'Range')] = -6; }); changed(); } },
+        { label: spec ? 'Make Non-Spectral' : 'Make Spectral', disabled: !withGain.length, action: function(){
+          withGain.forEach(function(i){
+            params[bandKey(i, 'Spectral')] = !spec;
+            if (!spec) { params[bandKey(i, 'Dyn')] = true; if (Math.abs(params[bandKey(i, 'Range')]) < 0.1) params[bandKey(i, 'Range')] = -6; }
+          }); changed(); } },
+        { sep: true },
+        { label: 'Shape', submenu: SHAPES.map(function(sh, k){ return { label: SHAPE_LABELS[k], checked: list.every(function(i){ return params[bandKey(i, 'Shape')] === sh; }), action: function(){ all(function(i){ params[bandKey(i, 'Shape')] = sh; }); } }; }) },
+        { label: 'Slope', submenu: slopes.map(function(sl){ return { label: slopeLabel(sl), checked: list.every(function(i){ return params[bandKey(i, 'Slope')] === sl; }), action: function(){ all(function(i){ params[bandKey(i, 'Slope')] = sl; }); } }; }) },
+        { label: 'Stereo Placement', submenu: PLACEMENTS.map(function(pl, k){ return { label: names[k], checked: list.every(function(i){ return params[bandKey(i, 'Place')] === pl; }), action: function(){ all(function(i){ params[bandKey(i, 'Place')] = pl; }); } }; }) },
+        { sep: true },
+        { label: 'Cut  ' + mod + 'X', action: function(){ copyPicked(); deletePicked(); } },
+        { label: 'Copy  ' + mod + 'C', action: copyPicked },
+        paste,
+        { label: 'Duplicate  ' + mod + 'D', action: duplicatePicked },
+        { label: 'Reset', action: resetPicked },
+        { sep: true },
+        { label: 'Split into Mid and Side', disabled: !list.some(function(i){ return params[bandKey(i, 'Place')] === 'stereo'; }), action: splitPicked },
+        { label: 'Delete  Del', action: deletePicked },
+        { sep: true }];
+    } else items = [paste];
     items.push({ label: 'Select all  ' + mod + 'A', disabled: !usedCount(), action: selectAll });
-    showMenu({ getBoundingClientRect: function(){ return { left: x, right: x, top: y, bottom: y }; }, contains: function(){ return false; } }, items);
+    showMenu(anchor || { getBoundingClientRect: function(){ return { left: x, right: x, top: y, bottom: y }; }, contains: function(){ return false; } }, items);
+  }
+  // Split: a stereo band becomes two, one on the mid and one on the side, set the same.
+  function splitPicked(){
+    var added = [];
+    picked().forEach(function(i){
+      if (params[bandKey(i, 'Place')] !== 'stereo') return;
+      for (var j = 0; j < MAX_BANDS; j++) if (!params[bandKey(j, 'Used')] && added.indexOf(j) < 0) break;
+      if (j === MAX_BANDS) return;
+      BAND_FIELDS.forEach(function(f){ params[bandKey(j, f)] = params[bandKey(i, f)]; });
+      params[bandKey(i, 'Place')] = 'mid'; params[bandKey(j, 'Place')] = 'side';
+      added.push(j);
+    });
+    if (!added.length) { setInfoText('No free band to split into'); return; }
+    added.forEach(function(j){ group.add(j); });
+    changed();
   }
 
   function renderAll(){
@@ -2669,7 +2748,19 @@ if (typeof registerProcessor === 'function') {
   var SCALE_W = 58;   // the dB scales on the right
   var PIANO_H = 14;
   var view = { w: 0, h: 0, plotW: 0, dpr: 1, top: 10, bottom: 20 };
-  var LOG_MIN = Math.log(FREQ_MIN), LOG_SPAN = Math.log(FREQ_MAX / FREQ_MIN);
+  // The frequency axis; the wheel over the scale zooms it in around the pointer.
+  var FULL_MIN = Math.log(FREQ_MIN), FULL_SPAN = Math.log(FREQ_MAX / FREQ_MIN);
+  var LOG_MIN = FULL_MIN, LOG_SPAN = FULL_SPAN;
+  var GRID_FREQS = [];
+  [10, 100, 1000, 10000].forEach(function(dec){ for (var m = 1; m <= 9; m++) if (dec * m <= FREQ_MAX) GRID_FREQS.push(dec * m); });
+  GRID_FREQS.shift();   // not 10 Hz: the edge
+  function zoomAxis(x, factor){
+    var at = LOG_MIN + x / view.plotW * LOG_SPAN;
+    var span = Math.max(Math.LN2, Math.min(FULL_SPAN, LOG_SPAN * factor));   // down to an octave
+    var lo = at - (at - LOG_MIN) * span / LOG_SPAN;
+    LOG_MIN = Math.max(FULL_MIN, Math.min(FULL_MIN + FULL_SPAN - span, lo)); LOG_SPAN = span;
+    cols = 0; curveCache = []; invalidateCurves(); placeBandPanel(); requestDraw();
+  }
   function fx(f){ return (Math.log(f) - LOG_MIN) / LOG_SPAN * view.plotW; }
   function xf(x){ return Math.exp(LOG_MIN + x / view.plotW * LOG_SPAN); }
   function plotH(){ return view.h - view.top - view.bottom; }
@@ -2830,7 +2921,7 @@ if (typeof registerProcessor === 'function') {
     if (xn < PW) { eg.fillStyle = T.nyquist; eg.fillRect(xn, 0, PW - xn, H); }
     // grid
     eg.lineWidth = 1;
-    [20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000].forEach(function(f){
+    GRID_FREQS.forEach(function(f){
       var major = [100, 1000, 10000].indexOf(f) >= 0, x = Math.round(fx(f)) + 0.5;
       eg.strokeStyle = major ? T.gridMajor : T.gridMinor;
       eg.beginPath(); eg.moveTo(x, 0); eg.lineTo(x, bottom); eg.stroke();
@@ -2853,10 +2944,24 @@ if (typeof registerProcessor === 'function') {
       for (var a = -10; a > -ui.anaRange; a -= 10) if (a % (ui.anaRange > 60 ? 20 : 10) === 0 || ui.anaRange === 60) eg.fillText(String(a), W - 4, ay(a));
     }
     eg.textAlign = 'center'; eg.textBaseline = 'alphabetic'; eg.fillStyle = T.freqLabel;
-    [[20, '20'], [50, '50'], [100, '100'], [200, '200'], [500, '500'], [1000, '1k'], [2000, '2k'], [5000, '5k'], [10000, '10k'], [20000, '20k']].forEach(function(l){
-      eg.fillText(l[1], fx(l[0]), H - 6);
+    // the labels: the usual ones, or as many as fit once zoomed in
+    var zoomed = LOG_SPAN < FULL_SPAN - 1e-9, lastLx = -1e9;
+    (zoomed ? GRID_FREQS : [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]).forEach(function(f){
+      var lx = fx(f);
+      if (lx < 8 || lx > PW - 8 || lx - lastLx < 38) return;
+      lastLx = lx;
+      eg.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), lx, H - 6);
     });
     if (ui.piano) drawPiano(bottom);
+    // the exact frequency under the pointer, on the scale (with the piano shown: the note)
+    if (pianoPointer >= 0) {
+      var pf = ui.piano ? noteName(xf(pianoPointer)) : fmtHz(xf(pianoPointer));
+      eg.font = '500 10.5px "IBM Plex Mono", monospace';
+      var pw = eg.measureText(pf).width + 12, px = Math.max(0, Math.min(PW - pw, pianoPointer - pw / 2));
+      eg.fillStyle = T.bgBottom; eg.fillRect(px, H - 17, pw, 15);
+      eg.fillStyle = T.eqLabel0; eg.textAlign = 'center'; eg.textBaseline = 'alphabetic';
+      eg.fillText(pf, px + pw / 2, H - 6);
+    }
     // spectrum
     eg.save(); eg.beginPath(); eg.rect(0, 0, PW, H); eg.clip();
     if (preBuf && ui.anaMode !== 'off') {
@@ -2964,8 +3069,10 @@ if (typeof registerProcessor === 'function') {
     eg.restore();
     drawVersion(eg);
     // the hovered or dragged band's numbers
+    if (drag && !drag.range && drag.band >= 0 && tagBand !== drag.band) showTag(drag.band);
+    renderTag();
     var show = drag ? drag.band : hover;
-    if (show >= 0 && params[bandKey(show, 'Used')]) {
+    if (show >= 0 && params[bandKey(show, 'Used')] && show !== tagBand) {
       var bb = bandOf(params, show), pp = nodePos(show);
       var text = (show + 1) + '  ' + SHAPE_LABELS[SHAPES.indexOf(bb.shape)] + '  ' + fmtHz(bb.freq) + '  ' + noteName(bb.freq) +
                  (shapeHasGain(bb.shape) ? '  ' + fmt(KNOB_DEFS.gain, bb.gain) : '') + (shapeHasQ(bb.shape) ? '  Q ' + fmt(KNOB_DEFS.q, bb.q) : '');
@@ -3196,6 +3303,14 @@ if (typeof registerProcessor === 'function') {
     }
     var h = hitBand(p);
     if (h !== hover) { hover = h; requestDraw(); }
+    // the tag: over the nearest dot within reach
+    var near = -1, nd = 70 * 70;
+    for (var ti = 0; ti < MAX_BANDS; ti++) {
+      if (!params[bandKey(ti, 'Used')]) continue;
+      var tp = nodePos(ti), td = (tp.x - p.x) * (tp.x - p.x) + (tp.y - p.y) * (tp.y - p.y);
+      if (td < nd) { nd = td; near = ti; }
+    }
+    if (near >= 0 && !rubber && !sketch.points) showTag(near); else if (tagBand >= 0) hideTagSoon();
     // near the curve: the dot a double-click would make there; elsewhere, with no bands, the ghost
     var g0 = ghost, c0 = curveHover;
     curveHover = null;
@@ -3336,6 +3451,66 @@ if (typeof registerProcessor === 'function') {
     }
     return out;
   }
+  // ---------- the tag over the band nearest the pointer (Pro-Q's) ----------
+  // Power, frequency, solo while held, remove; gain; shape (a row of shapes),
+  // Q, and the band's menu. It follows the band while it's dragged.
+  var SHAPE_ICONS = {
+    bell: 'M1 12C5 12 5 4 8 4S11 12 15 12', lowshelf: 'M1 5C5 5 6 11 9 11H15', lowcut: 'M2 13L5 6H15', highshelf: 'M1 11H7C10 11 11 5 15 5',
+    highcut: 'M1 6H11L14 13', notch: 'M1 6H6L8 13L10 6H15', bandpass: 'M1 13C5 13 6 4 8 4S11 13 15 13', tiltshelf: 'M1 11C6 11 10 5 15 5',
+    flattilt: 'M1 12L15 4', allpass: 'M1 8H15M8 4V12'
+  };
+  function shapeSvg(sh){ return '<svg viewBox="0 0 16 16"><path d="' + SHAPE_ICONS[sh] + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+  var tagEl = $('band-tag'), tagBand = -1, tagHideTimer = null, tagOver = false, tagSolo = null;
+  SHAPES.forEach(function(sh, k){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'bt-btn'; b.title = SHAPE_LABELS[k]; b.dataset.shape = sh; b.innerHTML = shapeSvg(sh);
+    b.addEventListener('click', function(){ if (tagBand >= 0) { params[bandKey(tagBand, 'Shape')] = sh; $('bt-shapes').hidden = true; changed(); } });
+    $('bt-shapes').appendChild(b);
+  });
+  function showTag(i){
+    clearTimeout(tagHideTimer);
+    if (i !== tagBand) { tagBand = i; $('bt-shapes').hidden = true; }
+    renderTag();
+  }
+  function hideTagSoon(){
+    clearTimeout(tagHideTimer);
+    tagHideTimer = setTimeout(function(){ if (!tagOver && !(drag && drag.band === tagBand) && menuEl.hidden) { tagBand = -1; renderTag(); } }, 250);
+  }
+  function renderTag(){
+    if (tagBand < 0 || !params[bandKey(tagBand, 'Used')] || !view.w) { tagEl.hidden = true; return; }
+    var b = bandOf(params, tagBand), c = bandColor(tagBand);
+    tagEl.hidden = false;
+    tagEl.style.setProperty('--band', c);
+    $('bt-freq').textContent = fmtHz(b.freq);
+    $('bt-gain').textContent = shapeHasGain(b.shape) ? fmt(KNOB_DEFS.gain, params[bandKey(tagBand, 'Gain')]) : '—';
+    $('bt-q').textContent = shapeHasQ(b.shape) ? 'Q: ' + fmt(KNOB_DEFS.q, b.q) : '';
+    $('bt-on').classList.toggle('is-on', b.on); $('bt-on').setAttribute('aria-pressed', b.on ? 'true' : 'false');
+    var shapeBtn = $('bt-shape');
+    if (shapeBtn.dataset.shape !== b.shape) { shapeBtn.dataset.shape = b.shape; shapeBtn.innerHTML = shapeSvg(b.shape); shapeBtn.title = 'Shape: ' + SHAPE_LABELS[SHAPES.indexOf(b.shape)]; }
+    Array.prototype.forEach.call($('bt-shapes').children, function(el){ el.classList.toggle('is-on', el.dataset.shape === b.shape); });
+    var p = nodePos(tagBand), w = tagEl.offsetWidth, h = tagEl.offsetHeight;
+    var top = p.y - h - 14;
+    if (top < 4) top = p.y + 14;
+    tagEl.style.left = Math.max(2, Math.min(view.plotW - w - 2, p.x - w / 2)) + 'px';
+    tagEl.style.top = top + 'px';
+  }
+  tagEl.addEventListener('pointerenter', function(){ tagOver = true; clearTimeout(tagHideTimer); });
+  tagEl.addEventListener('pointerleave', function(){ tagOver = false; hideTagSoon(); });
+  tagEl.addEventListener('pointerdown', function(e){ e.stopPropagation(); if (tagBand >= 0 && tagBand !== selected && !group.has(tagBand)) select(tagBand); });
+  $('bt-on').addEventListener('click', function(){ if (tagBand >= 0) { params[bandKey(tagBand, 'On')] = !params[bandKey(tagBand, 'On')]; changed(); } });
+  $('bt-del').addEventListener('click', function(){ var i = tagBand; tagBand = -1; deleteBand(i); renderTag(); });
+  $('bt-shape').addEventListener('click', function(){ $('bt-shapes').hidden = !$('bt-shapes').hidden; });
+  $('bt-more').addEventListener('click', function(){ if (tagBand >= 0) bandMenu(0, 0, true, $('bt-more')); });
+  // the headphones: solo while held
+  $('bt-solo').addEventListener('pointerdown', function(e){
+    if (tagBand < 0 || !shapeCanSolo(params[bandKey(tagBand, 'Shape')])) return;
+    $('bt-solo').setPointerCapture(e.pointerId);
+    tagSolo = solo; solo = tagBand; $('bt-solo').classList.add('is-held'); sendParams(); renderAll();
+  });
+  function endTagSolo(){ if (tagSolo === null) return; solo = tagSolo === tagBand ? -1 : tagSolo; tagSolo = null; $('bt-solo').classList.remove('is-held'); sendParams(); renderAll(); }
+  $('bt-solo').addEventListener('pointerup', endTagSolo);
+  $('bt-solo').addEventListener('pointercancel', endTagSolo);
+
   // Near the curve: the dot a double-click there would make, and above it the
   // shape it would be (a bell, or a cut at the very ends).
   var curveHover = null;
@@ -3550,7 +3725,7 @@ if (typeof registerProcessor === 'function') {
   }
   eqCanvas.addEventListener('pointerup', endDrag);
   eqCanvas.addEventListener('pointercancel', endDrag);
-  eqCanvas.addEventListener('pointerleave', function(){ pianoPointer = -1; ghost = null; curveHover = null; if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
+  eqCanvas.addEventListener('pointerleave', function(){ pianoPointer = -1; ghost = null; curveHover = null; hideTagSoon(); if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
   eqCanvas.addEventListener('contextmenu', function(e){
     e.preventDefault();
     var p = localPos(e), i = hitBand(p);
@@ -3561,6 +3736,7 @@ if (typeof registerProcessor === 'function') {
   eqCanvas.addEventListener('dblclick', function(e){
     var p = localPos(e), i = hitBand(p);
     if (p.x > view.plotW) return;
+    if (p.y >= view.h - view.bottom) { zoomAxis(0, 1e9); return; }   // double-click the scale: the whole range again
     if (i >= 0) { selected = i; setBand('On', !params[bandKey(i, 'On')]); return; }
     var f = xf(p.x), shape = shapeAt(f);
     var g = Math.round(yg(curveHover ? curveHover.y : p.y) * 10) / 10;
@@ -3569,6 +3745,11 @@ if (typeof registerProcessor === 'function') {
   });
   eqCanvas.addEventListener('wheel', function(e){
     var p = localPos(e), i = hitBand(p);
+    if (p.y >= view.h - view.bottom && p.x <= view.plotW) {   // over the scale: zoom in or out around the pointer
+      e.preventDefault();
+      zoomAxis(p.x, Math.exp(e.deltaY * 0.0015));
+      return;
+    }
     if (i < 0) i = selected;
     if (i < 0 || !shapeHasQ(params[bandKey(i, 'Shape')])) return;
     e.preventDefault();
@@ -3612,6 +3793,7 @@ if (typeof registerProcessor === 'function') {
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selected >= 0 && !String(window.getSelection())) { e.preventDefault(); copyPicked(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteBands(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicatePicked(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && selected >= 0 && !String(window.getSelection())) { e.preventDefault(); copyPicked(); deletePicked(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAll(); }
     else if (e.key === 'Escape' && menuEl.hidden && group.size > 1) { select(selected); }
   });
