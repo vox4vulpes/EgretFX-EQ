@@ -1,13 +1,11 @@
 #include "PluginEditor.h"
 
-using namespace EgretColours;
-
 namespace
 {
-    // The panel at the web page's size; the window scales it.
-    constexpr int panelWidth = 900, panelHeight = 1060;
-    constexpr float defaultScale = 0.82f;
-    constexpr int pad = 20, knobW = 52, knobH = 66;
+    // The panel at the web page's plugin size (950 px wide); the window scales it.
+    constexpr int panelWidth = 950, topH = 38, screenH = 540, bottomH = 32, panelHeight = topH + screenH + bottomH;
+    constexpr int meterW = 30;
+    constexpr float defaultScale = 0.9f;
     constexpr double pi = juce::MathConstants<double>::pi;
 
     juce::Font sansFont (float height, bool bold = false)
@@ -19,17 +17,22 @@ namespace
         return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), height, bold ? juce::Font::bold : juce::Font::plain));
     }
     juce::String utf8 (const char* text) { return juce::String (juce::CharPointer_UTF8 (text)); }
-    juce::String quoted (const juce::String& s) { return utf8 ("\xe2\x80\x9c") + s + utf8 ("\xe2\x80\x9d"); }
     juce::String minus() { return utf8 ("\xe2\x88\x92"); }
+    juce::String quoted (const juce::String& s) { return utf8 ("\xe2\x80\x9c") + s + utf8 ("\xe2\x80\x9d"); }
+    juce::Colour rgba (int r, int g, int b, float a) { return juce::Colour ((juce::uint8) r, (juce::uint8) g, (juce::uint8) b, a); }
 
-    constexpr const char* birdSvg = R"svg(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"> <path d="M6 9.5c0-2.6 2.1-4.5 4.7-4.5 2.3 0 4 1.5 4.4 3.5l.4 2.3c.4 2.2 1.9 3.6 3.9 4.6l-1.2.9c-1.1-.2-2.2-.6-3.1-1.2-.9 2.3-3.3 3.6-6 3.1-2.4-.5-3.9-2.6-3.6-5z" fill="#2a8fc4" stroke="#2a241d" stroke-width=".7" stroke-linejoin="round"/> <path d="M7.4 11.4c.6 2.6 2.6 4.3 5.4 3.9 1-.2 1.8-.6 2.4-1.3-1.9.2-4.4-.6-5.9-2.7z" fill="#e07b2a"/> <path d="M6.6 9.6c.6.6 1.6.8 2.4.5-.2.7-.9 1.2-1.7 1.2-.5-.4-.7-1-.7-1.7z" fill="#fbf8ef"/> <path d="M6.2 8.4L1 9.3l5.4.5z" fill="#2a241d"/> <circle cx="8.2" cy="7.6" r=".55" fill="#2a241d"/> <path d="M11 17.6l-.4 2.6M12.6 17.7l.2 2.5" stroke="#d9452f" stroke-width=".9" stroke-linecap="round"/> </svg>)svg";
-    juce::String subtitleText() { return utf8 ("\xe7\xbf\xa1\xe7\xbf\xa0 \xc2\xb7 PARAMETRIC EQUALIZER"); }
-    juce::String birdNameText() { return utf8 ("\xe3\x82\xab\xe3\x83\xaf\xe3\x82\xbb\xe3\x83\x9f \xc2\xb7 KAWASEMI \xc2\xb7 KINGFISHER"); }
+    juce::String birdSvg (bool dark)
+    {
+        return juce::String (R"svg(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"> <path d="M6 9.5c0-2.6 2.1-4.5 4.7-4.5 2.3 0 4 1.5 4.4 3.5l.4 2.3c.4 2.2 1.9 3.6 3.9 4.6l-1.2.9c-1.1-.2-2.2-.6-3.1-1.2-.9 2.3-3.3 3.6-6 3.1-2.4-.5-3.9-2.6-3.6-5z" fill="#2a8fc4" stroke="#0d0a04" stroke-width=".7" stroke-linejoin="round"/> <path d="M7.4 11.4c.6 2.6 2.6 4.3 5.4 3.9 1-.2 1.8-.6 2.4-1.3-1.9.2-4.4-.6-5.9-2.7z" fill="#e07b2a"/> <path d="M6.6 9.6c.6.6 1.6.8 2.4.5-.2.7-.9 1.2-1.7 1.2-.5-.4-.7-1-.7-1.7z" fill="#fbf8ef"/> <path d="M6.2 8.4L1 9.3l5.4.5z" fill="BILL"/> <circle cx="8.2" cy="7.6" r=".55" fill="#0d0a04"/> <path d="M11 17.6l-.4 2.6M12.6 17.7l.2 2.5" stroke="#d9452f" stroke-width=".9" stroke-linecap="round"/> </svg>)svg")
+            .replace ("BILL", dark ? "#f2ecd9" : "#2a241d");
+    }
+    juce::String subtitleText() { return utf8 ("\xe7\xbf\xa1\xe7\xbf\xa0 \xc2\xb7 PARAMETRIC EQ"); }
+    juce::String birdNameText() { return utf8 ("\xe3\x82\xab\xe3\x83\xaf\xe3\x82\xbb\xe3\x83\x9f \xc2\xb7 KAWASEMI"); }
 
     juce::String fmtHz (double v)
     {
-        return v >= 10000 ? juce::String (v / 1000, 1) + "k" : v >= 1000 ? juce::String (v / 1000, 2) + "k"
-             : v >= 100 ? juce::String (juce::roundToInt (v)) + "Hz" : juce::String (v, 1) + "Hz";
+        return v >= 10000 ? juce::String (v / 1000, 1) + " kHz" : v >= 1000 ? juce::String (v / 1000, 2) + " kHz"
+             : v >= 100 ? juce::String (juce::roundToInt (v)) + " Hz" : juce::String (v, 1) + " Hz";
     }
     juce::String noteName (double f)
     {
@@ -57,134 +60,264 @@ namespace
     const int anaSizes[] = { 2048, 4096, 8192, 16384 };
     const double anaSmooth[] = { 0.3, 0.55, 0.75, 0.88, 0.95 };
     const double anaCal = 20 * std::log10 (1 / 0.21);   // a full-scale sine peaks at 0 dB
+    const char* const placeNames[] = { "Stereo", "Left", "Right", "Mid", "Side" };
 
-    void layoutKnobs (juce::Rectangle<int> area, std::initializer_list<juce::Component*> list)
+    // Icons, in a 16 x 16 box like the web page's SVGs.
+    juce::Path stroked (const juce::Path& p, float width)
     {
-        const auto n = (int) list.size();
-        auto row = area.withWidth (n * knobW + (n - 1) * 8).withHeight (knobH);
-        for (auto* c : list) { c->setBounds (row.removeFromLeft (knobW)); row.removeFromLeft (8); }
+        juce::Path out;
+        juce::PathStrokeType (width, juce::PathStrokeType::curved, juce::PathStrokeType::rounded).createStrokedPath (out, p);
+        return out;
+    }
+    juce::Path undoIcon()
+    {
+        juce::Path p;
+        p.startNewSubPath (6, 3); p.lineTo (2, 7); p.lineTo (6, 11);
+        p.startNewSubPath (2.5f, 7); p.lineTo (10, 7);
+        p.addCentredArc (10, 11, 4, 4, 0, 0, juce::MathConstants<float>::pi, false);
+        p.lineTo (8, 15);
+        return stroked (p, 1.6f);
+    }
+    juce::Path powerIcon()
+    {
+        juce::Path p;
+        p.startNewSubPath (8, 1.5f); p.lineTo (8, 7.5f);
+        p.addCentredArc (8, 8.8f, 5.5f, 5.5f, 0, 0.7f, 2.0f * juce::MathConstants<float>::pi - 0.7f, true);
+        return stroked (p, 1.7f);
+    }
+    juce::Path moonIcon()
+    {
+        juce::Path p;
+        p.addEllipse (2.5f, 2.5f, 11, 11);
+        p.addEllipse (6.5f, 0.5f, 10, 10);
+        p.setUsingNonZeroWinding (false);
+        return p;
+    }
+    juce::Path sunIcon()
+    {
+        juce::Path rays;
+        const float l[][4] = { { 8, 1, 8, 3 }, { 8, 13, 8, 15 }, { 1, 8, 3, 8 }, { 13, 8, 15, 8 }, { 3, 3, 4.4f, 4.4f },
+                               { 11.6f, 11.6f, 13, 13 }, { 13, 3, 11.6f, 4.4f }, { 4.4f, 11.6f, 3, 13 } };
+        for (const auto& s : l) { rays.startNewSubPath (s[0], s[1]); rays.lineTo (s[2], s[3]); }
+        auto p = stroked (rays, 1.4f);
+        p.addEllipse (5, 5, 6, 6);
+        return p;
     }
 }
 
-juce::Colour EgretColours::band (int i)
+//==============================================================================
+juce::Colour EqTheme::band (int i) const
 {
     static const juce::uint32 colours[] = { 0xfff0a830, 0xff7ec4be, 0xffe8846a, 0xffb6a5d0, 0xffa9c27e, 0xffe6cf5a,
                                             0xff6fb7d6, 0xffe793b6, 0xffd2a77c, 0xff93d493, 0xffc9c39a, 0xfff08a7a };
-    return juce::Colour (colours[i % 12]);
+    const juce::Colour c (colours[i % 12]);
+    if (bandDarken >= 1.0f) return c;
+    return juce::Colour ((juce::uint8) juce::roundToInt (c.getRed() * bandDarken), (juce::uint8) juce::roundToInt (c.getGreen() * bandDarken),
+                         (juce::uint8) juce::roundToInt (c.getBlue() * bandDarken));
 }
-juce::Colour EgretColours::bandInk (int i)
+
+const EqTheme& EqTheme::get (bool dark)
 {
-    const auto c = band (i);
-    return juce::Colour ((juce::uint8) juce::roundToInt (c.getRed() * 0.62f), (juce::uint8) juce::roundToInt (c.getGreen() * 0.62f),
-                         (juce::uint8) juce::roundToInt (c.getBlue() * 0.62f));
+    static const EqTheme light = []
+    {
+        EqTheme t;
+        t.dark = false;
+        t.scr = juce::Colour (0xfff6f1e3); t.bar = juce::Colour (0xffe4dbc4); t.barHi = juce::Colour (0xffefe8d6); t.barLo = juce::Colour (0xffd9cfb5);
+        t.edge = rgba (42, 36, 29, 0.18f); t.fg = juce::Colour (0xff2a241d); t.fgSoft = rgba (42, 36, 29, 0.6f);
+        t.acc = juce::Colour (0xffa8700a); t.accSoft = rgba (168, 112, 10, 0.6f); t.accHover = rgba (168, 112, 10, 0.14f); t.onAcc = juce::Colour (0xfffbf8ef);
+        t.floatBg = rgba (251, 248, 239, 0.96f); t.floatSolid = juce::Colour (0xfffbf8ef); t.floatBorder = rgba (42, 36, 29, 0.16f); t.floatShadow = rgba (60, 45, 20, 0.25f);
+        t.hover = rgba (42, 36, 29, 0.06f); t.track = rgba (42, 36, 29, 0.14f); t.knobHi = juce::Colour (0xfffffdf6); t.knobLo = juce::Colour (0xffd9cfb5);
+        t.inputBg = juce::Colour (0xfffffdf6); t.ledOff = juce::Colour (0xffc7bb9c); t.solo = juce::Colour (0xffd9b92a);
+        t.bgTop = juce::Colour (0xfff8f4e8); t.bgBottom = juce::Colour (0xffefe8d6); t.scaleBg = rgba (42, 36, 29, 0.05f); t.nyquist = rgba (42, 36, 29, 0.08f);
+        t.gridMajor = rgba (42, 36, 29, 0.16f); t.gridMinor = rgba (42, 36, 29, 0.06f); t.zero = rgba (168, 112, 10, 0.45f); t.hline = rgba (42, 36, 29, 0.06f);
+        t.eqLabel = rgba (168, 112, 10, 0.85f); t.eqLabel0 = juce::Colour (0xffa8700a); t.anaLabel = rgba (42, 36, 29, 0.4f); t.freqLabel = rgba (42, 36, 29, 0.55f);
+        t.preFill = rgba (51, 111, 107, 0.14f); t.postFill = rgba (42, 36, 29, 0.07f); t.postLine = rgba (42, 36, 29, 0.35f);
+        t.curve = juce::Colour (0xff2a241d); t.curveGlow = rgba (42, 36, 29, 0.25f); t.dotEdge = rgba (42, 36, 29, 0.55f);
+        t.ring = juce::Colour (0xff2a241d); t.ringHover = rgba (42, 36, 29, 0.4f); t.offFill = juce::Colour (0xfff8f4e8); t.badgeText = juce::Colour (0xfffbf8ef);
+        t.tipBg = rgba (251, 248, 239, 0.96f); t.tipText = juce::Colour (0xff2a241d);
+        t.meterBg = juce::Colour (0xffece4cf); t.meterTrack = rgba (42, 36, 29, 0.08f); t.meterLow = juce::Colour (0xffc9a35a); t.meterMid = juce::Colour (0xffa8700a);
+        t.meterTop = juce::Colour (0xff6b4a10); t.meterHold = juce::Colour (0xff2a241d); t.meterLine = rgba (168, 112, 10, 0.45f); t.meterText = rgba (42, 36, 29, 0.75f);
+        t.bandDarken = 0.72f;
+        return t;
+    }();
+    static const EqTheme darkTheme = []
+    {
+        EqTheme t;
+        t.dark = true;
+        t.scr = juce::Colour (0xff171308); t.bar = juce::Colour (0xff211b10); t.barHi = juce::Colour (0xff2c2416); t.barLo = juce::Colour (0xff1a150c);
+        t.edge = rgba (0, 0, 0, 0.5f); t.fg = juce::Colour (0xfff2ecd9); t.fgSoft = rgba (242, 236, 217, 0.6f);
+        t.acc = juce::Colour (0xfff0a830); t.accSoft = rgba (240, 168, 48, 0.62f); t.accHover = rgba (240, 168, 48, 0.18f); t.onAcc = juce::Colour (0xff171308);
+        t.floatBg = rgba (33, 27, 16, 0.94f); t.floatSolid = juce::Colour (0xff241d12); t.floatBorder = rgba (242, 236, 217, 0.14f); t.floatShadow = rgba (0, 0, 0, 0.55f);
+        t.hover = rgba (242, 236, 217, 0.07f); t.track = rgba (242, 236, 217, 0.16f); t.knobHi = juce::Colour (0xff4a3f2c); t.knobLo = juce::Colour (0xff231c11);
+        t.inputBg = juce::Colour (0xff0d0a04); t.ledOff = juce::Colour (0xff5a4a30); t.solo = juce::Colour (0xffe6cf5a);
+        t.bgTop = juce::Colour (0xff1d170c); t.bgBottom = juce::Colour (0xff120e06); t.scaleBg = rgba (0, 0, 0, 0.25f); t.nyquist = rgba (0, 0, 0, 0.4f);
+        t.gridMajor = rgba (240, 168, 48, 0.15f); t.gridMinor = rgba (240, 168, 48, 0.06f); t.zero = rgba (240, 168, 48, 0.3f); t.hline = rgba (240, 168, 48, 0.06f);
+        t.eqLabel = rgba (240, 168, 48, 0.75f); t.eqLabel0 = juce::Colour (0xfff0a830); t.anaLabel = rgba (242, 236, 217, 0.38f); t.freqLabel = rgba (242, 236, 217, 0.5f);
+        t.preFill = rgba (126, 196, 190, 0.13f); t.postFill = rgba (242, 236, 217, 0.08f); t.postLine = rgba (242, 236, 217, 0.4f);
+        t.curve = juce::Colour (0xfff2ecd9); t.curveGlow = rgba (242, 236, 217, 0.55f); t.dotEdge = rgba (0, 0, 0, 0.6f);
+        t.ring = juce::Colour (0xfff2ecd9); t.ringHover = rgba (242, 236, 217, 0.45f); t.offFill = juce::Colour (0xff171308); t.badgeText = juce::Colour (0xff171308);
+        t.tipBg = rgba (23, 19, 8, 0.92f); t.tipText = juce::Colour (0xfff2ecd9);
+        t.meterBg = juce::Colour (0xff120e06); t.meterTrack = rgba (240, 168, 48, 0.08f); t.meterLow = juce::Colour (0xff7a5a18); t.meterMid = juce::Colour (0xfff0a830);
+        t.meterTop = juce::Colour (0xfff2ecd9); t.meterHold = juce::Colour (0xfff2ecd9); t.meterLine = rgba (240, 168, 48, 0.35f); t.meterText = rgba (242, 236, 217, 0.75f);
+        t.bandDarken = 1.0f;
+        return t;
+    }();
+    return dark ? darkTheme : light;
 }
 
 //==============================================================================
-EgretLookAndFeel::EgretLookAndFeel()
+EgretLookAndFeel::EgretLookAndFeel() { setTheme (EqTheme::get (false)); }
+
+void EgretLookAndFeel::setTheme (const EqTheme& t)
 {
-    setColour (juce::ComboBox::backgroundColourId, panel);
-    setColour (juce::ComboBox::outlineColourId, grooveDark);
-    setColour (juce::ComboBox::textColourId, ink);
-    setColour (juce::ComboBox::arrowColourId, ink);
-    setColour (juce::ComboBox::focusedOutlineColourId, teal);
-    setColour (juce::PopupMenu::backgroundColourId, panelRaised);
-    setColour (juce::PopupMenu::textColourId, ink);
-    setColour (juce::PopupMenu::headerTextColourId, inkSoft);
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, mustard);
-    setColour (juce::PopupMenu::highlightedTextColourId, panelRaised);
-    setColour (juce::TextButton::textColourOffId, ink);
-    setColour (juce::TextButton::textColourOnId, panelRaised);
-    setColour (juce::TextButton::buttonOnColourId, mustard);
-    setColour (juce::TextEditor::backgroundColourId, panel);
-    setColour (juce::TextEditor::outlineColourId, grooveDark);
-    setColour (juce::TextEditor::focusedOutlineColourId, teal);
-    setColour (juce::TextEditor::textColourId, ink);
-    setColour (juce::TextEditor::highlightColourId, mustard.withAlpha (0.35f));
-    setColour (juce::CaretComponent::caretColourId, ink);
-    setColour (juce::Label::textColourId, inkSoft);
-    setColour (juce::TooltipWindow::backgroundColourId, panelRaised);
-    setColour (juce::TooltipWindow::textColourId, ink);
-    setColour (juce::TooltipWindow::outlineColourId, grooveDark);
+    theme = &t;
+    setColour (juce::PopupMenu::backgroundColourId, t.floatSolid);
+    setColour (juce::PopupMenu::textColourId, t.fg);
+    setColour (juce::PopupMenu::headerTextColourId, t.fgSoft);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, t.acc.withAlpha (0.18f).withAlpha (1.0f).interpolatedWith (t.floatSolid, 0.75f));
+    setColour (juce::PopupMenu::highlightedTextColourId, t.fg);
+    setColour (juce::TextEditor::backgroundColourId, t.inputBg);
+    setColour (juce::TextEditor::outlineColourId, t.acc);
+    setColour (juce::TextEditor::focusedOutlineColourId, t.acc);
+    setColour (juce::TextEditor::textColourId, t.fg);
+    setColour (juce::TextEditor::highlightColourId, t.accHover);
+    setColour (juce::CaretComponent::caretColourId, t.fg);
+    setColour (juce::Label::textColourId, t.fg);
+    setColour (juce::TooltipWindow::backgroundColourId, t.floatSolid);
+    setColour (juce::TooltipWindow::textColourId, t.fg);
+    setColour (juce::TooltipWindow::outlineColourId, t.floatBorder);
+    setColour (juce::AlertWindow::backgroundColourId, t.floatSolid);
+    setColour (juce::AlertWindow::textColourId, t.fg);
+    setColour (juce::AlertWindow::outlineColourId, t.floatBorder);
+    setColour (juce::TextButton::buttonColourId, t.hover);
+    setColour (juce::TextButton::textColourOffId, t.fg);
+    setColour (juce::TextButton::textColourOnId, t.onAcc);
+    setColour (juce::TextButton::buttonOnColourId, t.acc);
 }
 
-void EgretLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
-                                         float rotaryStartAngle, float rotaryEndAngle, juce::Slider& slider)
+void EgretLookAndFeel::drawRotarySlider (juce::Graphics&, int, int, int, int, float, float, float, juce::Slider&) {}   // EqKnob paints itself
+
+void EgretLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&, bool over, bool down)
 {
-    const auto accent = slider.findColour (juce::Slider::rotarySliderFillColourId);
-    const auto area = juce::Rectangle<int> (x, y, width, height).toFloat();
-    const auto radius = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f - 2.0f;
-    const auto centre = area.getCentre();
-    const auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-    const auto arcRadius = radius - 3.0f;
-    const juce::PathStrokeType arcStroke (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
-
-    g.setColour (grooveDark.withAlpha (0.25f));
-    g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (centre));
-    juce::Path track;
-    track.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour (grooveDark);
-    g.strokePath (track, arcStroke);
-
-    const auto capRadius = radius * 0.72f;
-    const auto cap = juce::Rectangle<float> (capRadius * 2.0f, capRadius * 2.0f).withCentre (centre);
-    g.setColour (shadow);
-    g.fillEllipse (cap.translated (0.0f, 1.5f));
-    g.setGradientFill (juce::ColourGradient (panelRaised, centre.x, centre.y - capRadius * 0.5f,
-                                             groove, centre.x, centre.y + capRadius * 1.3f, true));
-    g.fillEllipse (cap);
-    juce::Path pointer;
-    pointer.addRoundedRectangle (-1.5f, -capRadius * 0.85f, 3.0f, capRadius * 0.55f, 1.5f);
-    g.setColour (accent);
-    g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (centre));
+    const auto r = b.getLocalBounds().toFloat().reduced (0.5f);
+    g.setColour (b.getToggleState() ? theme->acc : (over || down) ? theme->hover.withMultipliedAlpha (2.0f) : theme->hover);
+    g.fillRoundedRectangle (r, 5.0f);
+    g.setColour (theme->floatBorder);
+    g.drawRoundedRectangle (r, 5.0f, 1.0f);
 }
 
-void EgretLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&, bool isMouseOver, bool isDown)
+void EgretLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool)
 {
-    const auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
-    const auto on = button.getToggleState();
-    const auto accent = button.findColour (juce::TextButton::buttonOnColourId);
-    const auto alpha = button.isEnabled() ? 1.0f : 0.45f;
-    auto fill = on ? accent : panel;
-    if (! on && button.isEnabled() && (isMouseOver || isDown))
-        fill = fill.brighter (0.15f);
-    g.setColour (fill.withMultipliedAlpha (alpha));
-    g.fillRoundedRectangle (bounds, 6.0f);
-    g.setColour ((on ? accent : grooveDark).withMultipliedAlpha (alpha));
-    g.drawRoundedRectangle (bounds, 6.0f, 1.0f);
+    g.setColour (b.getToggleState() ? theme->onAcc : theme->fg);
+    g.setFont (getTextButtonFont (b, b.getHeight()));
+    g.drawText (b.getButtonText(), b.getLocalBounds(), juce::Justification::centred, false);
 }
 
-juce::Font EgretLookAndFeel::getTextButtonFont (juce::TextButton& b, int) { return sansFont (b.getHeight() < 24 ? 10.5f : 11.0f, true); }
-juce::Font EgretLookAndFeel::getComboBoxFont (juce::ComboBox&) { return sansFont (11.5f, true); }
-void EgretLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
+juce::Font EgretLookAndFeel::getTextButtonFont (juce::TextButton&, int) { return sansFont (12.0f); }
+juce::Font EgretLookAndFeel::getPopupMenuFont() { return sansFont (13.0f); }
+
+void EgretLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
-    LookAndFeel_V4::positionComboBoxText (box, label);
-    label.setMinimumHorizontalScale (0.6f);
+    g.fillAll (theme->floatSolid);
+    g.setColour (theme->floatBorder);
+    g.drawRect (0, 0, width, height);
 }
 
 //==============================================================================
-EqKnob::EqKnob (const juce::String& text, Unit u, juce::Colour accent) : unit (u)
+void BarButton::paintButton (juce::Graphics& g, bool over, bool down)
+{
+    const auto& t = view->theme();
+    const auto r = getLocalBounds().toFloat().reduced (0.5f);
+    const auto on = getToggleState();
+    const auto enabled = isEnabled();
+    const auto boxed = getProperties().contains ("boxed"), panelSel = getProperties().contains ("panelSel");
+    if (filledWhenOn && on)
+    {
+        g.setColour (getProperties().contains ("solo") ? t.solo : t.acc);
+        g.fillRoundedRectangle (r, 5.0f);
+    }
+    else if (boxed)   // the range box and the band panel's menus
+    {
+        g.setColour (panelSel ? t.hover : t.floatBg);
+        g.fillRoundedRectangle (r, 4.0f);
+        g.setColour (over && enabled ? (panelSel ? findColour (juce::TextButton::buttonOnColourId) : t.acc) : t.floatBorder);
+        g.drawRoundedRectangle (r, 4.0f, 1.0f);
+    }
+    else if (enabled && (over || down))
+    {
+        g.setColour (t.hover);
+        g.fillRoundedRectangle (r, 5.0f);
+        g.setColour (t.floatBorder);
+        g.drawRoundedRectangle (r, 5.0f, 1.0f);
+    }
+    const auto ink = (filledWhenOn && on) ? t.onAcc : (on && ! filledWhenOn && ! led) ? t.acc : (getProperties().contains ("accent") ? t.acc : t.fg);
+    const auto alpha = enabled ? 1.0f : 0.35f;
+    auto area = getLocalBounds().toFloat().reduced (6.0f, 0.0f);
+    if (led)
+    {
+        const auto l = juce::Rectangle<float> (9, 9).withCentre ({ area.getX() + 4.5f, area.getCentreY() });
+        if (on) { g.setColour (t.acc.withAlpha (0.35f)); g.fillEllipse (l.expanded (2.5f)); }
+        g.setColour (on ? t.acc : t.ledOff);
+        g.fillEllipse (l);
+        area.removeFromLeft (14.0f);
+    }
+    g.setColour (ink.withMultipliedAlpha (alpha));
+    if (! icon.isEmpty())
+    {
+        const auto box = juce::Rectangle<float> (15, 15).withCentre (area.getCentre());
+        g.fillPath (icon, icon.getTransformToScaleToFit (box.reduced (0.5f), true));
+        return;
+    }
+    const auto font = getProperties().contains ("mono") ? monoFont (11.0f) : sansFont (12.0f);
+    g.setFont (font);
+    const auto label = getButtonText();
+    if (getProperties().contains ("dimPrefix"))
+    {
+        const auto prefix = getProperties()["dimPrefix"].toString();
+        const auto w = juce::GlyphArrangement::getStringWidth (font, prefix + " ");
+        const auto full = w + juce::GlyphArrangement::getStringWidth (font, label);
+        auto a = area.withSizeKeepingCentre (juce::jmin (full + 1, area.getWidth()), area.getHeight());
+        g.setColour (t.fgSoft.withMultipliedAlpha (alpha));
+        g.drawText (prefix, a.removeFromLeft (w), juce::Justification::centredLeft, false);
+        g.setColour (ink.withMultipliedAlpha (alpha));
+        g.drawText (label, a, juce::Justification::centredLeft, true);
+        return;
+    }
+    if (panelSel)
+    {
+        g.drawText (label, area.withTrimmedRight (12), juce::Justification::centredLeft, true);
+        g.setColour (t.fgSoft.withMultipliedAlpha (alpha));
+        g.drawText (utf8 ("\xe2\x96\xbe"), area, juce::Justification::centredRight, false);
+        return;
+    }
+    g.drawText (label, area, juce::Justification::centred, true);
+}
+
+//==============================================================================
+EqKnob::EqKnob (const juce::String& text, Unit u, const EqView& v) : unit (u), view (v), labelText (text.toUpperCase())
 {
     slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f, juce::MathConstants<float>::pi * 2.75f, true);
-    slider.setColour (juce::Slider::rotarySliderFillColourId, accent);
     slider.setMouseDragSensitivity (150);   // the web knob: 150 px for the whole range
     slider.setWantsKeyboardFocus (false);
-    slider.onValueChange = [this] { updateReadout(); };
+    slider.setAlpha (0.0f);                  // the knob is painted underneath; the slider only takes the mouse
+    slider.onValueChange = [this] { updateReadout(); repaint(); };
     addAndMakeVisible (slider);
-    label.setText (text.toUpperCase(), juce::dontSendNotification);
-    label.setFont (sansFont (9.0f, true));
-    readout.setFont (monoFont (10.0f));
-    for (auto* l : { &label, &readout })
-    {
-        l->setJustificationType (juce::Justification::centred);
-        l->setBorderSize ({});
-        addAndMakeVisible (*l);
-    }
-    label.setInterceptsMouseClicks (false, false);
+    readout.setFont (monoFont (10.5f));
+    readout.setJustificationType (juce::Justification::centred);
+    readout.setBorderSize ({});
     readout.setMouseCursor (juce::MouseCursor::IBeamCursor);
     readout.setTooltip ("Click to type a value");
     readout.addMouseListener (this, false);
+    addAndMakeVisible (readout);
+}
+
+void EqKnob::setAccent (juce::Colour c)
+{
+    if (slider.findColour (juce::Slider::rotarySliderFillColourId) == c) return;
+    slider.setColour (juce::Slider::rotarySliderFillColourId, c);
+    repaint();
 }
 
 void EqKnob::setParameter (juce::RangedAudioParameter* p)
@@ -198,6 +331,7 @@ void EqKnob::setParameter (juce::RangedAudioParameter* p)
         slider.setDoubleClickReturnValue (true, param->convertFrom0to1 (param->getDefaultValue()));
     }
     updateReadout();
+    repaint();
 }
 
 juce::String EqKnob::format (Unit u, double v)
@@ -208,7 +342,7 @@ juce::String EqKnob::format (Unit u, double v)
         case Unit::dB:
         {
             const auto r = std::round (v * 10) / 10;
-            return (r > 0 ? "+" : r < 0 ? minus() : juce::String()) + juce::String (std::abs (r), 1) + "dB";
+            return (r > 0 ? "+" : r < 0 ? minus() : juce::String()) + juce::String (std::abs (r), 1) + " dB";
         }
         case Unit::q:   return juce::String (v, v < 10 ? 2 : 1);
         case Unit::pan: return std::abs (v) < 0.5 ? juce::String ("C") : (v < 0 ? "L" : "R") + juce::String (juce::roundToInt (std::abs (v)));
@@ -217,16 +351,60 @@ juce::String EqKnob::format (Unit u, double v)
     return juce::String (juce::roundToInt (v)) + "%";
 }
 
+// A typed value: a number with an optional unit -- 2.5k, 250, -3, 0.7, L20.
+bool EqKnob::parse (Unit u, juce::String text, double& v)
+{
+    text = text.trim().toLowerCase().replaceCharacter (',', '.').replace (minus(), "-");
+    if (u == Unit::pan && (text == "c" || text.startsWith ("l") || text.startsWith ("r")))
+    {
+        if (text == "c") { v = 0; return true; }
+        const auto num = text.substring (1).trim();
+        if (num.isEmpty() || ! num.containsOnly (".0123456789")) return false;
+        v = (text[0] == 'l' ? -1 : 1) * num.getDoubleValue();
+        return true;
+    }
+    const auto number = text.initialSectionContainingOnly ("+-.0123456789");
+    const auto unitText = text.substring (number.length()).trim();
+    if (! number.containsAnyOf ("0123456789")) return false;
+    if (! juce::StringArray { "", "k", "khz", "hz", "db", "%" }.contains (unitText)) return false;
+    v = number.getDoubleValue();
+    if (unitText == "k" || unitText == "khz") v *= 1000;
+    return true;
+}
+
 void EqKnob::updateReadout() { readout.setText (format (unit, slider.getValue()), juce::dontSendNotification); }
 
 void EqKnob::resized()
 {
-    auto area = getLocalBounds();
-    readout.setBounds (area.removeFromBottom (13));
-    label.setBounds (area.removeFromBottom (13));
-    slider.setBounds (area.reduced (1));
-    if (typing != nullptr)
-        typing->setBounds (readout.getBounds().expanded (3, 1));
+    slider.setBounds ((getWidth() - 42) / 2, 0, 42, 42);
+    readout.setBounds (0, 42, getWidth(), 13);
+    if (typing != nullptr) typing->setBounds (readout.getBounds().expanded (0, 1));
+}
+
+void EqKnob::paint (juce::Graphics& g)
+{
+    const auto& t = view.theme();
+    readout.setColour (juce::Label::textColourId, t.fg);
+    const auto accent = slider.findColour (juce::Slider::rotarySliderFillColourId);
+    const auto centre = juce::Point<float> (getWidth() * 0.5f, 21.0f);
+    const auto start = juce::MathConstants<float>::pi * 1.25f, end = juce::MathConstants<float>::pi * 2.75f;
+    const auto pos = param != nullptr ? param->convertTo0to1 ((float) slider.getValue()) : 0.5f;
+    juce::Path track;
+    track.addCentredArc (centre.x, centre.y, 18, 18, 0, start, end, true);
+    g.setColour (t.track);
+    g.strokePath (track, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+    const auto cap = juce::Rectangle<float> (30, 30).withCentre (centre);
+    g.setColour (t.floatShadow);
+    g.fillEllipse (cap.translated (0, 1.5f));
+    g.setGradientFill (juce::ColourGradient (t.knobHi, centre.x, centre.y - 11, t.knobLo, centre.x, centre.y + 19, true));
+    g.fillEllipse (cap);
+    juce::Path pointer;
+    pointer.addRoundedRectangle (-1.25f, -13.5f, 2.5f, 5.5f, 1.2f);
+    g.setColour (accent);
+    g.fillPath (pointer, juce::AffineTransform::rotation (start + pos * (end - start)).translated (centre));
+    g.setColour (t.fgSoft);
+    g.setFont (sansFont (8.5f, true).withExtraKerningFactor (0.06f));
+    g.drawText (labelText, juce::Rectangle<int> (0, 55, getWidth(), 11), juce::Justification::centred, false);
 }
 
 void EqKnob::mouseUp (const juce::MouseEvent& e)
@@ -235,54 +413,32 @@ void EqKnob::mouseUp (const juce::MouseEvent& e)
         startTyping();
 }
 
-// A typed value: a number with an optional unit -- 2.5k, 250, -3, 0.7, L20 --
-// clamped to the range. Enter or clicking away sets it, Escape keeps the old one.
+// Enter or clicking away sets it, Escape keeps the old one.
 void EqKnob::startTyping()
 {
     if (typing != nullptr || param == nullptr)
         return;
     typing = std::make_unique<juce::TextEditor>();
-    typing->setFont (monoFont (10.0f));
+    typing->setFont (monoFont (10.5f));
     typing->setJustification (juce::Justification::centred);
     typing->setIndents (1, 0);
-    typing->setColour (juce::TextEditor::outlineColourId, teal);
     typing->setText (unit == Unit::pan ? format (unit, slider.getValue()) : juce::String (std::round (slider.getValue() * 100) / 100), false);
     addAndMakeVisible (*typing);
     resized();
     typing->grabKeyboardFocus();
     typing->selectAll();
-
     // The safe pointer is made out here: MSVC can't take `this` inside a nested lambda's capture.
     auto finish = [this, safe = juce::Component::SafePointer<EqKnob> (this)] (bool apply)
     {
         if (typing == nullptr || typing->getProperties().contains ("done"))
             return;
         typing->getProperties().set ("done", true);   // Escape, then the focus going: only the first counts
-        auto text = typing->getText().trim().toLowerCase().replaceCharacter (',', '.').replace (minus(), "-");
+        const auto text = typing->getText();
         juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->typing.reset(); });
-        if (! apply || param == nullptr)
-            return;
         double v;
+        if (! apply || param == nullptr || ! parse (unit, text, v))
+            return;
         const auto range = param->getNormalisableRange();
-        if (unit == Unit::pan && (text == "c" || text.startsWith ("l") || text.startsWith ("r")))
-        {
-            if (text == "c") v = 0;
-            else
-            {
-                const auto num = text.substring (1).trim();
-                if (! num.containsOnly (".0123456789") || num.isEmpty()) return;
-                v = (text[0] == 'l' ? -1 : 1) * num.getDoubleValue();
-            }
-        }
-        else
-        {
-            const auto number = text.initialSectionContainingOnly ("+-.0123456789");
-            const auto unitText = text.substring (number.length()).trim();
-            if (! number.containsAnyOf ("0123456789")) return;
-            if (! juce::StringArray { "", "k", "khz", "hz", "db", "%" }.contains (unitText)) return;
-            v = number.getDoubleValue();
-            if (unitText == "k" || unitText == "khz") v *= 1000;
-        }
         v = juce::jlimit ((double) range.start, (double) range.end, v);
         param->beginChangeGesture();
         param->setValueNotifyingHost (param->convertTo0to1 ((float) v));
@@ -294,34 +450,212 @@ void EqKnob::startTyping()
 }
 
 //==============================================================================
-ChipRow::ChipRow (const juce::StringArray& labels, juce::Colour accent)
+DragValue::DragValue (const juce::String& p, EqKnob::Unit u, juce::RangedAudioParameter& prm, const EqView& v)
+    : prefix (p), unit (u), param (prm), view (v)
 {
-    for (int i = 0; i < labels.size(); ++i)
+    setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+}
+
+int DragValue::preferredWidth() const
+{
+    return juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (10.5f), prefix + " ")
+                             + juce::GlyphArrangement::getStringWidth (monoFont (11.5f), EqKnob::format (unit, param.convertFrom0to1 (param.getValue())))) + 16;
+}
+
+void DragValue::paint (juce::Graphics& g)
+{
+    const auto& t = view.theme();
+    const auto r = getLocalBounds().toFloat().reduced (0.5f);
+    if (isMouseOverOrDragging())
     {
-        auto* b = buttons.add (new juce::TextButton (labels[i]));
-        b->setColour (juce::TextButton::buttonOnColourId, accent);
+        g.setColour (t.hover); g.fillRoundedRectangle (r, 4.0f);
+        g.setColour (t.floatBorder); g.drawRoundedRectangle (r, 4.0f, 1.0f);
+    }
+    if (typing != nullptr) return;
+    auto a = getLocalBounds().reduced (7, 0).toFloat();
+    const auto pw = juce::GlyphArrangement::getStringWidth (sansFont (10.5f), prefix + " ");
+    g.setColour (t.fgSoft); g.setFont (sansFont (10.5f));
+    g.drawText (prefix, a.removeFromLeft (pw), juce::Justification::centredLeft, false);
+    g.setColour (t.fg); g.setFont (monoFont (11.5f));
+    g.drawText (EqKnob::format (unit, param.convertFrom0to1 (param.getValue())), a, juce::Justification::centredLeft, false);
+}
+
+void DragValue::setNormalised (float v)
+{
+    param.setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, v));
+    repaint();
+}
+
+void DragValue::mouseDown (const juce::MouseEvent&)
+{
+    dragStart = dragValue = param.getValue();
+    moved = false;
+    param.beginChangeGesture();
+}
+
+void DragValue::mouseDrag (const juce::MouseEvent& e)
+{
+    if (std::abs (e.getDistanceFromDragStartY()) > 2) moved = true;
+    dragValue = dragStart - e.getDistanceFromDragStartY() / 200.0f * (e.mods.isShiftDown() ? 0.2f : 1.0f);
+    setNormalised (dragValue);
+}
+
+void DragValue::mouseUp (const juce::MouseEvent&)
+{
+    param.endChangeGesture();
+    if (moved || typing != nullptr) return;
+    // a click: type a value
+    typing = std::make_unique<juce::TextEditor>();
+    typing->setFont (monoFont (11.0f));
+    typing->setJustification (juce::Justification::centred);
+    typing->setText (unit == EqKnob::Unit::pan ? EqKnob::format (unit, param.convertFrom0to1 (param.getValue()))
+                                               : juce::String (std::round (param.convertFrom0to1 (param.getValue()) * 100) / 100), false);
+    addAndMakeVisible (*typing);
+    typing->setBounds (getLocalBounds().reduced (2, 2));
+    typing->grabKeyboardFocus();
+    typing->selectAll();
+    auto finish = [this, safe = juce::Component::SafePointer<DragValue> (this)] (bool apply)
+    {
+        if (typing == nullptr || typing->getProperties().contains ("done")) return;
+        typing->getProperties().set ("done", true);
+        const auto text = typing->getText();
+        juce::MessageManager::callAsync ([safe] { if (safe != nullptr) { safe->typing.reset(); safe->repaint(); } });
+        double v;
+        if (! apply || ! EqKnob::parse (unit, text, v)) return;
+        const auto range = param.getNormalisableRange();
+        param.beginChangeGesture();
+        param.setValueNotifyingHost (param.convertTo0to1 ((float) juce::jlimit ((double) range.start, (double) range.end, v)));
+        param.endChangeGesture();
+    };
+    typing->onReturnKey = [finish] { finish (true); };
+    typing->onEscapeKey = [finish] { finish (false); };
+    typing->onFocusLost = [finish] { finish (true); };
+}
+
+void DragValue::mouseDoubleClick (const juce::MouseEvent&)
+{
+    typing.reset();
+    param.beginChangeGesture();
+    setNormalised (param.getDefaultValue());
+    param.endChangeGesture();
+}
+
+void DragValue::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
+{
+    param.beginChangeGesture();
+    setNormalised (param.getValue() + (w.deltaY * (w.isReversed ? -1.0f : 1.0f)) * (e.mods.isShiftDown() ? 0.02f : 0.1f));
+    param.endChangeGesture();
+}
+
+//==============================================================================
+BandPanel::BandPanel (EgretEqProcessor& p, EqView& v, EqDisplay& d)
+    : processor (p), view (v), display (d), freq ("Freq", EqKnob::Unit::hz, v), gain ("Gain", EqKnob::Unit::dB, v), q ("Q", EqKnob::Unit::q, v)
+{
+    for (auto* b : { &shape, &slope, &place, &bypass, &solo, &prev, &next, &remove })
+    {
+        b->view = &view;
         b->setWantsKeyboardFocus (false);
-        b->onClick = [this, i] { if (onPick) onPick (i); refresh(); };
-        addAndMakeVisible (b);
+        addAndMakeVisible (*b);
     }
-}
+    for (auto* b : { &shape, &slope, &place }) { b->getProperties().set ("boxed", true); b->getProperties().set ("panelSel", true); }
+    shape.setTooltip ("Shape"); slope.setTooltip ("Slope"); place.setTooltip ("Stereo placement");
+    bypass.icon = powerIcon(); bypass.filledWhenOn = true; bypass.setTooltip ("Band on/off (or double-click its dot)");
+    solo.setButtonText ("S"); solo.filledWhenOn = true; solo.getProperties().set ("solo", true); solo.setTooltip ("Solo: hear only what this band works on");
+    prev.setButtonText (utf8 ("\xe2\x80\xb9")); prev.setTooltip ("Previous band");
+    next.setButtonText (utf8 ("\xe2\x80\xba")); next.setTooltip ("Next band");
+    remove.setButtonText (utf8 ("\xe2\x9c\x95")); remove.setTooltip ("Remove the band (Delete, or Alt-click its dot)");
+    for (auto* k : { &freq, &gain, &q }) addAndMakeVisible (*k);
 
-void ChipRow::refresh()
-{
-    for (int i = 0; i < buttons.size(); ++i)
-        buttons[i]->setToggleState (isOn != nullptr && isOn (i), juce::dontSendNotification);
-}
-
-void ChipRow::resized()
-{
-    const auto n = buttons.size(), perRow = columns > 0 ? columns : n, rows = (n + perRow - 1) / perRow;
-    const auto w = (getWidth() - (perRow - 1) * 4) / (float) perRow;
-    const auto h = (getHeight() - (rows - 1) * 4) / (float) rows;
-    for (int i = 0; i < n; ++i)
+    auto menu = [this] (BarButton& b, const char* id, juce::StringArray labels)
     {
-        const auto c = i % perRow, r = i / perRow;
-        buttons[i]->setBounds (juce::roundToInt (c * (w + 4)), juce::roundToInt (r * (h + 4)), juce::roundToInt (w), juce::roundToInt (h));
+        b.onClick = [this, &b, id, labels]
+        {
+            if (view.selected < 0) return;
+            juce::PopupMenu m;
+            const auto cur = juce::roundToInt (processor.apvts.getRawParameterValue (EgretEqProcessor::bandId (view.selected, id))->load());
+            for (int i = 0; i < labels.size(); ++i) m.addItem (i + 1, labels[i], true, i == cur);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&b),
+                             [this, id] (int r)
+                             {
+                                 if (r <= 0 || view.selected < 0) return;
+                                 processor.undo.beginNewTransaction();
+                                 display.setBandParam (view.selected, id, (float) (r - 1));
+                             });
+        };
+    };
+    juce::StringArray shapes, slopeNames, places;
+    for (auto* l : eq::shapeLabels) shapes.add (l);
+    for (auto s : eq::slopes) slopeNames.add (juce::String (s) + " dB/oct");
+    for (auto* l : placeNames) places.add (l);
+    menu (shape, "Shape", shapes);
+    menu (slope, "Slope", slopeNames);
+    menu (place, "Place", places);
+    bypass.onClick = [this]
+    {
+        if (view.selected < 0) return;
+        processor.undo.beginNewTransaction();
+        display.setBandParam (view.selected, "On", processor.readParams().bands[(size_t) view.selected].on ? 0.0f : 1.0f);
+    };
+    solo.onClick = [this] { if (view.selected >= 0) processor.soloBand = processor.soloBand == view.selected ? -1 : view.selected; };
+    prev.onClick = [this] { if (onStep) onStep (-1); };
+    next.onClick = [this] { if (onStep) onStep (1); };
+    remove.onClick = [this] { display.deleteBand (view.selected); };
+    setSize (406, 108);
+}
+
+void BandPanel::refresh (const eq::Params& p)
+{
+    if (view.selected < 0 || ! p.bands[(size_t) view.selected].used) return;
+    const auto& b = p.bands[(size_t) view.selected];
+    const auto colour = view.theme().band (view.selected);
+    if (bound != view.selected)
+    {
+        bound = view.selected;
+        freq.setParameter (processor.apvts.getParameter (EgretEqProcessor::bandId (bound, "Freq")));
+        gain.setParameter (processor.apvts.getParameter (EgretEqProcessor::bandId (bound, "Gain")));
+        q.setParameter (processor.apvts.getParameter (EgretEqProcessor::bandId (bound, "Q")));
     }
+    for (auto* k : { &freq, &gain, &q }) k->setAccent (colour);
+    for (auto* s : { &shape, &slope, &place }) s->setColour (juce::TextButton::buttonOnColourId, colour);
+    shape.setButtonText (eq::shapeLabels[(int) b.shape]);
+    slope.setButtonText (eq::hasSlope (b.shape) ? juce::String (b.slope) + " dB/oct" : utf8 ("\xe2\x80\x94"));
+    slope.setEnabled (eq::hasSlope (b.shape));
+    place.setButtonText (placeNames[(int) b.place]);
+    gain.setEnabled (eq::hasGain (b.shape)); gain.setAlpha (eq::hasGain (b.shape) ? 1.0f : 0.35f);
+    q.setEnabled (eq::hasQ (b.shape)); q.setAlpha (eq::hasQ (b.shape) ? 1.0f : 0.35f);
+    bypass.setToggleState (b.on, juce::dontSendNotification);
+    solo.setToggleState (processor.soloBand == view.selected, juce::dontSendNotification);
+    solo.setEnabled (eq::canSolo (b.shape));
+    repaint();
+}
+
+void BandPanel::paint (juce::Graphics& g)
+{
+    const auto& t = view.theme();
+    const auto r = getLocalBounds().toFloat().reduced (2.0f);
+    const auto colour = view.selected >= 0 ? t.band (view.selected) : t.acc;
+    g.setColour (t.floatShadow.withMultipliedAlpha (0.6f));
+    g.fillRoundedRectangle (r.translated (0, 2), 8.0f);
+    g.setColour (t.floatBg);
+    g.fillRoundedRectangle (r, 8.0f);
+    g.setColour (t.floatBorder);
+    g.drawRoundedRectangle (r, 8.0f, 1.0f);
+    g.setColour (colour);
+    g.fillRoundedRectangle (r.withHeight (2.0f).reduced (4.0f, 0.0f), 1.0f);
+    g.setFont (monoFont (10.0f).withExtraKerningFactor (0.08f));
+    g.drawText ("BAND " + juce::String (view.selected + 1), juce::Rectangle<int> (10, 7, 104, 14), juce::Justification::centred, false);
+}
+
+void BandPanel::resized()
+{
+    auto col = juce::Rectangle<int> (10, 23, 104, 22);
+    for (auto* b : { &shape, &slope, &place }) { b->setBounds (col); col.translate (0, 26); }
+    auto kx = 122;
+    for (auto* k : { &freq, &gain, &q }) { k->setBounds (kx, 18, 66, 68); kx += 70; }
+    const auto bx = kx + 4;
+    bypass.setBounds (bx, 22, 26, 22); solo.setBounds (bx + 30, 22, 26, 22);
+    prev.setBounds (bx, 48, 26, 22); next.setBounds (bx + 30, 48, 26, 22);
+    remove.setBounds (bx, 74, 56, 22);
 }
 
 //==============================================================================
@@ -333,19 +667,43 @@ EqDisplay::EqDisplay (EgretEqProcessor& p, EqView& v) : processor (p), view (v)
     setDescription ("Double-click to add a band, drag a dot to move it, scroll on it to change Q.");
     pull.resize (1 << 15);
     params = processor.readParams();
+    rangeBox.view = &view;
+    rangeBox.getProperties().set ("boxed", true);
+    rangeBox.getProperties().set ("mono", true);
+    rangeBox.getProperties().set ("accent", true);
+    rangeBox.setTooltip ("Display range");
+    rangeBox.setWantsKeyboardFocus (false);
+    rangeBox.onClick = [this]
+    {
+        juce::PopupMenu m;
+        m.addSectionHeader ("Display range");
+        static const int ranges[] = { 3, 6, 12, 30 };
+        for (int i = 0; i < 4; ++i) m.addItem (i + 1, utf8 ("\xc2\xb1") + juce::String (ranges[i]) + " dB", true, view.dispRange == ranges[i]);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&rangeBox),
+                         [this] (int r) { if (r > 0) { view.dispRange = ranges[r - 1]; if (onSelectionChanged) onSelectionChanged(); } });
+    };
+    addAndMakeVisible (rangeBox);
+    panel = std::make_unique<BandPanel> (p, v, *this);
+    addChildComponent (*panel);
 }
 
 namespace
 {
-    constexpr float viewTop = 8, viewBottom = 18;
+    constexpr float viewTop = 10, viewBottom = 20;
     const double logMin = std::log (eq::freqMin), logSpan = std::log (eq::freqMax / eq::freqMin);
 }
 
-float EqDisplay::fx (double f) const { return (float) ((std::log (f) - logMin) / logSpan * getWidth()); }
-double EqDisplay::xf (float x) const { return std::exp (logMin + x / getWidth() * logSpan); }
+float EqDisplay::fx (double f) const { return (float) ((std::log (f) - logMin) / logSpan * plotWidth()); }
+double EqDisplay::xf (float x) const { return std::exp (logMin + x / plotWidth() * logSpan); }
 float EqDisplay::gy (double db) const { const auto R = view.dispRange; return (float) (viewTop + (R - db) / (2.0 * R) * (getHeight() - viewTop - viewBottom)); }
 double EqDisplay::yg (float y) const { const auto R = view.dispRange; return R - (y - viewTop) / (getHeight() - viewTop - viewBottom) * 2.0 * R; }
 float EqDisplay::ay (double db) const { return (float) (viewTop + (-db / view.anaRange) * (getHeight() - viewTop - viewBottom)); }
+
+void EqDisplay::resized()
+{
+    rangeBox.setBounds (getWidth() - 12 - 54, 8, 54, 22);
+    placePanel();
+}
 
 juce::Point<float> EqDisplay::nodePos (int i) const
 {
@@ -386,7 +744,7 @@ void EqDisplay::addBand (double freq, double gain, eq::Shape shape)
 {
     int i = 0;
     while (i < eq::maxBands && params.bands[(size_t) i].used) ++i;
-    if (i == eq::maxBands) return;
+    if (i == eq::maxBands) { info = "All 24 bands are in use"; return; }
     processor.undo.beginNewTransaction();
     const auto cut = shape == eq::Shape::lowcut || shape == eq::Shape::highcut;
     setBandParam (i, "Used", 1); setBandParam (i, "On", 1); setBandParam (i, "Shape", (float) shape);
@@ -411,18 +769,14 @@ void EqDisplay::deleteBand (int i)
     }
     if (processor.soloBand == i) processor.soloBand = -1;
     params = processor.readParams();
-    if (view.selected == i)
-    {
-        view.selected = -1;
-        for (int k = 0; k < eq::maxBands; ++k) if (params.bands[(size_t) k].used) { view.selected = k; break; }
-    }
+    if (view.selected == i) view.selected = -1;
     if (onSelectionChanged) onSelectionChanged();
 }
 
 void EqDisplay::computeCurves()
 {
     const auto fs = processor.getSampleRateNow();
-    const auto cols = juce::jmax (2, getWidth());
+    const auto cols = juce::jmax (2, plotWidth());
     const auto fresh = cols != curveCols || fs != curveFs || params.gainScale != curveScale;
     curveCols = cols; curveFs = fs; curveScale = params.gainScale;
     total.assign ((size_t) cols, 0.0f);
@@ -452,14 +806,26 @@ void EqDisplay::computeCurves()
     }
 }
 
+// Under the band, like Pro-Q's: centred on its dot, or at the top when the dot is low.
+void EqDisplay::placePanel()
+{
+    const auto has = view.selected >= 0 && params.bands[(size_t) view.selected].used;
+    panel->setVisible (has);
+    if (! has) return;
+    const auto p = nodePos (view.selected);
+    const auto pw = panel->getWidth(), ph = panel->getHeight();
+    const auto x = juce::jlimit (8, juce::jmax (8, plotWidth() - pw - 8), juce::roundToInt (p.x - pw / 2.0f));
+    const auto y = p.y > getHeight() - viewBottom - ph - 30 ? 34 : juce::roundToInt (getHeight() - viewBottom - 8 - ph);
+    panel->setTopLeftPosition (x, y);
+}
+
 void EqDisplay::tick (const eq::Params& p)
 {
     params = p;
-    // Analyzer: take what the audio thread sent, one frame per tick.
-    for (auto* pair : { &processor.preTap, &processor.postTap })
+    for (auto* tap : { &processor.preTap, &processor.postTap })
     {
-        auto& a = pair == &processor.preTap ? pre : post;
-        const auto got = pair->pull (pull.data(), (int) pull.size());
+        auto& a = tap == &processor.preTap ? pre : post;
+        const auto got = tap->pull (pull.data(), (int) pull.size());
         if (got > 0) a.push (pull.data(), got);
     }
     const auto size = anaSizes[juce::jlimit (0, 3, view.anaRes)];
@@ -469,6 +835,9 @@ void EqDisplay::tick (const eq::Params& p)
         pre.compute (anaSmooth[juce::jlimit (0, 4, view.anaSpeed)]);
         post.compute (anaSmooth[juce::jlimit (0, 4, view.anaSpeed)]);
     }
+    rangeBox.setButtonText (juce::String (view.dispRange) + " dB");
+    panel->refresh (params);
+    placePanel();
     repaint();
 }
 
@@ -480,7 +849,7 @@ juce::Path EqDisplay::spectrumPath (const std::vector<float>& db, double binHz, 
     path.startNewSubPath (0, bottom);
     float lastX = 0;
     const auto bins = (int) db.size();
-    for (float x = 0; x <= getWidth(); x += 2)
+    for (float x = 0; x <= plotWidth(); x += 2)
     {
         const auto f0 = xf (x - 1), f1 = xf (x + 1), k0 = f0 / binHz, k1 = f1 / binHz;
         if (f0 >= fs / 2) break;
@@ -509,131 +878,129 @@ juce::Path EqDisplay::spectrumPath (const std::vector<float>& db, double binHz, 
 void EqDisplay::paint (juce::Graphics& g)
 {
     computeCurves();
-    const auto W = (float) getWidth(), H = (float) getHeight();
+    const auto& t = view.theme();
+    const auto W = (float) getWidth(), H = (float) getHeight(), PW = (float) plotWidth();
     const auto fs = processor.getSampleRateNow();
     const double R = view.dispRange;
     const auto bottom = H - viewBottom;
-    g.setColour (readoutBg);
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
-
-    // above Nyquist: nothing to hear
+    g.setGradientFill (juce::ColourGradient (t.bgTop, 0, 0, t.bgBottom, 0, H, false));
+    g.fillAll();
+    g.setColour (t.scaleBg);
+    g.fillRect (PW, 0.0f, W - PW, H);
     const auto xn = fx (fs / 2);
-    if (xn < W) { g.setColour (juce::Colours::black.withAlpha (0.45f)); g.fillRect (xn, 0.0f, W - xn, H); }
+    if (xn < PW) { g.setColour (t.nyquist); g.fillRect (xn, 0.0f, PW - xn, H); }
 
     // grid
     for (auto f : { 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000 })
     {
-        const auto major = f == 100 || f == 1000 || f == 10000;
-        g.setColour (readoutInk.withAlpha (major ? 0.16f : 0.07f));
-        g.fillRect (std::round (fx (f)), viewTop, 1.0f, bottom - viewTop);
+        g.setColour (f == 100 || f == 1000 || f == 10000 ? t.gridMajor : t.gridMinor);
+        g.fillRect (std::round (fx (f)), 0.0f, 1.0f, bottom);
     }
-    const auto step = R == 3 ? 1.0 : R == 6 ? 2.0 : R == 12 ? 3.0 : 6.0;
+    const auto step = R == 30 ? 5.0 : 1.0, labelStep = R == 12 ? 2.0 : R == 30 ? 5.0 : 1.0;
     for (auto d = -R; d <= R + 1e-9; d += step)
     {
-        g.setColour (readoutInk.withAlpha (d == 0 ? 0.32f : 0.08f));
-        g.fillRect (0.0f, std::round (gy (d)), W, 1.0f);
+        g.setColour (d == 0 ? t.zero : t.hline);
+        g.fillRect (0.0f, std::round (gy (d)), PW, 1.0f);
     }
-    g.setFont (monoFont (9.0f));
-    g.setColour (readoutInk.withAlpha (0.5f));
-    for (auto d = -R; d <= R + 1e-9; d += step)
-        if (d != -R && d != R)
-            g.drawText ((d > 0 ? "+" : "") + juce::String ((int) d), juce::Rectangle<float> (W - 44, gy (d) - 6, 40, 12), juce::Justification::centredRight, false);
+    // the scales: EQ dB, analyzer dB
+    g.setFont (monoFont (10.0f));
+    for (auto d = -R; d <= R + 1e-9; d += labelStep)
+    {
+        if (std::abs (d) == R) continue;
+        g.setColour (d == 0 ? t.eqLabel0 : t.eqLabel);
+        g.drawText ((d > 0 ? "+" : "") + juce::String ((int) d), juce::Rectangle<float> (PW, gy (d) - 6, 24, 12), juce::Justification::centredRight, false);
+    }
     if (view.anaMode != 0)
     {
-        g.setColour (screenTeal.withAlpha (0.4f));
-        for (int a = -30; a > -view.anaRange; a -= 30)
-            g.drawText (juce::String (a), juce::Rectangle<float> (4, ay (a) - 6, 40, 12), juce::Justification::centredLeft, false);
+        g.setColour (t.anaLabel);
+        for (int a = -10; a > -view.anaRange; a -= 10)
+            if (a % (view.anaRange > 60 ? 20 : 10) == 0)
+                g.drawText (juce::String (a), juce::Rectangle<float> (W - 34, ay (a) - 6, 30, 12), juce::Justification::centredRight, false);
     }
-    g.setColour (readoutInk.withAlpha (0.55f));
+    g.setColour (t.freqLabel);
     const std::pair<int, const char*> labels[] = { { 20, "20" }, { 50, "50" }, { 100, "100" }, { 200, "200" }, { 500, "500" }, { 1000, "1k" },
                                                    { 2000, "2k" }, { 5000, "5k" }, { 10000, "10k" }, { 20000, "20k" } };
     for (const auto& [f, text] : labels)
-        g.drawText (text, juce::Rectangle<float> (fx (f) - 20, H - 15, 40, 12), juce::Justification::centred, false);
+        g.drawText (text, juce::Rectangle<float> (fx (f) - 20, H - 16, 40, 12), juce::Justification::centred, false);
 
-    // spectrum
-    if (view.anaMode != 0)
     {
-        const auto binHz = fs / pre.getSize();
-        if (view.anaMode == 1 || view.anaMode == 3)
+        juce::Graphics::ScopedSaveState clip (g);
+        g.reduceClipRegion (juce::Rectangle<int> (0, 0, (int) PW, (int) H));
+        // spectrum
+        if (view.anaMode != 0)
         {
-            g.setColour (screenTeal.withAlpha (0.16f));
-            g.fillPath (spectrumPath (pre.getDb(), binHz, true));
+            const auto binHz = fs / pre.getSize();
+            if (view.anaMode == 1 || view.anaMode == 3) { g.setColour (t.preFill); g.fillPath (spectrumPath (pre.getDb(), binHz, true)); }
+            if (view.anaMode == 2 || view.anaMode == 3)
+            {
+                g.setColour (t.postFill); g.fillPath (spectrumPath (post.getDb(), binHz, true));
+                g.setColour (t.postLine); g.strokePath (spectrumPath (post.getDb(), binHz, false), juce::PathStrokeType (1.0f));
+            }
         }
-        if (view.anaMode == 2 || view.anaMode == 3)
+        // each band's own curve, filled to 0 dB
+        const auto y0 = gy (0);
+        auto clipY = [&] (double v) { return juce::jlimit (-2.0f, bottom + 2, gy (v)); };
+        for (int i = 0; i < eq::maxBands; ++i)
         {
-            g.setColour (readoutInk.withAlpha (0.14f));
-            g.fillPath (spectrumPath (post.getDb(), binHz, true));
-            g.setColour (readoutInk.withAlpha (0.45f));
-            g.strokePath (spectrumPath (post.getDb(), binHz, false), juce::PathStrokeType (1.0f));
+            const auto& db = curves[(size_t) i];
+            if (db.empty() || ! params.bands[(size_t) i].used) continue;
+            const auto on = params.bands[(size_t) i].on, sel = i == view.selected || i == hover;
+            juce::Path fill, line;
+            fill.startNewSubPath (0, y0);
+            for (int k = 0; k < curveCols; ++k)
+            {
+                const auto y = clipY (db[(size_t) k]);
+                fill.lineTo ((float) k, y);
+                if (k == 0) line.startNewSubPath ((float) k, y); else line.lineTo ((float) k, y);
+            }
+            fill.lineTo ((float) curveCols - 1, y0);
+            fill.closeSubPath();
+            const auto c = t.band (i);
+            g.setColour (c.withAlpha (on ? (sel ? 0.28f : 0.12f) : 0.05f));
+            g.fillPath (fill);
+            g.setColour (c.withAlpha (on ? (sel ? 0.95f : 0.45f) : 0.25f));
+            g.strokePath (line, juce::PathStrokeType (sel ? 1.4f : 1.0f));
         }
-    }
-
-    // each band's own curve, filled to 0 dB
-    const auto y0 = gy (0);
-    auto clip = [&] (double v) { return juce::jlimit (viewTop - 2, bottom + 2, gy (v)); };
-    for (int i = 0; i < eq::maxBands; ++i)
-    {
-        const auto& db = curves[(size_t) i];
-        if (db.empty() || ! params.bands[(size_t) i].used) continue;
-        const auto on = params.bands[(size_t) i].on, sel = i == view.selected;
-        juce::Path fill, line;
-        fill.startNewSubPath (0, y0);
-        for (int k = 0; k < curveCols; ++k)
-        {
-            const auto y = clip (db[(size_t) k]);
-            fill.lineTo ((float) k, y);
-            if (k == 0) line.startNewSubPath ((float) k, y); else line.lineTo ((float) k, y);
-        }
-        fill.lineTo ((float) curveCols - 1, y0);
-        fill.closeSubPath();
-        g.setColour (band (i).withAlpha (on ? (sel ? 0.24f : 0.11f) : 0.05f));
-        g.fillPath (fill);
-        if (sel)
-        {
-            g.setColour (band (i).withAlpha (on ? 0.9f : 0.4f));
-            g.strokePath (line, juce::PathStrokeType (1.2f));
-        }
-    }
-    // the sum, with a soft glow
-    {
+        // the sum, with a soft glow
         juce::Path sum;
         for (int k = 0; k < curveCols; ++k)
         {
-            const auto y = clip (total[(size_t) k]);
+            const auto y = clipY (total[(size_t) k]);
             if (k == 0) sum.startNewSubPath (0, y); else sum.lineTo ((float) k, y);
         }
-        g.setColour (panelRaised.withAlpha (0.12f));
+        g.setColour (t.curveGlow.withMultipliedAlpha (0.35f));
         g.strokePath (sum, juce::PathStrokeType (7.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        g.setColour (panelRaised);
+        g.setColour (t.curve);
         g.strokePath (sum, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    }
-    // dots
-    for (int i = 0; i < eq::maxBands; ++i)
-    {
-        const auto& b = params.bands[(size_t) i];
-        if (! b.used) continue;
-        const auto p = nodePos (i);
-        const auto c = band (i);
-        if (i == view.selected) { g.setColour (panelRaised); g.drawEllipse (juce::Rectangle<float> (22, 22).withCentre (p), 1.5f); }
-        else if (i == hover) { g.setColour (panelRaised.withAlpha (0.45f)); g.drawEllipse (juce::Rectangle<float> (21, 21).withCentre (p), 1.0f); }
-        const auto dot = juce::Rectangle<float> (15, 15).withCentre (p);
-        if (b.on) { g.setColour (c); g.fillEllipse (dot); }
-        else { g.setColour (readoutBg); g.fillEllipse (dot); g.setColour (c); g.drawEllipse (dot, 1.5f); }
-        g.setColour (b.on ? readoutBg : c);
-        g.setFont (monoFont (9.0f, true));
-        g.drawText (juce::String (i + 1), dot.expanded (4).translated (0, 0.5f), juce::Justification::centred, false);
-        if (b.place != eq::Place::stereo)
+        // dots, with badges for the stereo placement and solo
+        static const char* letters[] = { "", "L", "R", "M", "S" };
+        const auto badgeFont = monoFont (8.5f, true);
+        for (int i = 0; i < eq::maxBands; ++i)
         {
-            static const char* letters[] = { "", "L", "R", "M", "S" };
-            g.setColour (c);
-            g.setFont (monoFont (8.0f, true));
-            g.drawText (letters[(int) b.place], juce::Rectangle<float> (20, 10).withCentre (p.translated (0, 16)), juce::Justification::centred, false);
-        }
-        if (processor.soloBand == i)
-        {
-            g.setColour (mustard);
-            g.setFont (monoFont (8.0f, true));
-            g.drawText ("SOLO", juce::Rectangle<float> (40, 10).withCentre (p.translated (0, -17)), juce::Justification::centred, false);
+            const auto& b = params.bands[(size_t) i];
+            if (! b.used) continue;
+            const auto p = nodePos (i);
+            const auto c = t.band (i);
+            if (i == view.selected) { g.setColour (t.ring); g.drawEllipse (juce::Rectangle<float> (21, 21).withCentre (p), 1.5f); }
+            else if (i == hover) { g.setColour (t.ringHover); g.drawEllipse (juce::Rectangle<float> (20, 20).withCentre (p), 1.0f); }
+            const auto dot = juce::Rectangle<float> (13, 13).withCentre (p);
+            if (b.on) { g.setColour (c); g.fillEllipse (dot); g.setColour (t.dotEdge); g.drawEllipse (dot, 1.0f); }
+            else { g.setColour (t.offFill); g.fillEllipse (dot); g.setColour (c); g.drawEllipse (dot, 1.5f); }
+            juce::StringArray tags;
+            if (b.place != eq::Place::stereo) tags.add (letters[(int) b.place]);
+            if (processor.soloBand == i) tags.add ("SOLO");
+            auto bx = p.x + 10;
+            g.setFont (badgeFont);
+            for (const auto& tag : tags)
+            {
+                const auto tw = juce::GlyphArrangement::getStringWidth (badgeFont, tag) + 7;
+                const juce::Rectangle<float> box (bx, p.y - 6, tw, 12);
+                g.setColour ((tag == "SOLO" ? t.solo : c).withAlpha (b.on ? 0.85f : 0.4f));
+                g.fillRoundedRectangle (box, 3.0f);
+                g.setColour (t.badgeText);
+                g.drawText (tag, box, juce::Justification::centred, false);
+                bx += tw + 3;
+            }
         }
     }
     // the hovered or dragged band's numbers
@@ -642,35 +1009,28 @@ void EqDisplay::paint (juce::Graphics& g)
     {
         const auto& b = params.bands[(size_t) show];
         const auto p = nodePos (show);
-        auto text = juce::String (show + 1) + " " + eq::shapeLabels[(int) b.shape] + "  " + fmtHz (b.freq) + "  " + noteName (b.freq);
+        auto text = juce::String (show + 1) + "  " + eq::shapeLabels[(int) b.shape] + "  " + fmtHz (b.freq) + "  " + noteName (b.freq);
         if (eq::hasGain (b.shape)) text << "  " << EqKnob::format (EqKnob::Unit::dB, params.effectiveGain (show));
         if (eq::hasQ (b.shape)) text << "  Q " << EqKnob::format (EqKnob::Unit::q, b.q);
-        const auto font = monoFont (10.0f);
-        const auto tw = juce::GlyphArrangement::getStringWidth (font, text) + 12;
-        const auto tx = juce::jlimit (2.0f, W - tw - 2, p.x - tw / 2), ty = p.y > 40 ? p.y - 36 : p.y + 20;
-        const juce::Rectangle<float> box (tx, ty, tw, 17);
-        g.setColour (readoutBg.withAlpha (0.88f));
-        g.fillRoundedRectangle (box, 4.0f);
-        g.setColour (band (show));
-        g.drawRoundedRectangle (box, 4.0f, 1.0f);
-        g.setColour (panelRaised);
-        g.setFont (font);
-        g.drawText (text, box.withTrimmedLeft (6), juce::Justification::centredLeft, false);
+        const auto font = monoFont (10.5f);
+        const auto tw = juce::GlyphArrangement::getStringWidth (font, text) + 14;
+        const auto tx = juce::jlimit (2.0f, juce::jmax (2.0f, PW - tw - 2), p.x - tw / 2), ty = p.y > 44 ? p.y - 38 : p.y + 20;
+        const juce::Rectangle<float> box (tx, ty, tw, 19);
+        g.setColour (t.tipBg); g.fillRoundedRectangle (box, 4.0f);
+        g.setColour (t.band (show)); g.drawRoundedRectangle (box, 4.0f, 1.0f);
+        g.setColour (t.tipText); g.setFont (font);
+        g.drawText (text, box.withTrimmedLeft (7), juce::Justification::centredLeft, false);
     }
-    if (dragOver)
-    {
-        g.setColour (teal);
-        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1), 6.0f, 2.0f);
-    }
+    if (dragOver) { g.setColour (t.acc); g.drawRect (getLocalBounds().reduced (3), 2); }
 }
 
 void EqDisplay::setInfo (juce::Point<float>* p)
 {
     auto used = false;
     for (const auto& b : params.bands) used = used || b.used;
-    if (p == nullptr) { info = used ? "DRAG A DOT " + utf8 ("\xc2\xb7") + " SCROLL FOR Q" : "DOUBLE-CLICK TO ADD A BAND"; return; }
+    if (p == nullptr || p->x > plotWidth()) { info = used ? juce::String() : juce::String ("Double-click the display to add a band"); return; }
     const auto f = xf (p->x);
-    info = fmtHz (f).toUpperCase() + " " + utf8 ("\xc2\xb7") + " " + noteName (f) + " " + utf8 ("\xc2\xb7") + " " + EqKnob::format (EqKnob::Unit::dB, yg (p->y)).toUpperCase();
+    info = fmtHz (f) + " " + utf8 ("\xc2\xb7") + " " + noteName (f) + " " + utf8 ("\xc2\xb7") + " " + EqKnob::format (EqKnob::Unit::dB, yg (p->y));
 }
 
 void EqDisplay::mouseMove (const juce::MouseEvent& e)
@@ -731,6 +1091,7 @@ void EqDisplay::mouseDrag (const juce::MouseEvent& e)
     else if (eq::hasQ (shape))
         set ("Q", qFromNorm (yg (drag.fy) / (R * 0.5)));
     params = processor.readParams();
+    placePanel();
     repaint();
 }
 
@@ -744,6 +1105,7 @@ void EqDisplay::mouseUp (const juce::MouseEvent&)
 
 void EqDisplay::mouseDoubleClick (const juce::MouseEvent& e)
 {
+    if (e.position.x > plotWidth()) return;
     const auto i = hitBand (e.position);
     if (i >= 0)
     {
@@ -817,42 +1179,55 @@ void MeterView::push (const std::array<float, 4>& m)
 
 void MeterView::paint (juce::Graphics& g)
 {
+    const auto& t = view.theme();
     const auto W = (float) getWidth(), H = (float) getHeight();
-    g.setColour (readoutBg);
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
-    const auto top = viewTop, bottom = H - viewBottom, span = bottom - top;
+    g.fillAll (t.meterBg);
+    g.setColour (t.edge);
+    g.fillRect (0.0f, 0.0f, 1.0f, H);
+    const auto top = 22.0f, bottom = H - viewBottom, span = bottom - top;
     auto my = [&] (float lin)
     {
         const auto db = lin > 1e-6f ? 20 * std::log10 (lin) : -120.0f;
         return top + juce::jlimit (0.0f, 1.0f, (6 - db) / 66) * span;
     };
-    const float xs[] = { 4, 11, 24, 31 };
-    g.setColour (readoutInk.withAlpha (0.1f));
-    for (auto x : xs) g.fillRect (x, top, 6.0f, span);
-    for (size_t i = 0; i < 4; ++i)
+    const float xs[] = { 8, 16 };
+    for (int c = 0; c < 2; ++c)
     {
-        const auto y = my (shown[i]), yZero = my (1);
-        g.setColour (i < 2 ? screenTeal.withAlpha (0.75f) : readoutInk.withAlpha (0.85f));
-        g.fillRect (xs[i], y, 6.0f, bottom - y);
-        if (shown[i] > 1) { g.setColour (hot); g.fillRect (xs[i], y, 6.0f, juce::jmax (0.0f, yZero - y)); }
-        g.setColour (panelRaised);
-        g.fillRect (xs[i], my (hold[i]), 6.0f, 1.5f);
+        const auto lvl = shown[(size_t) (2 + c)];
+        const auto y = my (lvl), yZero = my (1);
+        g.setColour (t.meterTrack);
+        g.fillRect (xs[c], top, 6.0f, span);
+        juce::ColourGradient gr (t.meterLow, 0, bottom, t.meterTop, 0, top, false);
+        gr.addColour (0.75, t.meterMid);
+        g.setGradientFill (gr);
+        g.fillRect (xs[c], y, 6.0f, bottom - y);
+        if (lvl > 1) { g.setColour (juce::Colour (0xffe0452a)); g.fillRect (xs[c], y, 6.0f, juce::jmax (0.0f, yZero - y)); }
+        g.setColour (t.meterHold);
+        g.fillRect (xs[c], my (hold[(size_t) (2 + c)]), 6.0f, 1.5f);
     }
-    g.setColour (readoutInk.withAlpha (0.3f));
-    g.fillRect (2.0f, my (1), W - 4, 1.0f);
-    g.setFont (monoFont (8.0f));
-    g.setColour (readoutInk.withAlpha (0.55f));
-    g.drawText ("IN", juce::Rectangle<float> (0, H - 14, 20, 10), juce::Justification::centred, false);
-    g.drawText ("OUT", juce::Rectangle<float> (19, H - 14, 24, 10), juce::Justification::centred, false);
+    g.setColour (t.meterLine);
+    g.fillRect (4.0f, my (1), W - 8, 1.0f);
+    g.setColour (peak >= 1 ? juce::Colour (0xffe0452a) : t.meterText);
+    g.setFont (monoFont (9.0f, true));
+    g.drawText (peak > 1e-5f ? juce::String (20 * std::log10 (peak), 1) : utf8 ("\xe2\x80\x94"), juce::Rectangle<float> (0, 4, W, 14), juce::Justification::centred, false);
 }
 
 //==============================================================================
 BirdView::BirdView()
 {
-    drawable = juce::Drawable::createFromImageData (birdSvg, std::strlen (birdSvg));
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
     setTitle ("Kawasemi, the kingfisher");
     setTooltip (utf8 ("\xe7\xbf\xa1\xe7\xbf\xa0"));
+    setDark (false);
+}
+
+void BirdView::setDark (bool d)
+{
+    if (built && d == dark) return;
+    built = true; dark = d;
+    const auto svg = birdSvg (dark);
+    drawable = juce::Drawable::createFromImageData (svg.toRawUTF8(), svg.getNumBytesAsUTF8());
+    repaint();
 }
 
 void BirdView::paint (juce::Graphics& g)
@@ -876,38 +1251,9 @@ void BirdView::tick()
     setTransform (juce::AffineTransform::rotation ((float) juce::degreesToRadians (deg), cx, cy).translated (0.0f, (float) dy));
 }
 
-void PowerButton::paintButton (juce::Graphics& g, bool isMouseOver, bool)
-{
-    const auto r = getLocalBounds().toFloat().reduced (0.5f);
-    g.setColour (isMouseOver ? panelRaised.brighter (0.1f) : panelRaised);
-    g.fillRoundedRectangle (r, r.getHeight() / 2);
-    g.setColour (grooveDark);
-    g.drawRoundedRectangle (r, r.getHeight() / 2, 1.0f);
-    const auto led = juce::Rectangle<float> (10, 10).withCentre ({ r.getX() + 20, r.getCentreY() });
-    if (getToggleState())
-    {
-        g.setColour (coral.withAlpha (0.35f));
-        g.fillEllipse (led.expanded (3));
-    }
-    g.setColour (getToggleState() ? coral : grooveDark);
-    g.fillEllipse (led);
-    g.setColour (ink);
-    g.setFont (sansFont (11.0f, true).withExtraKerningFactor (0.08f));
-    g.drawText ("POWER", r.withTrimmedLeft (32).withTrimmedRight (12), juce::Justification::centredLeft, false);
-}
-
 //==============================================================================
 EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
-    : AudioProcessorEditor (p), audioProcessor (p), display (p, view),
-      shapes ([] { juce::StringArray s; for (auto* l : eq::shapeLabels) s.add (l); return s; }(), teal),
-      slopes ([] { juce::StringArray s; for (auto v : eq::slopes) s.add (juce::String (v)); return s; }(), teal),
-      places ([] { juce::StringArray s; for (auto* l : eq::placeLabels) s.add (l); return s; }(), teal),
-      freqKnob ("Freq", EqKnob::Unit::hz, teal), gainKnob ("Gain", EqKnob::Unit::dB, teal), qKnob ("Q", EqKnob::Unit::q, teal),
-      sources ({ "DEMO", "FILE", "INPUT", "NOISE" }, coral),
-      anaMode ({ "OFF", "PRE", "POST", "BOTH" }, lavender), anaRes ({ "LOW", "MED", "HIGH", "MAX" }, lavender),
-      anaSpeed ({ "V.FAST", "FAST", "MED", "SLOW", "V.SLOW" }, lavender), anaRange ({ "60", "90", "120" }, lavender),
-      dispRange ({ "3", "6", "12", "30" }, lavender),
-      scaleKnob ("Scale", EqKnob::Unit::pct, mustard), outGainKnob ("Gain", EqKnob::Unit::dB, mustard), panKnob ("Pan", EqKnob::Unit::pan, mustard)
+    : AudioProcessorEditor (p), audioProcessor (p), display (p, view), meter (view)
 {
     setLookAndFeel (&lnf);
     panel.painter = [this] (juce::Graphics& g) { paintPanel (g); };
@@ -918,210 +1264,111 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
     view.anaMode = ui.getProperty ("anaMode", 3); view.anaRes = ui.getProperty ("anaRes", 2);
     view.anaSpeed = ui.getProperty ("anaSpeed", 2); view.anaRange = ui.getProperty ("anaRange", 90);
     view.dispRange = ui.getProperty ("dispRange", 12); view.anaTilt = ui.getProperty ("anaTilt", true);
+    view.dark = ui.getProperty ("theme", "light").toString() == "dark";
     const auto params = audioProcessor.readParams();
     for (int i = 0; i < eq::maxBands && view.selected < 0; ++i) if (params.bands[(size_t) i].used) view.selected = i;
 
-    // ---- header
+    // ---- top bar
     brandSub = subtitleText();
     bird.onClick = [this, safe = juce::Component::SafePointer<EgretEqEditor> (this)]
     {
         brandSub = birdNameText();
         bird.dive();
-        panel.repaint (headerArea);
-        juce::Timer::callAfterDelay (2600, [safe] { if (safe != nullptr) { safe->brandSub = subtitleText(); safe->panel.repaint (safe->headerArea); } });
+        panel.repaint (topBar);
+        juce::Timer::callAfterDelay (2600, [safe] { if (safe != nullptr) { safe->brandSub = subtitleText(); safe->panel.repaint (safe->topBar); } });
     };
     panel.addAndMakeVisible (bird);
-    powerAttachment = std::make_unique<juce::ButtonParameterAttachment> (*audioProcessor.apvts.getParameter ("power"), power);
-    power.setTooltip ("Off passes the sound through untouched");
-    panel.addAndMakeVisible (power);
-
-    // ---- presets, undo, A/B
-    presetBox.onChange = [this]
+    for (auto* b : { &undoButton, &redoButton, &abButton, &copyButton, &presetPrev, &presetButton, &presetNext, &themeButton, &powerButton,
+                     &phaseButton, &anaButton, &sourceButton, &playButton, &autoButton })
     {
-        const auto id = presetBox.getSelectedId();
-        if (id <= 0 || id == 999) return;
-        if (id < 100) audioProcessor.loadFactoryPreset (id - 1);
-        else if (! audioProcessor.loadUserPreset (userPresets[id - 100])) presetStatus.setText ("Couldn't read that preset", juce::dontSendNotification);
-        selectionChanged();
-        refreshPresetBox();
-    };
-    auto step = [this] (int d)
-    {
-        const auto nf = (int) eq::factoryPresets().size();
-        const auto total = nf + userPresets.size();
-        const auto id = presetBox.getSelectedId();
-        auto index = id >= 100 && id != 999 ? nf + id - 100 : id >= 1 && id < 100 ? id - 1 : 0;
-        index = ((index + d) % total + total) % total;
-        if (index < nf) audioProcessor.loadFactoryPreset (index);
-        else audioProcessor.loadUserPreset (userPresets[index - nf]);
-        selectionChanged();
-        refreshPresetBox();
-    };
-    presetPrev.onClick = [step] { step (-1); };
-    presetNext.onClick = [step] { step (1); };
-    presetName.setTextToShowWhenEmpty ("Preset name", inkSoft);
-    presetName.setInputRestrictions (32);
-    presetName.setFont (sansFont (12.0f));
-    presetName.setIndents (8, 6);
-    presetName.onReturnKey = [this] { savePreset(); };
-    presetSave.onClick = [this] { savePreset(); };
-    presetDelete.onClick = [this] { deletePreset(); };
-    presetStatus.setFont (monoFont (10.5f));
-    presetStatus.setJustificationType (juce::Justification::centredRight);
-    undoButton.setTooltip ("Undo (Ctrl+Z)"); redoButton.setTooltip ("Redo (Ctrl+Shift+Z)");
+        b->view = &view;
+        b->setWantsKeyboardFocus (false);
+        panel.addAndMakeVisible (*b);
+    }
+    undoButton.icon = undoIcon(); undoButton.setTooltip ("Undo (Ctrl+Z)");
+    redoButton.icon = undoIcon(); redoButton.icon.applyTransform (juce::AffineTransform::scale (-1.0f, 1.0f, 8.0f, 8.0f)); redoButton.setTooltip ("Redo (Ctrl+Shift+Z)");
     undoButton.onClick = [this] { audioProcessor.undo.undo(); };
     redoButton.onClick = [this] { audioProcessor.undo.redo(); };
-    abA.onClick = [this] { audioProcessor.switchAb ('A'); selectionChanged(); };
-    abB.onClick = [this] { audioProcessor.switchAb ('B'); selectionChanged(); };
-    abCopy.setTooltip ("Copy this setting to the other one");
-    abCopy.onClick = [this]
+    abButton.getProperties().set ("dimPrefix", "A/B");
+    abButton.setTooltip ("Switch between settings A and B");
+    abButton.onClick = [this] { audioProcessor.switchAb (audioProcessor.getAbSlot() == 'A' ? 'B' : 'A'); selectionChanged(); };
+    copyButton.setTooltip ("Copy this setting to the other one");
+    copyButton.onClick = [this]
     {
         audioProcessor.copyAb();
-        const auto cur = juce::String::charToString (audioProcessor.getAbSlot());
-        const juce::String other = audioProcessor.getAbSlot() == 'A' ? "B" : "A";
-        presetStatus.setText ("Copied " + cur + " to " + other, juce::dontSendNotification);
+        display.info = juce::String ("Copied ") + juce::String::charToString (audioProcessor.getAbSlot()) + " to "
+                     + (audioProcessor.getAbSlot() == 'A' ? "B" : "A");
     };
-    for (auto* c : std::initializer_list<juce::Component*> { &presetBox, &presetPrev, &presetNext, &presetName, &presetSave, &presetDelete, &presetStatus,
-                                                             &undoButton, &redoButton, &abA, &abB, &abCopy })
-        panel.addAndMakeVisible (*c);
-    for (auto* b : { &presetPrev, &presetNext, &presetSave, &presetDelete, &undoButton, &redoButton, &abA, &abB, &abCopy })
+    auto stepPreset = [this] (int d)
     {
-        b->setColour (juce::TextButton::buttonOnColourId, sage);
-        b->setWantsKeyboardFocus (false);
-    }
+        const auto nf = (int) eq::factoryPresets().size();
+        const auto users = audioProcessor.getUserPresetNames();
+        const auto total = nf + users.size();
+        int index = d > 0 ? -1 : 0;
+        for (int i = 0; i < nf; ++i) if (audioProcessor.getPresetName() == eq::factoryPresets()[(size_t) i].name) index = i;
+        if (const auto u = users.indexOf (audioProcessor.getPresetName()); u >= 0) index = nf + u;
+        index = ((index + d) % total + total) % total;
+        if (index < nf) audioProcessor.loadFactoryPreset (index); else audioProcessor.loadUserPreset (users[index - nf]);
+        selectionChanged();
+    };
+    presetPrev.setButtonText (utf8 ("\xe2\x80\xb9")); presetPrev.setTooltip ("Previous preset");
+    presetNext.setButtonText (utf8 ("\xe2\x80\xba")); presetNext.setTooltip ("Next preset");
+    presetPrev.onClick = [stepPreset] { stepPreset (-1); };
+    presetNext.onClick = [stepPreset] { stepPreset (1); };
+    presetButton.setTooltip ("Presets");
+    presetButton.onClick = [this] { presetMenu(); };
+    themeButton.onClick = [this] { view.dark = ! view.dark; saveView(); applyTheme(); };
+    powerButton.led = true;
+    powerButton.setTooltip ("Off passes the sound through untouched");
+    powerButton.setClickingTogglesState (true);
+    powerAttachment = std::make_unique<juce::ButtonParameterAttachment> (*audioProcessor.apvts.getParameter ("power"), powerButton);
 
-    // ---- display and meters
+    // ---- screen
     display.onSelectionChanged = [this] { selectionChanged(); };
     display.onFile = [this] (const juce::File& f) { loadFile (f); };
+    display.panel->onStep = [this] (int d) { stepBand (d); };
     panel.addAndMakeVisible (display);
     panel.addAndMakeVisible (meter);
 
-    // ---- band
-    for (int i = 0; i < eq::maxBands; ++i)
+    // ---- bottom bar
+    phaseButton.setTooltip ("Processing mode");
+    phaseButton.onClick = [this]
     {
-        auto* b = bandChips.add (new juce::TextButton (juce::String (i + 1)));
-        b->setWantsKeyboardFocus (false);
-        b->onClick = [this, i]
-        {
-            view.selected = i;
-            if (audioProcessor.soloBand >= 0 && audioProcessor.soloBand != i) audioProcessor.soloBand = -1;
-            selectionChanged();
-        };
-        panel.addChildComponent (b);
-    }
-    addChip.setTooltip ("Add a band");
-    addChip.setWantsKeyboardFocus (false);
-    addChip.onClick = [this] { display.addBand (1000, 0, eq::Shape::bell); };
-    panel.addAndMakeVisible (addChip);
-    auto bandValue = [this] (const char* n) { return audioProcessor.apvts.getRawParameterValue (EgretEqProcessor::bandId (view.selected, n))->load(); };
-    shapes.setColumns (5);
-    shapes.isOn = [this, bandValue] (int i) { return view.selected >= 0 && juce::roundToInt (bandValue ("Shape")) == i; };
-    shapes.onPick = [this] (int i) { if (view.selected >= 0) { audioProcessor.undo.beginNewTransaction(); display.setBandParam (view.selected, "Shape", (float) i); } };
-    slopes.isOn = [this, bandValue] (int i) { return view.selected >= 0 && juce::roundToInt (bandValue ("Slope")) == i; };
-    slopes.onPick = [this] (int i) { if (view.selected >= 0) { audioProcessor.undo.beginNewTransaction(); display.setBandParam (view.selected, "Slope", (float) i); } };
-    places.isOn = [this, bandValue] (int i) { return view.selected >= 0 && juce::roundToInt (bandValue ("Place")) == i; };
-    places.onPick = [this] (int i) { if (view.selected >= 0) { audioProcessor.undo.beginNewTransaction(); display.setBandParam (view.selected, "Place", (float) i); } };
-    for (auto* b : shapes.buttons) b->setColour (juce::TextButton::buttonOnColourId, teal);
-    for (auto [l, t] : { std::pair { &shapeLabel, "SHAPE" }, std::pair { &slopeLabel, "SLOPE" }, std::pair { &placeLabel, "STEREO" } })
-    {
-        l->setText (t, juce::dontSendNotification);
-        l->setFont (monoFont (9.5f).withExtraKerningFactor (0.12f));
-        l->setBorderSize ({});
-        panel.addAndMakeVisible (*l);
-    }
-    bandEmpty.setText ("No band selected. Double-click the display to add one, or click a dot.", juce::dontSendNotification);
-    bandEmpty.setFont (sansFont (12.0f));
-    bandEmpty.setBorderSize ({});
-    panel.addChildComponent (bandEmpty);
-    for (auto* c : std::initializer_list<juce::Component*> { &shapes, &slopes, &places, &freqKnob, &gainKnob, &qKnob, &bypassButton, &soloButton, &deleteButton })
-        panel.addAndMakeVisible (*c);
-    bypassButton.setTooltip ("Switch the band off (or double-click its dot)");
-    soloButton.setTooltip ("Hear only what this band works on");
-    deleteButton.setTooltip ("Remove the band (Delete, or Alt-click its dot)");
-    bypassButton.setColour (juce::TextButton::buttonOnColourId, teal);
-    soloButton.setColour (juce::TextButton::buttonOnColourId, mustard);
-    for (auto* b : { &bypassButton, &soloButton, &deleteButton }) b->setWantsKeyboardFocus (false);
-    bypassButton.onClick = [this]
-    {
-        if (view.selected < 0) return;
-        audioProcessor.undo.beginNewTransaction();
-        display.setBandParam (view.selected, "On", audioProcessor.readParams().bands[(size_t) view.selected].on ? 0.0f : 1.0f);
+        juce::PopupMenu m;
+        m.addSectionHeader ("Processing mode");
+        m.addItem (1, "Zero Latency", true, true);
+        m.addItem (2, "Natural Phase (coming)", false, false);
+        m.addItem (3, "Linear Phase (coming)", false, false);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&phaseButton));
     };
-    soloButton.onClick = [this] { if (view.selected >= 0) audioProcessor.soloBand = audioProcessor.soloBand == view.selected ? -1 : view.selected; };
-    deleteButton.onClick = [this] { display.deleteBand (view.selected); };
-
-    // ---- source (the standalone app's), analyzer, output
-    const auto standalone = EgretEqProcessor::isStandalone();
-    sources.isOn = [this, standalone] (int i) { return standalone && (int) audioProcessor.getSource() == i; };
-    sources.onPick = [this] (int i)
-    {
-        audioProcessor.setSource ((EgretEqProcessor::Source) i);
-        if (i == (int) EgretEqProcessor::Source::file && audioProcessor.getFileName().isEmpty()) loadButton.triggerClick();
-    };
-    playButton.setTooltip ("Play or stop (Space)");
-    playButton.setColour (juce::TextButton::buttonOnColourId, coral);
-    playButton.onClick = [this] { audioProcessor.setPlaying (! audioProcessor.isPlaying()); };
-    loadButton.onClick = [this]
-    {
-        chooser = std::make_unique<juce::FileChooser> ("Play a sound through the EQ", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
-        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                              [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) loadFile (fc.getResult()); });
-    };
-    sourceStatus.setFont (monoFont (10.5f));
-    sourceStatus.setColour (juce::Label::textColourId, ink);
-    sourceStatus.setBorderSize ({});
-    for (auto* c : std::initializer_list<juce::Component*> { &sources, &playButton, &loadButton, &sourceStatus }) panel.addAndMakeVisible (*c);
-    if (! standalone)
-    {
-        sources.setEnabled (false); playButton.setVisible (false); loadButton.setVisible (false);
-        sourceStatus.setText ("In a DAW the EQ works on its track", juce::dontSendNotification);
-    }
-
-    auto uiRow = [this] (ChipRow& row, int& field, std::vector<int> values)
-    {
-        row.isOn = [&field, values] (int i) { return field == values[(size_t) i]; };
-        row.onPick = [this, &field, values] (int i) { field = values[(size_t) i]; saveView(); };
-        panel.addAndMakeVisible (row);
-    };
-    uiRow (anaMode, view.anaMode, { 0, 1, 2, 3 });
-    uiRow (anaRes, view.anaRes, { 0, 1, 2, 3 });
-    uiRow (anaSpeed, view.anaSpeed, { 0, 1, 2, 3, 4 });
-    uiRow (anaRange, view.anaRange, { 60, 90, 120 });
-    uiRow (dispRange, view.dispRange, { 3, 6, 12, 30 });
-    const char* rowNames[] = { "SHOW", "RES", "SPEED", "RANGE", "EQ" };
-    for (int i = 0; i < 5; ++i)
-    {
-        anaLabels[i].setText (i == 4 ? utf8 ("EQ \xc2\xb1") : juce::String (rowNames[i]), juce::dontSendNotification);
-        anaLabels[i].setFont (monoFont (9.5f).withExtraKerningFactor (0.12f));
-        anaLabels[i].setBorderSize ({});
-        panel.addAndMakeVisible (anaLabels[i]);
-    }
-    tiltButton.setTooltip ("Tilt the spectrum 4.5 dB per octave, so music looks flat");
-    freezeButton.setTooltip ("Hold the spectrum still");
-    for (auto* b : { &tiltButton, &freezeButton }) { b->setColour (juce::TextButton::buttonOnColourId, lavender); b->setWantsKeyboardFocus (false); panel.addAndMakeVisible (*b); }
-    tiltButton.onClick = [this] { view.anaTilt = ! view.anaTilt; saveView(); };
-    freezeButton.onClick = [this] { view.freeze = ! view.freeze; };
-
-    scaleKnob.setParameter (audioProcessor.apvts.getParameter ("gainScale"));
-    outGainKnob.setParameter (audioProcessor.apvts.getParameter ("outGain"));
-    panKnob.setParameter (audioProcessor.apvts.getParameter ("outPan"));
+    anaButton.getProperties().set ("dimPrefix", "Analyzer:");
+    anaButton.onClick = [this] { analyzerMenu(); };
     autoButton.setTooltip ("Keep the loudness the same while you EQ");
-    autoButton.setColour (juce::TextButton::buttonOnColourId, mustard);
-    autoButton.setWantsKeyboardFocus (false);
     autoButton.onClick = [this]
     {
         audioProcessor.undo.beginNewTransaction();
         auto* ag = audioProcessor.apvts.getParameter ("autoGain");
         ag->beginChangeGesture(); ag->setValueNotifyingHost (ag->getValue() > 0.5f ? 0.0f : 1.0f); ag->endChangeGesture();
     };
-    autoReadout.setFont (monoFont (10.5f));
-    autoReadout.setColour (juce::Label::textColourId, ink);
-    for (auto* c : std::initializer_list<juce::Component*> { &scaleKnob, &outGainKnob, &panKnob, &autoButton, &autoReadout }) panel.addAndMakeVisible (*c);
+    scaleValue = std::make_unique<DragValue> ("Scale", EqKnob::Unit::pct, *audioProcessor.apvts.getParameter ("gainScale"), view);
+    gainValue = std::make_unique<DragValue> ("Out", EqKnob::Unit::dB, *audioProcessor.apvts.getParameter ("outGain"), view);
+    panValue = std::make_unique<DragValue> ("Pan", EqKnob::Unit::pan, *audioProcessor.apvts.getParameter ("outPan"), view);
+    scaleValue->setTooltip ("Gain scale: drag, scroll, double-click to reset, click to type");
+    gainValue->setTooltip ("Output gain: drag, scroll, double-click to reset, click to type");
+    panValue->setTooltip ("Output pan: drag, scroll, double-click to reset, click to type");
+    for (auto* d : { scaleValue.get(), gainValue.get(), panValue.get() }) panel.addAndMakeVisible (*d);
+    // The standalone app's sources (the web page has them beside the panel).
+    const auto standalone = EgretEqProcessor::isStandalone();
+    sourceButton.setVisible (standalone);
+    playButton.setVisible (standalone);
+    sourceButton.getProperties().set ("dimPrefix", "Source:");
+    sourceButton.onClick = [this] { sourceMenu(); };
+    playButton.setTooltip ("Play or stop (Space)");
+    playButton.onClick = [this] { audioProcessor.setPlaying (! audioProcessor.isPlaying()); };
 
-    userPresets = audioProcessor.getUserPresetNames();
+    applyTheme();
     layoutPanel();
     selectionChanged();
-    refreshPresetBox();
 
     addMouseListener (this, true);   // every click starts a new undo step
     setWantsKeyboardFocus (true);
@@ -1173,113 +1420,185 @@ void EgretEqEditor::saveView()
     ui.setProperty ("anaMode", view.anaMode, nullptr); ui.setProperty ("anaRes", view.anaRes, nullptr);
     ui.setProperty ("anaSpeed", view.anaSpeed, nullptr); ui.setProperty ("anaRange", view.anaRange, nullptr);
     ui.setProperty ("dispRange", view.dispRange, nullptr); ui.setProperty ("anaTilt", view.anaTilt, nullptr);
-    refreshAll();
+    ui.setProperty ("theme", view.dark ? "dark" : "light", nullptr);
+}
+
+void EgretEqEditor::applyTheme()
+{
+    lnf.setTheme (view.theme());
+    themeButton.icon = view.dark ? sunIcon() : moonIcon();
+    themeButton.setTooltip (view.dark ? "Light theme" : "Dark theme");
+    bird.setDark (view.dark);
+    sendLookAndFeelChange();
+    panel.repaint();
 }
 
 void EgretEqEditor::loadFile (const juce::File& f)
 {
     if (! EgretEqProcessor::isStandalone()) return;
     if (! audioProcessor.loadFile (f))
-        sourceStatus.setText ("Couldn" + utf8 ("\xe2\x80\x99") + "t read " + f.getFileName(), juce::dontSendNotification);
+        display.info = "Couldn" + utf8 ("\xe2\x80\x99") + "t read " + f.getFileName();
 }
 
-//==============================================================================
 void EgretEqEditor::selectionChanged()
 {
     const auto p = audioProcessor.readParams();
     if (view.selected >= 0 && ! p.bands[(size_t) view.selected].used) view.selected = -1;
-    const auto has = view.selected >= 0;
-    if (has)
-    {
-        freqKnob.setParameter (audioProcessor.apvts.getParameter (EgretEqProcessor::bandId (view.selected, "Freq")));
-        gainKnob.setParameter (audioProcessor.apvts.getParameter (EgretEqProcessor::bandId (view.selected, "Gain")));
-        qKnob.setParameter (audioProcessor.apvts.getParameter (EgretEqProcessor::bandId (view.selected, "Q")));
-    }
-    shownParams = {};   // force refreshAll to redo everything
-    shownSelected = -2;
+    saveView();
+    display.tick (p);
     refreshAll();
 }
 
-void EgretEqEditor::layoutStrip()
+void EgretEqEditor::stepBand (int d)
 {
     const auto p = audioProcessor.readParams();
-    const auto titleW = juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (14.0f, true).withExtraKerningFactor (0.12f), bandTitle)) + 14;
-    auto x = bandArea.getX() + 12 + titleW;
-    const auto y = bandArea.getY() + 8;
-    for (int i = 0; i < eq::maxBands; ++i)
+    std::vector<int> used;
+    for (int i = 0; i < eq::maxBands; ++i) if (p.bands[(size_t) i].used) used.push_back (i);
+    if (used.empty()) return;
+    const auto n = (int) used.size();
+    auto k = (int) (std::find (used.begin(), used.end(), view.selected) - used.begin());
+    k = k >= n ? 0 : ((k + d) % n + n) % n;
+    view.selected = used[(size_t) k];
+    if (audioProcessor.soloBand >= 0 && audioProcessor.soloBand != view.selected) audioProcessor.soloBand = -1;
+    selectionChanged();
+}
+
+void EgretEqEditor::presetMenu()
+{
+    const auto& factory = eq::factoryPresets();
+    const auto users = audioProcessor.getUserPresetNames();
+    const auto name = audioProcessor.getPresetName();
+    const auto edited = audioProcessor.isPresetEdited();
+    juce::PopupMenu m;
+    m.addSectionHeader ("Factory");
+    for (int i = 0; i < (int) factory.size(); ++i) m.addItem (i + 1, factory[(size_t) i].name, true, ! edited && name == factory[(size_t) i].name);
+    if (! users.isEmpty())
     {
-        auto* b = bandChips[i];
-        const auto used = p.bands[(size_t) i].used;
-        b->setVisible (used);
-        if (! used) continue;
-        b->setBounds (x, y, i < 9 ? 34 : 40, 22);
-        x += b->getWidth() + 4;
-        b->setToggleState (i == view.selected, juce::dontSendNotification);
-        b->setColour (juce::TextButton::buttonOnColourId, readoutBg);
-        b->setColour (juce::TextButton::textColourOnId, band (i));
-        b->setColour (juce::TextButton::textColourOffId, p.bands[(size_t) i].on ? bandInk (i) : bandInk (i).withAlpha (0.5f));
+        m.addSectionHeader ("Your presets");
+        for (int i = 0; i < users.size(); ++i) m.addItem (100 + i, users[i], true, ! edited && name == users[i]);
     }
-    addChip.setBounds (x, y, 28, 22);
+    m.addSeparator();
+    m.addItem (900, "Save as...");
+    const auto isUser = users.contains (name, true);
+    if (isUser) m.addItem (901, "Delete " + quoted (name));
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetButton), [this, users, name, isUser] (int r)
+    {
+        if (r <= 0) return;
+        if (r < 100) audioProcessor.loadFactoryPreset (r - 1);
+        else if (r < 900) audioProcessor.loadUserPreset (users[r - 100]);
+        else if (r == 900)
+        {
+            auto* w = new juce::AlertWindow ("Save preset", "Name for your preset:", juce::MessageBoxIconType::NoIcon, this);
+            w->addTextEditor ("name", isUser ? name : juce::String(), {});
+            w->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+            w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+            w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w] (int result)
+            {
+                auto n = w->getTextEditorContents ("name").trim();
+                if (result != 1) return;
+                if (n.isEmpty()) n = "My preset " + juce::String (audioProcessor.getUserPresetNames().size() + 1);
+                for (const auto& f : eq::factoryPresets()) if (n == f.name) n << " (mine)";
+                display.info = audioProcessor.saveUserPreset (n) ? "Saved " + quoted (n) : juce::String ("Couldn't save the preset");
+                refreshAll();
+            }), true);
+        }
+        else if (r == 901)
+        {
+            juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Delete preset",
+                "Delete your preset " + quoted (name) + "?", "Delete", "Cancel", this,
+                juce::ModalCallbackFunction::create ([this, name] (int ok)
+                {
+                    if (ok == 0) return;
+                    if (audioProcessor.deleteUserPreset (name)) audioProcessor.loadFactoryPreset (0);
+                    selectionChanged();
+                }));
+        }
+        selectionChanged();
+    });
+}
+
+void EgretEqEditor::analyzerMenu()
+{
+    const auto pre = view.anaMode == 1 || view.anaMode == 3, post = view.anaMode == 2 || view.anaMode == 3;
+    juce::PopupMenu m;
+    m.addSectionHeader ("Show");
+    m.addItem (1, "Pre (input)", true, pre);
+    m.addItem (2, "Post (output)", true, post);
+    m.addSeparator();
+    m.addSectionHeader ("Resolution");
+    const char* res[] = { "Low", "Medium", "High", "Maximum" };
+    for (int i = 0; i < 4; ++i) m.addItem (10 + i, res[i], true, view.anaRes == i);
+    m.addSectionHeader ("Speed");
+    const char* speeds[] = { "Very fast", "Fast", "Medium", "Slow", "Very slow" };
+    for (int i = 0; i < 5; ++i) m.addItem (20 + i, speeds[i], true, view.anaSpeed == i);
+    m.addSectionHeader ("Range");
+    static const int ranges[] = { 60, 90, 120 };
+    for (int i = 0; i < 3; ++i) m.addItem (30 + i, juce::String (ranges[i]) + " dB", true, view.anaRange == ranges[i]);
+    m.addSeparator();
+    m.addItem (40, "Tilt 4.5 dB/oct", true, view.anaTilt);
+    m.addItem (41, "Freeze", true, view.freeze);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&anaButton), [this, pre, post] (int r)
+    {
+        if (r <= 0) return;
+        auto p = pre, q = post;
+        if (r == 1) p = ! p;
+        if (r == 2) q = ! q;
+        if (r <= 2) view.anaMode = p && q ? 3 : p ? 1 : q ? 2 : 0;
+        if (r >= 10 && r < 14) view.anaRes = r - 10;
+        if (r >= 20 && r < 25) view.anaSpeed = r - 20;
+        if (r >= 30 && r < 33) view.anaRange = ranges[r - 30];
+        if (r == 40) view.anaTilt = ! view.anaTilt;
+        if (r == 41) view.freeze = ! view.freeze;
+        saveView();
+        refreshAll();
+    });
+}
+
+void EgretEqEditor::sourceMenu()
+{
+    juce::PopupMenu m;
+    const char* names[] = { "Demo loop", "File", "Audio input", "Pink noise" };
+    for (int i = 0; i < 4; ++i) m.addItem (i + 1, names[i], true, (int) audioProcessor.getSource() == i);
+    m.addSeparator();
+    m.addItem (10, "Load a file...");
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&sourceButton), [this] (int r)
+    {
+        if (r >= 1 && r <= 4)
+        {
+            audioProcessor.setSource ((EgretEqProcessor::Source) (r - 1));
+            if (r != 2 || audioProcessor.getFileName().isNotEmpty()) { audioProcessor.setPlaying (true); return; }
+        }
+        if (r == 10 || r == 2)
+        {
+            chooser = std::make_unique<juce::FileChooser> ("Play a sound through the EQ", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                  [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) loadFile (fc.getResult()); });
+        }
+    });
 }
 
 void EgretEqEditor::refreshAll()
 {
     const auto p = audioProcessor.readParams();
-    const auto solo = audioProcessor.soloBand.load();
-    if (view.selected >= 0 && ! p.bands[(size_t) view.selected].used) { view.selected = -1; }
-    const auto has = view.selected >= 0;
-    if (p != shownParams || view.selected != shownSelected || solo != shownSolo)
-    {
-        const auto selChanged = view.selected != shownSelected;
-        shownParams = p; shownSelected = view.selected; shownSolo = solo;
-        bandTitle = has ? "BAND " + juce::String (view.selected + 1) : "BAND";
-        bandAccent = has ? bandInk (view.selected) : teal;
-        bandEmpty.setVisible (! has);
-        for (auto* c : std::initializer_list<juce::Component*> { &shapes, &slopes, &places, &freqKnob, &gainKnob, &qKnob, &bypassButton, &soloButton, &deleteButton, &shapeLabel, &slopeLabel, &placeLabel })
-            c->setVisible (has);
-        if (has)
-        {
-            const auto& b = p.bands[(size_t) view.selected];
-            slopes.setAlpha (eq::hasSlope (b.shape) ? 1.0f : 0.42f); slopes.setEnabled (eq::hasSlope (b.shape));
-            slopeLabel.setAlpha (eq::hasSlope (b.shape) ? 1.0f : 0.42f);
-            gainKnob.setAlpha (eq::hasGain (b.shape) ? 1.0f : 0.42f); gainKnob.setEnabled (eq::hasGain (b.shape));
-            qKnob.setAlpha (eq::hasQ (b.shape) ? 1.0f : 0.42f); qKnob.setEnabled (eq::hasQ (b.shape));
-            bypassButton.setToggleState (! b.on, juce::dontSendNotification);
-            soloButton.setToggleState (solo == view.selected, juce::dontSendNotification);
-            soloButton.setEnabled (eq::canSolo (b.shape));
-            if (selChanged)
-            {
-                freqKnob.setParameter (audioProcessor.apvts.getParameter (EgretEqProcessor::bandId (view.selected, "Freq")));
-                gainKnob.setParameter (audioProcessor.apvts.getParameter (EgretEqProcessor::bandId (view.selected, "Gain")));
-                qKnob.setParameter (audioProcessor.apvts.getParameter (EgretEqProcessor::bandId (view.selected, "Q")));
-            }
-        }
-        layoutStrip();
-        panel.repaint (bandArea);
-    }
-    for (auto* row : { &shapes, &slopes, &places, &sources, &anaMode, &anaRes, &anaSpeed, &anaRange, &dispRange }) row->refresh();
-    tiltButton.setToggleState (view.anaTilt, juce::dontSendNotification);
-    freezeButton.setToggleState (view.freeze, juce::dontSendNotification);
-    autoButton.setToggleState (p.autoGain, juce::dontSendNotification);
-    autoReadout.setText (p.autoGain ? EqKnob::format (EqKnob::Unit::dB, eq::autoGainDb (p, audioProcessor.getSampleRateNow())) : juce::String(), juce::dontSendNotification);
     undoButton.setEnabled (audioProcessor.undo.canUndo());
     redoButton.setEnabled (audioProcessor.undo.canRedo());
-    abA.setToggleState (audioProcessor.getAbSlot() == 'A', juce::dontSendNotification);
-    abB.setToggleState (audioProcessor.getAbSlot() == 'B', juce::dontSendNotification);
-    abCopy.setButtonText (audioProcessor.getAbSlot() == 'A' ? utf8 ("A\xe2\x86\x92" "B") : utf8 ("B\xe2\x86\x92" "A"));
+    const auto slot = juce::String::charToString (audioProcessor.getAbSlot());
+    abButton.setButtonText (slot);
+    copyButton.setButtonText ("Copy " + slot + utf8 ("\xe2\x86\x92") + (audioProcessor.getAbSlot() == 'A' ? "B" : "A"));
+    presetButton.setButtonText (audioProcessor.getPresetName() + (audioProcessor.isPresetEdited() ? " (edited)" : ""));
+    static const char* modes[] = { "Off", "Pre", "Post", "Pre+Post" };
+    anaButton.setButtonText (juce::String (modes[juce::jlimit (0, 3, view.anaMode)]) + (view.freeze ? " (frozen)" : ""));
+    autoButton.setToggleState (p.autoGain, juce::dontSendNotification);
+    autoButton.setButtonText (p.autoGain ? "Auto Gain " + EqKnob::format (EqKnob::Unit::dB, eq::autoGainDb (p, audioProcessor.getSampleRateNow())) : juce::String ("Auto Gain"));
     if (EgretEqProcessor::isStandalone())
     {
-        const auto playing = audioProcessor.isPlaying();
-        playButton.setToggleState (playing, juce::dontSendNotification);
-        playButton.setButtonText (playing ? "STOP" : "PLAY");
-        const auto src = audioProcessor.getSource();
-        const auto status = src == EgretEqProcessor::Source::demo ? juce::String ("Demo loop, 112 BPM")
-                          : src == EgretEqProcessor::Source::noise ? juce::String ("Pink noise")
-                          : src == EgretEqProcessor::Source::file ? (audioProcessor.getFileName().isEmpty() ? juce::String ("No file yet") : audioProcessor.getFileName())
-                          : juce::String ("Microphone or line in");
-        if (! sourceStatus.getText().startsWith ("Couldn") || src != EgretEqProcessor::Source::file)
-            sourceStatus.setText (status, juce::dontSendNotification);
+        static const char* srcNames[] = { "Demo", "File", "Input", "Noise" };
+        const auto src = (int) audioProcessor.getSource();
+        sourceButton.setButtonText (src == 1 && audioProcessor.getFileName().isNotEmpty() ? audioProcessor.getFileName() : juce::String (srcNames[src]));
+        playButton.setButtonText (audioProcessor.isPlaying() ? "Stop" : "Play");
+        playButton.setToggleState (audioProcessor.isPlaying(), juce::dontSendNotification);
     }
+    layoutPanel();
 }
 
 void EgretEqEditor::timerCallback()
@@ -1289,266 +1608,94 @@ void EgretEqEditor::timerCallback()
     meter.push (audioProcessor.takeMeters());
     bird.tick();
     refreshAll();
-
-    int bands = 0;
-    for (const auto& b : p.bands) bands += b.used ? 1 : 0;
-    const auto pk = meter.getPeakHold();
-    const auto peakText = pk > 1e-5f ? juce::String (20 * std::log10 (pk), 1) : utf8 ("\xe2\x80\x94");
-    if (bands != shownBands || peakText != shownPeak)
-    {
-        shownBands = bands; shownPeak = peakText;
-        panel.repaint (headerArea);
-    }
+    for (auto* d : { scaleValue.get(), gainValue.get(), panValue.get() }) d->repaint();
     if (display.info != shownInfo)
     {
         shownInfo = display.info;
-        panel.repaint (screenBay.withTrimmedTop (screenBay.getHeight() - 22));
+        panel.repaint (bottomBar);
     }
-    const auto sig = audioProcessor.getPresetName() + (audioProcessor.isPresetEdited() ? "*" : "") + juce::String (userPresets.size());
-    if (sig != shownPresetSig)
-        refreshPresetBox();
-}
-
-//==============================================================================
-void EgretEqEditor::refreshPresetBox()
-{
-    const auto name = audioProcessor.getPresetName();
-    const auto edited = audioProcessor.isPresetEdited();
-    const auto& factory = eq::factoryPresets();
-    presetBox.clear (juce::dontSendNotification);
-    presetBox.addSectionHeading ("Factory");
-    for (int i = 0; i < (int) factory.size(); ++i)
-        presetBox.addItem (factory[(size_t) i].name, i + 1);
-    if (! userPresets.isEmpty())
-    {
-        presetBox.addSectionHeading ("Your presets");
-        for (int i = 0; i < userPresets.size(); ++i)
-            presetBox.addItem (userPresets[i], 100 + i);
-    }
-    int selected = 999;
-    if (! edited)
-    {
-        for (int i = 0; i < (int) factory.size(); ++i)
-            if (name == factory[(size_t) i].name) selected = i + 1;
-        if (const auto i = userPresets.indexOf (name, true); i >= 0) selected = 100 + i;
-    }
-    if (selected == 999)
-        presetBox.addItem (name + " (edited)", 999);
-    presetBox.setSelectedId (selected, juce::dontSendNotification);
-    const auto isUser = userPresets.contains (name, true);
-    presetDelete.setEnabled (isUser);
-    if (! isUser) { deleteArmed = false; presetDelete.setButtonText ("DELETE"); }
-    shownPresetSig = name + (edited ? "*" : "") + juce::String (userPresets.size());
-}
-
-void EgretEqEditor::savePreset()
-{
-    const auto current = audioProcessor.getPresetName();
-    auto name = presetName.getText().trim();
-    if (name.isEmpty())
-        name = userPresets.contains (current, true) ? current : "My preset " + juce::String (userPresets.size() + 1);
-    for (const auto& f : eq::factoryPresets())
-        if (name == f.name) name << " (mine)";
-    const auto existed = userPresets.contains (name, true);
-    if (! audioProcessor.saveUserPreset (name))
-    {
-        presetStatus.setText ("Couldn't save " + quoted (name), juce::dontSendNotification);
-        return;
-    }
-    presetName.clear();
-    userPresets = audioProcessor.getUserPresetNames();
-    refreshPresetBox();
-    presetStatus.setText ((existed ? "Updated " : "Saved ") + quoted (name), juce::dontSendNotification);
-}
-
-void EgretEqEditor::deletePreset()
-{
-    const auto name = audioProcessor.getPresetName();
-    if (! userPresets.contains (name, true))
-        return;
-    if (! deleteArmed)   // two-step delete: the first click arms the button
-    {
-        deleteArmed = true;
-        presetDelete.setButtonText ("SURE?");
-        presetStatus.setText ("Click again to delete " + quoted (name), juce::dontSendNotification);
-        return;
-    }
-    const auto deleted = audioProcessor.deleteUserPreset (name);
-    userPresets = audioProcessor.getUserPresetNames();
-    if (deleted)
-        audioProcessor.loadFactoryPreset (0);
-    selectionChanged();
-    refreshPresetBox();
-    presetStatus.setText ((deleted ? "Deleted " : "Couldn't delete ") + quoted (name), juce::dontSendNotification);
 }
 
 //==============================================================================
 void EgretEqEditor::paintPanel (juce::Graphics& g)
 {
-    g.fillAll (EgretColours::panel);
+    const auto& t = view.theme();
+    g.fillAll (t.scr);
+    // the bars
+    g.setGradientFill (juce::ColourGradient (t.barHi, 0, 0, t.bar, 0, (float) topH, false));
+    g.fillRect (topBar);
+    g.setColour (t.edge);
+    g.fillRect (0, topH - 1, panelWidth, 1);
+    g.setGradientFill (juce::ColourGradient (t.bar, 0, (float) bottomBar.getY(), t.barLo, 0, (float) panelHeight, false));
+    g.fillRect (bottomBar);
+    g.setColour (t.edge);
+    g.fillRect (0, bottomBar.getY(), panelWidth, 1);
 
-    // brand: EGRET EQ, the subtitle and the kingfisher
-    auto brand = headerArea.toFloat();
-    auto titleRow = brand.removeFromTop (32.0f);
-    const auto brandFont = sansFont (30.0f, true);
-    const std::pair<juce::String, juce::Colour> words[] = { { "EGRET", ink }, { "EQ", teal } };
-    for (const auto& [text, colour] : words)
-    {
-        g.setFont (brandFont);
-        g.setColour (colour);
-        const auto w = juce::GlyphArrangement::getStringWidth (brandFont, text);
-        g.drawText (text, titleRow.removeFromLeft (w + 8.0f), juce::Justification::bottomLeft, false);
-    }
-    g.setColour (inkSoft);
-    g.setFont (monoFont (10.0f).withExtraKerningFactor (0.14f));
-    g.drawText (brandSub, brand.removeFromTop (18.0f), juce::Justification::centredLeft, false);
+    // the logo: EGRET EQ and the subtitle
+    auto x = 10.0f;
+    const auto logoFont = sansFont (21.0f, true);
+    g.setFont (logoFont);
+    g.setColour (t.fg);
+    g.drawText ("EGRET", juce::Rectangle<float> (x, 0, 90, (float) topH), juce::Justification::centredLeft, false);
+    x += juce::GlyphArrangement::getStringWidth (logoFont, "EGRET ");
+    g.setColour (t.acc);
+    g.drawText ("EQ", juce::Rectangle<float> (x, 0, 40, (float) topH), juce::Justification::centredLeft, false);
+    x += juce::GlyphArrangement::getStringWidth (logoFont, "EQ") + 8;
+    g.setColour (t.fgSoft);
+    g.setFont (monoFont (9.0f).withExtraKerningFactor (0.14f));
+    g.drawText (brandSub, juce::Rectangle<float> (x, 2, 170, (float) topH), juce::Justification::centredLeft, false);
 
-    auto readout = [&g] (juce::Rectangle<float> w, const juce::String& label, const juce::String& value, bool isHot)
-    {
-        g.setColour (readoutBg);
-        g.fillRoundedRectangle (w, 6.0f);
-        w.reduce (10.0f, 0.0f);
-        g.setColour (readoutInk.withAlpha (0.55f));
-        g.setFont (monoFont (9.0f).withExtraKerningFactor (0.1f));
-        g.drawText (label, w.removeFromLeft (40.0f), juce::Justification::centredLeft, false);
-        g.setColour (isHot ? hot : readoutInk);
-        g.setFont (monoFont (15.0f));
-        g.drawText (value, w, juce::Justification::centredLeft, false);
-    };
-    auto readouts = headerArea.toFloat().withTrimmedRight (124.0f);
-    readout (readouts.removeFromRight (100.0f).withSizeKeepingCentre (100.0f, 28.0f), "PEAK", shownPeak, meter.getPeakHold() >= 1);
-    readouts.removeFromRight (10.0f);
-    readout (readouts.removeFromRight (84.0f).withSizeKeepingCentre (84.0f, 28.0f), "BANDS", juce::String (juce::jmax (0, shownBands)), false);
-
-    // modules
-    auto drawModule = [&g] (const juce::String& title, juce::Colour accent, juce::Rectangle<int> r)
-    {
-        const auto b = r.toFloat();
-        g.setColour (accent);
-        g.fillRoundedRectangle (b, 12.0f);
-        g.setColour (panelRaised);
-        g.fillRoundedRectangle (b.withTrimmedTop (3.0f), 12.0f);
-        g.setColour (grooveDark.withAlpha (0.6f));
-        g.drawRoundedRectangle (b.withTrimmedTop (3.0f), 12.0f, 1.0f);
-        g.setColour (accent);
-        g.setFont (sansFont (14.0f, true).withExtraKerningFactor (0.12f));
-        g.drawText (title.toUpperCase(), r.reduced (12, 0).withTrimmedTop (8).withHeight (22), juce::Justification::centredLeft);
-    };
-    for (const auto& m : modules)
-        drawModule (m.title, m.accent, m.bounds);
-    drawModule (bandTitle, bandAccent, bandArea);
-
-    // the screen bay and its caption
-    g.setColour (grooveDark);
-    g.fillRoundedRectangle (screenBay.toFloat(), 10.0f);
-    g.setColour (ink.withAlpha (0.75f));
-    g.setFont (monoFont (9.0f).withExtraKerningFactor (0.15f));
-    const auto caption = screenBay.reduced (10, 0).removeFromBottom (20).toFloat();
-    g.drawText (display.info, caption, juce::Justification::centredLeft, false);
-    g.drawText ("ZERO LATENCY", caption, juce::Justification::centredRight, false);
-
-    // help
-    g.setColour (inkSoft);
-    g.setFont (sansFont (12.0f));
-    const auto help = juce::String (EgretEqProcessor::isStandalone() ? "Press PLAY to hear the demo loop, or load a file (or drop one on the display), use your input or pink noise. " : "")
-                    + "Double-click the display to add a band, drag a dot to move it (Shift for fine moves), scroll on it to change Q, "
-                      "double-click it to switch it off, Alt-click or Delete to remove it. Click a value to type it.";
-    g.drawFittedText (help, helpArea, juce::Justification::topLeft, 3, 1.0f);
+    // the hint in the bottom bar
+    g.setColour (t.fgSoft);
+    g.setFont (monoFont (10.5f));
+    const auto infoX = (EgretEqProcessor::isStandalone() ? playButton.getRight() : anaButton.getRight()) + 10;
+    g.drawText (display.info, juce::Rectangle<int> (infoX, bottomBar.getY(), juce::jmax (0, autoButton.getX() - infoX - 10), bottomH),
+                juce::Justification::centredLeft, true);
 }
 
 void EgretEqEditor::layoutPanel()
 {
-    modules.clear();
-    headerArea = { pad, pad, panelWidth - 2 * pad, 48 };
-    const auto subWidth = juce::GlyphArrangement::getStringWidth (monoFont (10.0f).withExtraKerningFactor (0.14f), subtitleText());
-    bird.setBounds (headerArea.getX() + juce::roundToInt (subWidth) + 8, headerArea.getY() + 30, 22, 22);
-    power.setBounds (headerArea.getRight() - 112, headerArea.getY() + 10, 112, 30);
+    topBar = { 0, 0, panelWidth, topH };
+    bottomBar = { 0, topH + screenH, panelWidth, bottomH };
+    // top: logo, undo, redo, A/B, copy | preset | theme, power
+    const auto logoFont = sansFont (21.0f, true);
+    auto x = 10 + juce::roundToInt (juce::GlyphArrangement::getStringWidth (logoFont, "EGRET EQ")) + 8;
+    x += juce::roundToInt (juce::GlyphArrangement::getStringWidth (monoFont (9.0f).withExtraKerningFactor (0.14f), subtitleText())) + 4;
+    bird.setBounds (x, 8, 22, 22);
+    x += 32;
+    auto place = [&x] (juce::Component& c, int w) { c.setBounds (x, 7, w, 24); x += w + 4; };
+    place (undoButton, 30); place (redoButton, 30); x += 4;
+    place (abButton, 48); place (copyButton, 84);
+    const auto presetW = 230, cx = 560;
+    presetPrev.setBounds (cx - presetW / 2 - 26, 7, 24, 24);
+    presetButton.setBounds (cx - presetW / 2, 7, presetW, 24);
+    presetNext.setBounds (cx + presetW / 2 + 2, 7, 24, 24);
+    powerButton.setBounds (panelWidth - 10 - 86, 7, 86, 24);
+    themeButton.setBounds (powerButton.getX() - 34, 7, 30, 24);
 
-    // presets
-    const juce::Rectangle<int> presetsArea { pad, 80, panelWidth - 2 * pad, 76 };
-    modules.push_back ({ "Presets", sage, presetsArea });
-    auto pr = presetsArea.reduced (12).withTrimmedTop (24).withHeight (28);
-    presetPrev.setBounds (pr.removeFromLeft (28)); pr.removeFromLeft (6);
-    presetBox.setBounds (pr.removeFromLeft (180)); pr.removeFromLeft (6);
-    presetNext.setBounds (pr.removeFromLeft (28)); pr.removeFromLeft (8);
-    presetName.setBounds (pr.removeFromLeft (130)); pr.removeFromLeft (8);
-    presetSave.setBounds (pr.removeFromLeft (52)); pr.removeFromLeft (8);
-    presetDelete.setBounds (pr.removeFromLeft (62)); pr.removeFromLeft (14);
-    undoButton.setBounds (pr.removeFromLeft (54)); pr.removeFromLeft (8);
-    redoButton.setBounds (pr.removeFromLeft (54)); pr.removeFromLeft (14);
-    abA.setBounds (pr.removeFromLeft (30)); pr.removeFromLeft (4);
-    abB.setBounds (pr.removeFromLeft (30)); pr.removeFromLeft (4);
-    abCopy.setBounds (pr.removeFromLeft (44)); pr.removeFromLeft (8);
-    presetStatus.setBounds (pr);
+    // the screen
+    display.setBounds (0, topH, panelWidth - meterW, screenH);
+    meter.setBounds (panelWidth - meterW, topH, meterW, screenH);
 
-    // display and meters
-    screenBay = { pad, 168, panelWidth - 2 * pad, 420 };
-    auto sb = screenBay.reduced (10).withTrimmedBottom (20);
-    meter.setBounds (sb.removeFromRight (44));
-    sb.removeFromRight (8);
-    display.setBounds (sb);
-
-    // band
-    bandArea = { pad, 600, panelWidth - 2 * pad, 172 };
-    auto bb = bandArea.reduced (12).withTrimmedTop (30);
-    bandEmpty.setBounds (bb.removeFromTop (20));
-    bb = bandArea.reduced (12).withTrimmedTop (34);
-    auto right = bb.removeFromRight (172 + 12 + 76);
-    bb.removeFromRight (16);
-    auto shapeRow = bb.removeFromTop (52); bb.removeFromTop (7);
-    shapeLabel.setBounds (shapeRow.removeFromLeft (52).withHeight (24));
-    shapes.setBounds (shapeRow);
-    auto slopeRow = bb.removeFromTop (26); bb.removeFromTop (7);
-    slopeLabel.setBounds (slopeRow.removeFromLeft (52));
-    slopes.setBounds (slopeRow);
-    auto placeRow = bb.removeFromTop (26);
-    placeLabel.setBounds (placeRow.removeFromLeft (52));
-    places.setBounds (placeRow);
-    auto actions = right.removeFromRight (76);
-    bypassButton.setBounds (actions.removeFromTop (24)); actions.removeFromTop (5);
-    soloButton.setBounds (actions.removeFromTop (24)); actions.removeFromTop (5);
-    deleteButton.setBounds (actions.removeFromTop (24));
-    right.removeFromRight (12);
-    layoutKnobs (right.withTrimmedTop (4), { &freqKnob, &gainKnob, &qKnob });
-
-    // source | analyzer | output
-    const auto lowerY = 784, lowerH = 212;
-    const auto unit = (panelWidth - 2 * pad - 24) / 3.45;
-    const juce::Rectangle<int> srcArea { pad, lowerY, juce::roundToInt (unit), lowerH };
-    const juce::Rectangle<int> anaArea { srcArea.getRight() + 12, lowerY, juce::roundToInt (unit * 1.45), lowerH };
-    const juce::Rectangle<int> outArea { anaArea.getRight() + 12, lowerY, panelWidth - pad - anaArea.getRight() - 12, lowerH };
-    modules.push_back ({ "Source", coral, srcArea });
-    modules.push_back ({ "Analyzer", lavender, anaArea });
-    modules.push_back ({ "Output", mustard, outArea });
-
-    auto s = srcArea.reduced (12).withTrimmedTop (30);
-    sources.setBounds (s.removeFromTop (26)); s.removeFromTop (8);
-    auto sr = s.removeFromTop (26);
-    playButton.setBounds (sr.removeFromLeft (56)); sr.removeFromLeft (6);
-    loadButton.setBounds (sr.removeFromLeft (84));
-    s.removeFromTop (8);
-    sourceStatus.setBounds (s.removeFromTop (18));
-
-    auto a = anaArea.reduced (12).withTrimmedTop (30);
-    ChipRow* rows[] = { &anaMode, &anaRes, &anaSpeed, &anaRange, &dispRange };
-    for (int i = 0; i < 5; ++i)
+    // bottom: mode, analyzer, (source, play) | auto gain, scale, out, pan
+    const auto by = bottomBar.getY() + 4, bh = bottomH - 8;
+    auto bx = 10;
+    phaseButton.setBounds (bx, by, 100, bh); bx += 104;
+    const auto anaW = juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (12.0f), "Analyzer: " + anaButton.getButtonText())) + 18;
+    anaButton.setBounds (bx, by, anaW, bh); bx += anaW + 4;
+    if (EgretEqProcessor::isStandalone())
     {
-        auto row = a.removeFromTop (24); a.removeFromTop (8);
-        anaLabels[i].setBounds (row.removeFromLeft (48));
-        if (i == 4)
-        {
-            freezeButton.setBounds (row.removeFromRight (62)); row.removeFromRight (4);
-            tiltButton.setBounds (row.removeFromRight (46)); row.removeFromRight (4);
-        }
-        rows[i]->setBounds (row);
+        const auto sw = juce::jmin (180, juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (12.0f), "Source: " + sourceButton.getButtonText())) + 18);
+        sourceButton.setBounds (bx, by, sw, bh); bx += sw + 4;
+        playButton.setBounds (bx, by, 48, bh);
     }
-
-    auto o = outArea.reduced (12).withTrimmedTop (32);
-    layoutKnobs (o.removeFromTop (knobH), { &scaleKnob, &outGainKnob, &panKnob });
-    o.removeFromTop (12);
-    auto ar = o.removeFromTop (26);
-    autoButton.setBounds (ar.removeFromLeft (84)); ar.removeFromLeft (8);
-    autoReadout.setBounds (ar);
-
-    helpArea = { pad, 1008, panelWidth - 2 * pad, 44 };
+    auto rx = panelWidth - 10;
+    for (auto* d : { panValue.get(), gainValue.get(), scaleValue.get() })
+    {
+        const auto w = d->preferredWidth();
+        d->setBounds (rx - w, by, w, bh);
+        rx -= w + 4;
+    }
+    const auto aw = juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (12.0f), autoButton.getButtonText())) + 18;
+    autoButton.setBounds (rx - aw, by, aw, bh);
 }
