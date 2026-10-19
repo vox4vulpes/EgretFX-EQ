@@ -130,6 +130,16 @@
   .bp-buttons .tb{padding:4px 0; justify-content:center; font-size:12px;}
   .bp-buttons .tb.is-on{color:var(--on-acc); background:var(--acc);}
   .bp-buttons .tb.is-solo.is-on{background:var(--solo);}
+  .bp-dyn{display:flex; gap:4px; align-items:flex-start; padding-left:10px; border-left:1px solid var(--float-border);}
+  .bp-dyn[hidden]{display:none;}
+  .bp-sel.is-on{border-color:var(--band, var(--acc)); color:var(--band, var(--acc)); font-weight:600;}
+  .bp-sel.no-arrow::after{content:'';}
+  .sketch-btn{position:absolute; left:8px; bottom:24px; z-index:3; width:28px; height:28px; justify-content:center; padding:0;
+    background:var(--float); border:1px solid var(--float-border);}
+  .sketch-btn.is-on{background:var(--acc); color:var(--on-acc); border-color:var(--acc);}
+  .sketch-hint{position:absolute; left:8px; top:8px; z-index:3; font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--acc);
+    background:var(--float); border:1px solid var(--float-border); border-radius:4px; padding:3px 7px; pointer-events:none;}
+  .sketch-hint[hidden]{display:none;}
   .bp-title{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--band, var(--acc)); letter-spacing:.08em; text-align:center;}
 
   /* knobs, dark, inside the panel */
@@ -297,7 +307,7 @@
     </div>
     <span class="spacer"></span>
     <button class="tb" id="theme-btn" type="button" title="Light or dark" aria-label="Switch between light and dark"></button>
-    <button class="tb" id="power" type="button" aria-pressed="false" title="Sound on: starts the audio in the browser"><span class="power-led"></span><span class="hide-narrow">POWER</span></button>
+    <button class="tb" id="bypass" type="button" aria-pressed="false" title="Bypass: hear the sound without the EQ"><span class="power-led"></span><span>BYPASS</span></button>
     <button class="tb" id="fullscreen" type="button" title="Full screen" aria-label="Full screen"><svg viewBox="0 0 16 16"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
   </header>
 
@@ -305,14 +315,18 @@
     <canvas id="eq" tabindex="0" aria-label="The EQ curve. Double-click to add a band, drag a dot to move it, scroll on it to change Q."></canvas>
     <canvas id="meter" aria-hidden="true"></canvas>
     <button class="range-box" id="range-box" type="button" title="Display range">12 dB</button>
+    <button class="tb sketch-btn" id="sketch-btn" type="button" aria-pressed="false" title="EQ Sketch: draw the curve you want, the bands follow (Esc to stop)"><svg viewBox="0 0 16 16"><path d="M2.5 13.5l1-3.5 7.5-7.5 2.5 2.5L6 12.5zM9.5 4l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+    <div class="sketch-hint" id="sketch-hint" hidden>Draw the curve you want; the bands follow</div>
     <div class="band-panel" id="band-panel" hidden>
       <div class="bp-col">
         <div class="bp-title" id="bp-title">BAND 1</div>
         <button class="bp-sel" id="bp-shape" type="button" aria-haspopup="menu" title="Shape"></button>
         <button class="bp-sel" id="bp-slope" type="button" aria-haspopup="menu" title="Slope"></button>
         <button class="bp-sel" id="bp-place" type="button" aria-haspopup="menu" title="Stereo placement"></button>
+        <button class="bp-sel no-arrow" id="bp-dyn" type="button" aria-pressed="false" title="Dynamic EQ: the gain moves with the level of this band's part of the sound">Dynamic</button>
       </div>
       <div class="bp-knobs" id="band-knobs"></div>
+      <div class="bp-dyn" id="dyn-knobs" hidden></div>
       <div class="bp-buttons">
         <button class="tb" id="bp-bypass" type="button" title="Band on/off (or double-click its dot)" aria-label="Band on"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 1.5v6M4.6 3.8a5.5 5.5 0 106.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
         <button class="tb is-solo" id="bp-solo" type="button" title="Solo: hear only what this band works on" aria-label="Solo">S</button>
@@ -325,6 +339,7 @@
 
   <footer class="bar bottom">
     <button class="tb" id="phase-btn" type="button" aria-haspopup="menu" title="Processing mode">Zero Latency</button>
+    <button class="tb" id="char-btn" type="button" aria-haspopup="menu" title="Character: Clean, or a little analog saturation"><span class="dim">Character:</span> <span id="char-label">Clean</span></button>
     <button class="tb" id="ana-btn" type="button" aria-haspopup="menu"><span class="dim">Analyzer:</span> <span id="ana-label">Pre+Post</span></button>
     <span class="status hide-narrow" id="eq-info"></span>
     <span class="spacer"></span>
@@ -357,6 +372,7 @@ var SHAPE_LABELS = ['BELL', 'LO SHELF', 'LO CUT', 'HI SHELF', 'HI CUT', 'NOTCH',
 var SLOPES = [6, 12, 18, 24, 30, 36, 48, 72, 96];
 var PLACEMENTS = ['stereo', 'left', 'right', 'mid', 'side'];
 var PLACEMENT_LABELS = ['STEREO', 'L', 'R', 'MID', 'SIDE'];
+var CHARACTERS = ['clean', 'subtle', 'warm'], CHARACTER_LABELS = ['Clean', 'Subtle', 'Warm'];
 var FREQ_MIN = 10, FREQ_MAX = 30000, GAIN_MAX = 30, Q_MIN = 0.025, Q_MAX = 40;
 var FLAT_TILT_LO = 20, FLAT_TILT_HI = 20000;
 
@@ -635,16 +651,20 @@ function autoGainDb(p, fs){
 
 // ---------- parameters and factory presets ----------
 function makeDefaults(){
-  var p = { outGain: 0, outPan: 0, gainScale: 100, autoGain: false };
+  var p = { outGain: 0, outPan: 0, gainScale: 100, autoGain: false, character: 'clean' };
   for (var i = 0; i < MAX_BANDS; i++) {
     p[bandKey(i, 'Used')] = false; p[bandKey(i, 'On')] = true; p[bandKey(i, 'Shape')] = 'bell';
     p[bandKey(i, 'Freq')] = 1000; p[bandKey(i, 'Gain')] = 0; p[bandKey(i, 'Q')] = 1;
     p[bandKey(i, 'Slope')] = 12; p[bandKey(i, 'Place')] = 'stereo';
+    // DYNAMIC: the gain moves by up to RANGE when the band's part of the input passes THRESHOLD.
+    p[bandKey(i, 'Dyn')] = false; p[bandKey(i, 'Range')] = -6; p[bandKey(i, 'Thresh')] = -24;
+    p[bandKey(i, 'Attack')] = 10; p[bandKey(i, 'Release')] = 120;
   }
   return p;
 }
 
-// "key=value; ..." with bands as "bN=shape freq gain q [slope] [placement] [off]".
+// "key=value; ..." with bands as "bN=shape freq gain q [slope] [placement] [off]
+// [dyn:range,threshold,attack,release]".
 // The VST reads the same strings.
 var FACTORY_PRESETS = [
   ['Flat', ''],
@@ -663,7 +683,12 @@ var FACTORY_PRESETS = [
   ['Telephone', 'b1=lowcut 400 0 0.9 48; b2=highcut 3000 0 1.2 48; b3=bell 1500 4 1'],
   ['Hum Remover', 'b1=notch 50 0 12 12; b2=notch 100 0 12 12; b3=notch 150 0 12 12; b4=notch 200 0 12 12'],
   ['Wide Sides', 'b1=lowcut 180 0 0.71 24 side; b2=highshelf 8000 3 0.71 12 side; b3=bell 200 1 1 12 mid'],
-  ['Master Polish', 'b1=lowcut 20 0 0.71 36; b2=lowshelf 90 1 0.71 12; b3=bell 300 -1 0.8; b4=highshelf 12000 1.5 0.71 6']
+  ['Master Polish', 'b1=lowcut 20 0 0.71 36; b2=lowshelf 90 1 0.71 12; b3=bell 300 -1 0.8; b4=highshelf 12000 1.5 0.71 6'],
+  ['De-Esser', 'b1=lowcut 70 0 0.71 18; b2=bell 6500 0 3 12 stereo dyn:-8,-34,2,60'],
+  ['Bass Control', 'b1=lowcut 30 0 0.71 24; b2=lowshelf 120 0 0.71 12 stereo dyn:-6,-22,15,180'],
+  ['Dynamic Air', 'b1=highshelf 10000 0 0.71 12 stereo dyn:4,-40,20,300'],
+  ['Mud Tamer', 'b1=bell 280 0 1.2 12 stereo dyn:-5,-26,10,150; b2=bell 4000 1 0.8'],
+  ['Tape Warmth', 'b1=lowcut 25 0 0.71 12; b2=lowshelf 100 1.5 0.71 12; b3=highshelf 12000 -1.5 0.71 6; char=warm']
 ];
 
 function presetParams(spec){
@@ -680,11 +705,19 @@ function presetParams(spec){
       p[bandKey(i, 'Freq')] = parseFloat(v[1]); p[bandKey(i, 'Gain')] = parseFloat(v[2]); p[bandKey(i, 'Q')] = parseFloat(v[3]);
       if (v[4]) p[bandKey(i, 'Slope')] = parseInt(v[4], 10);
       if (v[5] && PLACEMENTS.indexOf(v[5]) >= 0) p[bandKey(i, 'Place')] = v[5];
-      if (v[6] === 'off') p[bandKey(i, 'On')] = false;
+      v.slice(6).forEach(function(t){
+        if (t === 'off') p[bandKey(i, 'On')] = false;
+        var dm = t.match(/^dyn:([-\d.]+),([-\d.]+),([\d.]+),([\d.]+)$/);
+        if (dm) {
+          p[bandKey(i, 'Dyn')] = true; p[bandKey(i, 'Range')] = parseFloat(dm[1]); p[bandKey(i, 'Thresh')] = parseFloat(dm[2]);
+          p[bandKey(i, 'Attack')] = parseFloat(dm[3]); p[bandKey(i, 'Release')] = parseFloat(dm[4]);
+        }
+      });
     } else if (key === 'scale') p.gainScale = parseFloat(v[0]);
     else if (key === 'gain') p.outGain = parseFloat(v[0]);
     else if (key === 'pan') p.outPan = parseFloat(v[0]);
     else if (key === 'auto') p.autoGain = v[0] === '1';
+    else if (key === 'char' && CHARACTERS.indexOf(v[0]) >= 0) p.character = v[0];
   });
   return p;
 }
@@ -712,6 +745,10 @@ function EqBand(){
   this.tShape = 'bell'; this.tSlope = 12; this.tPlace = 'stereo'; this.tActive = false;
   this.tf = 1000; this.tg = 0; this.tq = 1;
   this.dirty = true;
+  // dynamics: the detector (the band's part of the input) and its level
+  this.dyn = false; this.range = -6; this.thresh = -24; this.att = 10; this.rel = 120;
+  this.det = new Float64Array(5); this.dets = [this.det]; this.detZ = new Float64Array(4); this.detKey = '';
+  this.env = 0; this.dynDb = 0; this.staticG = 0;
 }
 
 // One sample through a band's sections (transposed direct form II), channel ch.
@@ -738,6 +775,10 @@ function EqEngine(fs){
   this.power = 1; this.tPower = 1;
   this.autoDb = 0;
   this.meter = new Float64Array(4);   // peaks since the last read: in L, in R, out L, out R
+  this.dynShown = new Float64Array(MAX_BANDS);   // each band's dynamic gain change, for the display
+  // CHARACTER: soft saturation after the bands, faded like a band when it changes
+  this.character = 'clean'; this.tCharacter = 'clean'; this.charMix = 0;
+  this.dcX = new Float64Array(2); this.dcY = new Float64Array(2); this.lpZ = new Float64Array(2);
   this.started = false;
 }
 
@@ -748,8 +789,15 @@ EqEngine.prototype.setParams = function(p, solo){
     b.tShape = shape; b.tSlope = p[bandKey(i, 'Slope')]; b.tPlace = p[bandKey(i, 'Place')];
     b.tActive = !!p[bandKey(i, 'Used')] && !!p[bandKey(i, 'On')];
     b.tf = p[bandKey(i, 'Freq')]; b.tq = p[bandKey(i, 'Q')];
-    b.tg = shapeHasGain(shape) ? p[bandKey(i, 'Gain')] * p.gainScale / 100 : 0;
+    b.staticG = shapeHasGain(shape) ? p[bandKey(i, 'Gain')] * p.gainScale / 100 : 0;
+    var dyn = b.tActive && !!p[bandKey(i, 'Dyn')] && shapeHasGain(shape);
+    if (dyn !== b.dyn) { b.env = 0; b.dynDb = 0; b.detZ.fill(0); }
+    b.dyn = dyn;
+    b.range = (p[bandKey(i, 'Range')] || 0) * p.gainScale / 100; b.thresh = p[bandKey(i, 'Thresh')];
+    b.att = p[bandKey(i, 'Attack')]; b.rel = p[bandKey(i, 'Release')];
+    b.tg = b.staticG + (b.dyn ? b.dynDb : 0);
   }
+  this.tCharacter = CHARACTERS.indexOf(p.character) >= 0 ? p.character : 'clean';
   var s = solo === undefined ? -1 : solo;
   this.tSolo = s >= 0 && p[bandKey(s, 'Used')] && shapeCanSolo(p[bandKey(s, 'Shape')]) ? s : -1;
   this.autoDb = p.autoGain ? autoGainDb(p, this.fs) : 0;
@@ -765,6 +813,7 @@ EqEngine.prototype.setParams = function(p, solo){
       bb.f = bb.tf; bb.g = bb.tg; bb.q = bb.tq; bb.mix = bb.mixTarget = bb.tActive ? 1 : 0; bb.dirty = true;
     }
     this.gain = this.tGain; this.pan = this.tPan; this.power = this.tPower;
+    this.character = this.tCharacter; this.charMix = this.character === 'clean' ? 0 : 1;
   }
 };
 
@@ -780,7 +829,11 @@ EqEngine.prototype.updateBand = function(b){
     var k = this.glide, moved = false;
     if (b.f !== b.tf) { b.f *= Math.pow(b.tf / b.f, k); if (Math.abs(Math.log(b.tf / b.f)) < 1e-4) b.f = b.tf; moved = true; }
     if (b.q !== b.tq) { b.q *= Math.pow(b.tq / b.q, k); if (Math.abs(Math.log(b.tq / b.q)) < 1e-4) b.q = b.tq; moved = true; }
-    if (b.g !== b.tg) { b.g += (b.tg - b.g) * k; if (Math.abs(b.tg - b.g) < 1e-3) b.g = b.tg; moved = true; }
+    if (b.g !== b.tg) {
+      if (b.dyn) b.g = b.tg;   // the detector's attack and release already shape it
+      else { b.g += (b.tg - b.g) * k; if (Math.abs(b.tg - b.g) < 1e-3) b.g = b.tg; }
+      moved = true;
+    }
     if (moved) b.dirty = true;
   }
   if (b.dirty) {
@@ -814,6 +867,48 @@ EqEngine.prototype.runBand = function(b, L, R, len){
   b.mix = mix;
 };
 
+// DYNAMIC: the band's part of the input (as SOLO hears it), its level in dB
+// (RMS, +3 dB so a sine reads its peak), attack and release; above
+// THRESHOLD the gain moves 3/4 dB per dB (like a 4:1 compressor), at most RANGE.
+EqEngine.prototype.detect = function(b, dl, dr, len, index){
+  var key = b.tShape + '|' + b.tf + '|' + b.tq;
+  if (key !== b.detKey) { b.detKey = key; designSolo(b.tShape, b.tf, b.tq, this.fs, b.det); }
+  var ms = 0;
+  for (var i = 0; i < len; i++) { var y = runSections(b.dets, 1, b.detZ, 0, (dl[i] + dr[i]) * 0.5); ms += y * y; }
+  ms /= len;
+  var ms_ = ms > b.env ? b.att : b.rel, c = 1 - Math.exp(-len / (Math.max(0.1, ms_) * 0.001 * this.fs));
+  b.env += (ms - b.env) * c;
+  var level = 10 * Math.log10(b.env + 1e-12) + 3.0103, over = level - b.thresh, change = 0;
+  if (over > 0) change = (b.range < 0 ? -1 : 1) * Math.min(Math.abs(b.range), over * 0.75);
+  b.dynDb = change;
+  b.tg = b.staticG + change;
+  this.dynShown[index] = change;
+};
+
+// CHARACTER: Subtle and Warm are soft saturation (unity gain for quiet
+// sound, rounded peaks, a touch of even harmonics); Warm drives harder and
+// rolls off the very top. A DC blocker follows; changes fade.
+var CHARACTER_SETTINGS = { subtle: { drive: 0.7, even: 0.03, lp: 0 }, warm: { drive: 1.2, even: 0.08, lp: 16000 } };
+EqEngine.prototype.runCharacter = function(L, R, len){
+  if (this.charMix === 0 && this.tCharacter !== this.character) { this.character = this.tCharacter; this.dcX.fill(0); this.dcY.fill(0); this.lpZ.fill(0); }
+  var target = this.character === this.tCharacter && this.character !== 'clean' ? 1 : 0;
+  if (this.charMix === 0 && target === 0) return;
+  var set = CHARACTER_SETTINGS[this.character] || CHARACTER_SETTINGS.subtle, d = set.drive, ev = set.even;
+  var dcA = Math.exp(-2 * Math.PI * 8 / this.fs), lpA = set.lp ? Math.exp(-2 * Math.PI * set.lp / this.fs) : 0;
+  var mix = this.charMix, step = this.fadeStep, chans = [L, R];
+  for (var i = 0; i < len; i++) {
+    if (mix !== target) mix = mix < target ? Math.min(1, mix + step) : Math.max(0, mix - step);
+    for (var c = 0; c < 2; c++) {
+      var x = chans[c][i], t = Math.tanh(d * x) / d, y = t + ev * t * t;
+      var hp = y - this.dcX[c] + dcA * this.dcY[c];   // DC blocker
+      this.dcX[c] = y; this.dcY[c] = hp;
+      if (lpA) { this.lpZ[c] = hp + lpA * (this.lpZ[c] - hp); hp = this.lpZ[c]; }
+      chans[c][i] = x + mix * (hp - x);
+    }
+  }
+  this.charMix = mix;
+};
+
 // inL/inR: input (Float32Array); outL/outR: output; n samples.
 EqEngine.prototype.process = function(inL, inR, outL, outR, n){
   var fs = this.fs, meter = this.meter;
@@ -826,6 +921,7 @@ EqEngine.prototype.process = function(inL, inR, outL, outR, n){
       if (Math.abs(dl[i]) > meter[0]) meter[0] = Math.abs(dl[i]);
       if (Math.abs(dr[i]) > meter[1]) meter[1] = Math.abs(dr[i]);
     }
+    for (j = 0; j < MAX_BANDS; j++) if (this.bands[j].dyn) this.detect(this.bands[j], dl, dr, len, j);
     for (j = 0; j < MAX_BANDS; j++) {
       var b = this.bands[j];
       this.updateBand(b);
@@ -845,7 +941,8 @@ EqEngine.prototype.process = function(inL, inR, outL, outR, n){
       }
       this.soloMix = sm;
     }
-    // Output: gain (with AUTO GAIN), balance, and the power switch (bypass).
+    this.runCharacter(L, R, len);
+    // Output: gain (with AUTO GAIN), balance, and the bypass switch.
     var g0 = this.gain, p0 = this.pan, w0 = this.power, k = this.glide;
     this.gain += (this.tGain - this.gain) * k; this.pan += (this.tPan - this.pan) * k;
     if (Math.abs(this.tGain - this.gain) < 1e-6) this.gain = this.tGain;
@@ -886,7 +983,7 @@ if (typeof registerProcessor === 'function') {
       if (this.frames >= sampleRate / 30) {
         this.frames = 0;
         var mt = this.engine.meter;
-        this.port.postMessage({ type: 'meter', m: [mt[0], mt[1], mt[2], mt[3]], auto: this.engine.autoDb });
+        this.port.postMessage({ type: 'meter', m: [mt[0], mt[1], mt[2], mt[3]], auto: this.engine.autoDb, dyn: Array.prototype.slice.call(this.engine.dynShown) });
         mt.fill(0);
       }
       return true;
@@ -983,7 +1080,7 @@ if (typeof registerProcessor === 'function') {
   // ---------- audio ----------
   var ctx = null, node = null, inputBus = null, preAna = null, postAna = null, preBuf = null, postBuf = null;
   function sampleRateNow(){ return ctx ? ctx.sampleRate : 48000; }
-  function sendParams(){ if (node) node.port.postMessage({ type: 'params', p: params, solo: solo }); }
+  function sendParams(){ if (node) node.port.postMessage({ type: 'params', p: Object.assign({}, params, { power: !bypassed }), solo: solo }); }
 
   function initAudio(){
     if (ctx) return;
@@ -1003,16 +1100,16 @@ if (typeof registerProcessor === 'function') {
       inputBus.connect(node);
       node.connect(postAna);
       node.connect(ctx.destination);
-      node.port.onmessage = function(e){ if (e.data.type === 'meter') onMeter(e.data.m); };
+      node.port.onmessage = function(e){ if (e.data.type === 'meter') { onMeter(e.data.m); onDyn(e.data.dyn); } };
       sendParams();
       if (src.playing) startSource();
     }, function(){ $('no-worklet').hidden = false; });
   }
+  // The browser starts audio on the first click or key; BYPASS is the EQ's own switch.
+  var bypassed = false;
   function isPowered(){ return document.body.classList.contains('powered'); }
   function setPower(on){
     document.body.classList.toggle('powered', on);
-    $('power').classList.toggle('is-on', on);
-    $('power').setAttribute('aria-pressed', on ? 'true' : 'false');
     if (on) { initAudio(); if (ctx.state === 'suspended') ctx.resume(); requestDraw(); }
     else if (ctx) ctx.suspend();
   }
@@ -1020,7 +1117,10 @@ if (typeof registerProcessor === 'function') {
     if (!isPowered()) setPower(true);
     else if (ctx && ctx.state === 'suspended') ctx.resume();
   }
-  $('power').addEventListener('click', function(){ setPower(!isPowered()); });
+  $('bypass').addEventListener('click', function(){ bypassed = !bypassed; sendParams(); renderBars(); });
+  ['pointerdown', 'keydown'].forEach(function(type){
+    document.addEventListener(type, function start(){ ensurePower(); document.removeEventListener(type, start, true); }, true);
+  });
 
   // ---------- sources: demo loop, a file, the microphone, pink noise ----------
   var SOURCES = ['demo', 'file', 'input', 'noise'], SOURCE_LABELS = ['DEMO', 'FILE', 'INPUT', 'NOISE'];
@@ -1290,13 +1390,18 @@ if (typeof registerProcessor === 'function') {
     q:         { label: 'Q',     min: Q_MIN, max: Q_MAX, unit: 'q', log: true, def: 1 },
     gainScale: { label: 'Scale', min: 0, max: 200, unit: '%', def: 100 },
     outGain:   { label: 'Gain',  min: -36, max: 36, unit: 'dB', def: 0 },
-    outPan:    { label: 'Pan',   min: -100, max: 100, unit: 'pan', def: 0 }
+    outPan:    { label: 'Pan',   min: -100, max: 100, unit: 'pan', def: 0 },
+    thresh:    { label: 'Thresh', min: -60, max: 0, unit: 'dB', def: -24 },
+    range:     { label: 'Range', min: -30, max: 30, unit: 'dB', def: -6 },
+    attack:    { label: 'Attack', min: 0.5, max: 500, unit: 'ms', log: true, def: 10 },
+    release:   { label: 'Release', min: 10, max: 5000, unit: 'ms', log: true, def: 120 }
   };
   function fmt(def, v){
     if (def.unit === 'Hz') return fmtHz(v);
     if (def.unit === 'dB') { var r = Math.round(v * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r).toFixed(1) + ' dB'; }
     if (def.unit === 'q') return v < 10 ? v.toFixed(2) : v.toFixed(1);
     if (def.unit === 'pan') return Math.abs(v) < 0.5 ? 'C' : (v < 0 ? 'L' : 'R') + Math.round(Math.abs(v));
+    if (def.unit === 'ms') return v >= 1000 ? (v / 1000).toFixed(2) + ' s' : v < 10 ? v.toFixed(1) + ' ms' : Math.round(v) + ' ms';
     return Math.round(v) + def.unit;
   }
   function fmtHz(v){ return v >= 10000 ? (v / 1000).toFixed(1) + ' kHz' : v >= 1000 ? (v / 1000).toFixed(2) + ' kHz' : v >= 100 ? Math.round(v) + ' Hz' : v.toFixed(1) + ' Hz'; }
@@ -1313,10 +1418,11 @@ if (typeof registerProcessor === 'function') {
       var pm = s.match(/^([lr])\s*(\d*\.?\d+)$/);
       if (pm) return Math.min(100, Math.max(-100, (pm[1] === 'l' ? -1 : 1) * parseFloat(pm[2])));
     }
-    var m = s.match(/^([+-]?\d*\.?\d+)\s*(khz|k|hz|db|%)?$/);
+    var m = s.match(/^([+-]?\d*\.?\d+)\s*(khz|k|hz|db|%|ms|s)?$/);
     if (!m) return null;
     var v = parseFloat(m[1]);
     if (m[2] === 'k' || m[2] === 'khz') v *= 1000;
+    if (def.unit === 'ms' && m[2] === 's') v *= 1000;
     return Math.min(def.max, Math.max(def.min, v));
   }
   // Click a value to type one: Enter or clicking away sets it, Escape keeps the old one.
@@ -1416,6 +1522,12 @@ if (typeof registerProcessor === 'function') {
     kn.el.dataset.knob = k[0];
     $('band-knobs').appendChild(kn.el); knobRenders.push(kn.render);
   });
+  [['thresh', 'Thresh'], ['range', 'Range'], ['attack', 'Attack'], ['release', 'Release']].forEach(function(k){
+    var def = KNOB_DEFS[k[0]];
+    var kn = buildKnob(def, function(){ return selected < 0 ? def.def : params[bandParam(k[1])]; },
+                            function(v){ if (selected >= 0) { params[bandParam(k[1])] = v; changed(); } });
+    $('dyn-knobs').appendChild(kn.el); knobRenders.push(kn.render);
+  });
   knobRenders.push(buildDragValue($('dv-scale'), KNOB_DEFS.gainScale, 'Scale', function(){ return params.gainScale; }, function(v){ params.gainScale = v; changed(); }));
   knobRenders.push(buildDragValue($('dv-gain'), KNOB_DEFS.outGain, 'Out', function(){ return params.outGain; }, function(v){ params.outGain = v; changed(); }));
   knobRenders.push(buildDragValue($('dv-pan'), KNOB_DEFS.outPan, 'Pan', function(){ return params.outPan; }, function(v){ params.outPan = v; changed(); }));
@@ -1433,6 +1545,7 @@ if (typeof registerProcessor === 'function') {
     var names = ['Stereo', 'Left', 'Right', 'Mid', 'Side'];
     showMenu($('bp-place'), PLACEMENTS.map(function(s, i){ return { label: names[i], checked: params[bandParam('Place')] === s, action: function(){ setBand('Place', s); } }; }));
   });
+  $('bp-dyn').addEventListener('click', function(){ if (selected >= 0 && shapeHasGain(params[bandParam('Shape')])) setBand('Dyn', !params[bandParam('Dyn')]); });
   $('bp-bypass').addEventListener('click', function(){ if (selected >= 0) setBand('On', !params[bandParam('On')]); });
   $('bp-solo').addEventListener('click', function(){ if (selected >= 0) { solo = solo === selected ? -1 : selected; sendParams(); renderAll(); } });
   $('bp-delete').addEventListener('click', function(){ deleteBand(selected); });
@@ -1463,6 +1576,11 @@ if (typeof registerProcessor === 'function') {
     $('bp-bypass').classList.toggle('is-on', on); $('bp-bypass').setAttribute('aria-pressed', on ? 'true' : 'false');
     $('bp-solo').classList.toggle('is-on', solo === selected); $('bp-solo').disabled = !shapeCanSolo(shape);
     $('bp-solo').setAttribute('aria-pressed', solo === selected ? 'true' : 'false');
+    var dyn = !!params[bandParam('Dyn')] && shapeHasGain(shape);
+    $('bp-dyn').disabled = !shapeHasGain(shape);
+    $('bp-dyn').classList.toggle('is-on', dyn); $('bp-dyn').setAttribute('aria-pressed', dyn ? 'true' : 'false');
+    $('bp-dyn').textContent = dyn ? 'Dynamic \u2713' : 'Dynamic';
+    $('dyn-knobs').hidden = !dyn;
     placeBandPanel();
   }
   // Under the band, like Pro-Q's: centred on its dot, or at the top when the dot is low.
@@ -1470,7 +1588,7 @@ if (typeof registerProcessor === 'function') {
     var panel = $('band-panel');
     if (panel.hidden || !view.w) return;
     var p = nodePos(selected), pw = panel.offsetWidth, ph = panel.offsetHeight;
-    var x = Math.max(8, Math.min(view.plotW - pw - 8, p.x - pw / 2));
+    var x = Math.max(44, Math.min(view.plotW - pw - 8, p.x - pw / 2));   // clear of the Sketch button
     panel.style.left = x + 'px';
     if (p.y > view.h - view.bottom - ph - 30) { panel.style.top = '34px'; panel.style.bottom = 'auto'; }
     else { panel.style.top = 'auto'; panel.style.bottom = (view.bottom + 8) + 'px'; }
@@ -1502,6 +1620,11 @@ if (typeof registerProcessor === 'function') {
     showMenu($('ana-btn'), items);
   }
   $('ana-btn').addEventListener('click', anaMenu);
+  $('char-btn').addEventListener('click', function(){
+    showMenu($('char-btn'), [{ header: 'Character' }].concat(CHARACTERS.map(function(c, i){
+      return { label: CHARACTER_LABELS[i] + ['', ' \u2014 a little saturation', ' \u2014 more, and a softer top'][i], checked: params.character === c, action: function(){ params.character = c; changed(); } };
+    })));
+  });
   var freeze = false;
   $('auto-gain').addEventListener('click', function(){ params.autoGain = !params.autoGain; changed(); });
   $('fullscreen').addEventListener('click', function(){
@@ -1513,6 +1636,8 @@ if (typeof registerProcessor === 'function') {
   function renderBars(){
     $('ana-label').textContent = { off: 'Off', pre: 'Pre', post: 'Post', both: 'Pre+Post' }[ui.anaMode] + (freeze ? ' (frozen)' : '');
     $('range-box').textContent = ui.dispRange + ' dB';
+    $('char-label').textContent = CHARACTER_LABELS[Math.max(0, CHARACTERS.indexOf(params.character))];
+    $('bypass').classList.toggle('is-on', bypassed); $('bypass').setAttribute('aria-pressed', bypassed ? 'true' : 'false');
     var ag = $('auto-gain');
     ag.classList.toggle('is-on', params.autoGain); ag.setAttribute('aria-pressed', params.autoGain ? 'true' : 'false');
     ag.textContent = params.autoGain ? 'Auto Gain ' + fmt(KNOB_DEFS.outGain, autoGainDb(params, sampleRateNow())) : 'Auto Gain';
@@ -1658,6 +1783,18 @@ if (typeof registerProcessor === 'function') {
   // Cut, notch, band and all-pass dots have no gain: their height is Q, half the screen each way.
   function qNorm(q){ return q >= Math.SQRT1_2 ? Math.log(q / Math.SQRT1_2) / Math.log(Q_MAX / Math.SQRT1_2) : -Math.log(Math.SQRT1_2 / q) / Math.log(Math.SQRT1_2 / Q_MIN); }
   function qFromNorm(t){ t = Math.max(-1, Math.min(1, t)); return t >= 0 ? Math.SQRT1_2 * Math.pow(Q_MAX / Math.SQRT1_2, t) : Math.SQRT1_2 * Math.pow(Q_MIN / Math.SQRT1_2, -t); }
+  function rangePos(i){
+    var p = nodePos(i), R = ui.dispRange, g = bandOf(params, i).gain + params[bandKey(i, 'Range')] * params.gainScale / 100;
+    return { x: p.x, y: gy(Math.max(-R, Math.min(R, g))) };
+  }
+  function hitRange(p){
+    for (var i = MAX_BANDS - 1; i >= 0; i--) {
+      if (!params[bandKey(i, 'Used')] || !isDyn(i)) continue;
+      var h = rangePos(i);
+      if ((h.x - p.x) * (h.x - p.x) + (h.y - p.y) * (h.y - p.y) < 64) return i;
+    }
+    return -1;
+  }
   function nodePos(i){
     var b = bandOf(params, i), x = fx(Math.min(FREQ_MAX, Math.max(FREQ_MIN, b.freq)));
     var R = ui.dispRange, y = shapeHasGain(b.shape) ? gy(Math.max(-R, Math.min(R, b.gain))) : gy(qNorm(b.q) * R * 0.5);
@@ -1685,15 +1822,19 @@ if (typeof registerProcessor === 'function') {
       var w = 2 * Math.PI * Math.min(xf(i), fs / 2) / fs;
       colCos[i] = Math.cos(w); colSin[i] = Math.sin(w); colCos2[i] = Math.cos(2 * w); colSin2[i] = Math.sin(2 * w);
     }
-    curveCache = [];
+    curveCache = []; rangeCache = []; staticCache = [];
   }
   var CURVE_SECS = [];
   for (var cs = 0; cs < MAX_SECTIONS; cs++) CURVE_SECS.push(new Float64Array(5));
-  function bandCurve(i){
+  function isDyn(i){ return !!params[bandKey(i, 'Dyn')] && shapeHasGain(params[bandKey(i, 'Shape')]); }
+  // A band's curve; extra: dB added to its gain (the dynamic change), cache: where to keep it.
+  function bandCurve(i, extra, cache){
     var b = bandOf(params, i);
     if (!b.used) return null;
+    cache = cache || curveCache;
+    b.gain += extra || 0;
     var key = b.shape + '|' + b.freq + '|' + b.gain + '|' + b.q + '|' + b.slope;
-    var c = curveCache[i];
+    var c = cache[i];
     if (c && c.key === key) return c.db;
     var n = designBand(b, colFs, CURVE_SECS), db = new Float32Array(cols);
     for (var k = 0; k < cols; k++) {
@@ -1706,14 +1847,16 @@ if (typeof registerProcessor === 'function') {
       }
       db[k] = 10 * Math.log10(Math.max(m2, 1e-30));
     }
-    curveCache[i] = { key: key, db: db };
+    cache[i] = { key: key, db: db };
     return db;
   }
+  var rangeCache = [], staticCache = [];
   function computeCurves(){
     prepareColumns();
     totalCurve = new Float32Array(cols);
     for (var i = 0; i < MAX_BANDS; i++) {
-      var db = bandCurve(i);
+      var db = bandCurve(i, isDyn(i) ? dynLive[i] : 0);
+      if (isDyn(i)) bandCurve(i, params[bandKey(i, 'Range')] * params.gainScale / 100, rangeCache);
       if (!db || !params[bandKey(i, 'On')]) continue;
       for (var k = 0; k < cols; k++) totalCurve[k] += db[k];
     }
@@ -1799,8 +1942,20 @@ if (typeof registerProcessor === 'function') {
         spectrumPath(postBuf, false); eg.strokeStyle = T.postLine; eg.lineWidth = 1; eg.stroke();
       }
     }
-    // each band's own curve, filled to 0 dB
     var y0 = gy(0), clip = function(v){ return Math.max(-2, Math.min(bottom + 2, gy(v))); };
+    // DYNAMIC: the range the band can move through, shaded, its far edge dashed
+    for (var di = 0; di < MAX_BANDS; di++) {
+      if (!params[bandKey(di, 'Used')] || !isDyn(di) || !rangeCache[di]) continue;
+      var stat = bandCurve(di, 0, staticCache), far = rangeCache[di].db, dc = bandColor(di);
+      eg.beginPath();
+      for (var dk = 0; dk < cols; dk++) { if (dk) eg.lineTo(dk, clip(stat[dk])); else eg.moveTo(dk, clip(stat[dk])); }
+      for (dk = cols - 1; dk >= 0; dk--) eg.lineTo(dk, clip(far[dk]));
+      eg.closePath(); eg.globalAlpha = 0.13; eg.fillStyle = dc; eg.fill();
+      eg.globalAlpha = 0.8; eg.setLineDash([4, 3]); eg.strokeStyle = dc; eg.lineWidth = 1;
+      eg.beginPath(); for (dk = 0; dk < cols; dk++) { if (dk) eg.lineTo(dk, clip(far[dk])); else eg.moveTo(dk, clip(far[dk])); } eg.stroke();
+      eg.setLineDash([]); eg.globalAlpha = 1;
+    }
+    // each band's own curve (as heard now), filled to 0 dB
     for (var i = 0; i < MAX_BANDS; i++) {
       var db = curveCache[i] && params[bandKey(i, 'Used')] ? curveCache[i].db : null;
       if (!db) continue;
@@ -1822,6 +1977,16 @@ if (typeof registerProcessor === 'function') {
     for (i = 0; i < MAX_BANDS; i++) {
       if (!params[bandKey(i, 'Used')]) continue;
       var p = nodePos(i), c = bandColor(i), active = params[bandKey(i, 'On')];
+      if (isDyn(i)) {
+        // the range handle: drag it up or down; a line to it from the dot, a tick at the gain heard now
+        var hp = rangePos(i);
+        eg.strokeStyle = c; eg.globalAlpha = 0.7; eg.lineWidth = 1; eg.setLineDash([2, 2]);
+        eg.beginPath(); eg.moveTo(p.x, p.y); eg.lineTo(hp.x, hp.y); eg.stroke(); eg.setLineDash([]); eg.globalAlpha = 1;
+        eg.beginPath(); eg.moveTo(hp.x, hp.y - 5); eg.lineTo(hp.x + 5, hp.y); eg.lineTo(hp.x, hp.y + 5); eg.lineTo(hp.x - 5, hp.y); eg.closePath();
+        eg.fillStyle = T.offFill; eg.fill(); eg.strokeStyle = c; eg.lineWidth = 1.5; eg.stroke();
+        var ly = gy(Math.max(-ui.dispRange, Math.min(ui.dispRange, bandOf(params, i).gain + dynLive[i])));
+        eg.fillStyle = c; eg.fillRect(p.x - 7, ly - 1, 14, 2);
+      }
       if (i === selected) { eg.beginPath(); eg.arc(p.x, p.y, 10.5, 0, 2 * Math.PI); eg.strokeStyle = T.ring; eg.lineWidth = 1.5; eg.stroke(); }
       else if (i === hover) { eg.beginPath(); eg.arc(p.x, p.y, 10, 0, 2 * Math.PI); eg.strokeStyle = T.ringHover; eg.lineWidth = 1; eg.stroke(); }
       eg.beginPath(); eg.arc(p.x, p.y, 6.5, 0, 2 * Math.PI);
@@ -1840,6 +2005,12 @@ if (typeof registerProcessor === 'function') {
         eg.fillStyle = T.badgeText; eg.fillText(t, bx + tw / 2, p.y + 0.5);
         bx += tw + 3;
       });
+    }
+    // EQ Sketch: the line being drawn
+    if (sketch.points && sketch.points.length > 1) {
+      eg.beginPath(); eg.moveTo(sketch.points[0].x, sketch.points[0].y);
+      sketch.points.forEach(function(sp){ eg.lineTo(sp.x, sp.y); });
+      eg.strokeStyle = T.eqLabel0; eg.lineWidth = 3; eg.lineCap = 'round'; eg.lineJoin = 'round'; eg.globalAlpha = 0.85; eg.stroke(); eg.globalAlpha = 1;
     }
     eg.restore();
     // the hovered or dragged band's numbers
@@ -1866,6 +2037,14 @@ if (typeof registerProcessor === 'function') {
   // ---------- the output meter ----------
   var meterCanvas = $('meter'), mg = meterCanvas.getContext('2d');
   var meterShown = [0, 0, 0, 0], meterHold = [0, 0, 0, 0], holdTime = [0, 0, 0, 0], peakHold = 0, peakTime = 0;
+  // The dynamic bands' gain changes right now: the curves move with them.
+  var dynLive = new Float64Array(MAX_BANDS);
+  function onDyn(d){
+    if (!d) return;
+    var moved = false;
+    for (var i = 0; i < MAX_BANDS; i++) if (Math.abs(d[i] - dynLive[i]) > 0.05) { dynLive[i] = d[i]; moved = true; }
+    if (moved) invalidateCurves();
+  }
   function onMeter(m){
     var now = performance.now();
     for (var i = 0; i < 4; i++) {
@@ -1935,6 +2114,14 @@ if (typeof registerProcessor === 'function') {
     eqCanvas.focus();
     var p = localPos(e), i = hitBand(p);
     if (e.button !== 0) return;
+    if (sketch.on && i < 0 && p.x <= view.plotW) { sketch.points = [p]; beginGesture(); eqCanvas.setPointerCapture(e.pointerId); requestDraw(); return; }
+    var ri = i < 0 ? hitRange(p) : -1;
+    if (ri >= 0) {
+      if (ri !== selected) select(ri);
+      drag = { band: ri, range: true, lastY: p.y, fy: rangePos(ri).y };
+      beginGesture(); eqCanvas.setPointerCapture(e.pointerId);
+      return;
+    }
     if (i < 0) { if (selected >= 0 && e.detail < 2) select(-1); return; }
     if (e.altKey) { deleteBand(i); return; }
     if (i !== selected) select(i);
@@ -1945,6 +2132,14 @@ if (typeof registerProcessor === 'function') {
   });
   eqCanvas.addEventListener('pointermove', function(e){
     var p = localPos(e);
+    if (sketch.points) { sketch.points.push(p); requestDraw(); return; }
+    if (drag && drag.range) {
+      drag.fy += (p.y - drag.lastY) * (e.shiftKey ? 0.15 : 1); drag.lastY = p.y;
+      var Rr = ui.dispRange, target = Math.max(-Rr, Math.min(Rr, yg(drag.fy)));
+      if (params.gainScale > 0) params[bandKey(drag.band, 'Range')] = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, target * 100 / params.gainScale - params[bandKey(drag.band, 'Gain')]));
+      changed();
+      return;
+    }
     if (drag) {
       var k = e.shiftKey ? 0.15 : 1;
       drag.fx += (p.x - drag.lastX) * k; drag.fy += (p.y - drag.lastY) * k;
@@ -1962,7 +2157,126 @@ if (typeof registerProcessor === 'function') {
     if (h !== hover) { hover = h; requestDraw(); }
     setInfo(p);
   });
-  function endDrag(){ if (drag) { drag = null; endGesture(); requestDraw(); } }
+  // ---------- EQ Sketch: draw the curve you want, bands are found to make it ----------
+  var sketch = { on: false, points: null };
+  function setSketch(on){
+    sketch.on = on; sketch.points = null;
+    $('sketch-btn').classList.toggle('is-on', on); $('sketch-btn').setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('sketch-hint').hidden = !on;
+    eqCanvas.style.cursor = on ? 'cell' : '';
+    requestDraw();
+  }
+  $('sketch-btn').addEventListener('click', function(){ setSketch(!sketch.on); });
+  // The drawn line is the curve wanted over the stretch it covers. What's
+  // missing there (wanted minus what the EQ does now) is filled greedily:
+  // at the biggest difference a bell as wide as that difference (or a shelf
+  // when it runs off the bottom or top of the range), then again, until it's
+  // within half a dB or the bands run out.
+  function fitSketch(pts){
+    if (pts.length < 2) return;
+    prepareColumns(); computeCurves();
+    var want = new Float64Array(cols), has = new Uint8Array(cols);
+    for (var j = 1; j < pts.length; j++) {
+      var a = pts[j - 1], b = pts[j], x0 = Math.round(Math.min(a.x, b.x)), x1 = Math.round(Math.max(a.x, b.x));
+      for (var x = Math.max(0, x0); x <= Math.min(cols - 1, x1); x++) {
+        var t = x1 === x0 ? 0 : (x - a.x) / (b.x - a.x);
+        want[x] = yg(a.y + (b.y - a.y) * Math.max(0, Math.min(1, t))); has[x] = 1;
+      }
+    }
+    var c0 = has.indexOf(1), c1 = has.lastIndexOf(1);
+    if (c0 < 0 || c1 - c0 < 3) return;
+    var res = new Float64Array(cols);
+    for (x = c0; x <= c1; x++) res[x] = (has[x] ? want[x] : want[x - 1] || 0) - totalCurve[x];
+    for (x = c0; x <= c1; x++) if (!has[x]) want[x] = want[x - 1];
+    // a light smoothing, so a shaky hand doesn't turn into bands
+    var sm = new Float64Array(cols);
+    for (x = c0; x <= c1; x++) { var sum = 0, n = 0; for (var d = -4; d <= 4; d++) if (x + d >= c0 && x + d <= c1) { sum += res[x + d]; n++; } sm[x] = sum / n; }
+    res = sm;
+    var goal = Float64Array.from(res);   // what the new bands must add, together
+    var secs = []; for (var q0 = 0; q0 < MAX_SECTIONS; q0++) secs.push(new Float64Array(5));
+    var added = 0, fresh = [];
+    function curveOf(band){
+      var out = new Float64Array(cols), ns = designBand(band, colFs, secs);
+      for (var xx = c0; xx <= c1; xx++) {
+        var mm = 1;
+        for (var k3 = 0; k3 < ns; k3++) { var g3 = sectionMag(secs[k3], 2 * Math.PI * Math.min(xf(xx), colFs / 2) / colFs); mm *= g3 * g3; }
+        out[xx] = 10 * Math.log10(mm);
+      }
+      return out;
+    }
+    for (var round = 0; round < 12; round++) {
+      var kmax = -1, vmax = 0;
+      for (x = c0; x <= c1; x++) if (Math.abs(res[x]) > vmax) { vmax = Math.abs(res[x]); kmax = x; }
+      if (kmax < 0 || vmax < 0.5) break;
+      var free = -1;
+      for (var bi = 0; bi < MAX_BANDS; bi++) if (!params[bandKey(bi, 'Used')]) { free = bi; break; }
+      if (free < 0) break;
+      var g = res[kmax], half = Math.abs(g) / 2, kl = kmax, kr = kmax;
+      while (kl > c0 && Math.abs(res[kl - 1]) > half && res[kl - 1] * g > 0) kl--;
+      while (kr < c1 && Math.abs(res[kr + 1]) > half && res[kr + 1] * g > 0) kr++;
+      var shape = 'bell', f = xf(kmax), q = 1;
+      if (kl <= c0 && c0 > 0 && kr < c1) { shape = 'lowshelf'; f = xf(kr); q = 0.71; }
+      else if (kl <= c0 && c0 === 0 && kr < c1) { shape = 'lowshelf'; f = xf(kr); q = 0.71; }
+      else if (kr >= c1 && kl > c0) { shape = 'highshelf'; f = xf(kl); q = 0.71; }
+      else {
+        var bw = Math.max(0.15, Math.log2(xf(kr + 0.5) / xf(kl - 0.5))), r2 = Math.pow(2, bw);
+        q = Math.max(0.3, Math.min(12, Math.sqrt(r2) / (r2 - 1)));
+      }
+      var gain = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, g));
+      f = Math.max(FREQ_MIN, Math.min(FREQ_MAX, f));
+      var nsec = designBand({ shape: shape, freq: f, gain: gain, q: q, slope: 12 }, colFs, secs);
+      for (x = c0; x <= c1; x++) {
+        var m2 = 1;
+        for (var si2 = 0; si2 < nsec; si2++) { var mg2 = sectionMag(secs[si2], 2 * Math.PI * Math.min(xf(x), colFs / 2) / colFs); m2 *= mg2 * mg2; }
+        res[x] -= 10 * Math.log10(m2);
+      }
+      params[bandKey(free, 'Used')] = true; params[bandKey(free, 'On')] = true; params[bandKey(free, 'Shape')] = shape;
+      params[bandKey(free, 'Freq')] = f; params[bandKey(free, 'Gain')] = params.gainScale > 0 ? gain * 100 / params.gainScale : 0;
+      params[bandKey(free, 'Q')] = q; params[bandKey(free, 'Slope')] = 12; params[bandKey(free, 'Place')] = 'stereo';
+      params[bandKey(free, 'Dyn')] = false;
+      selected = free; added++;
+      fresh.push({ index: free, shape: shape, freq: f, gain: gain, q: q, slope: 12 });
+    }
+    // The greedy pass overshoots where bands overlap: settle the gains together
+    // (least squares on the drawn stretch, each band's curve per dB of gain).
+    for (var pass = 0; pass < 4 && fresh.length; pass++) {
+      var basis = fresh.map(function(fb){
+        var c = curveOf(fb), gsafe = Math.abs(fb.gain) < 0.05 ? (fb.gain < 0 ? -0.05 : 0.05) : fb.gain;
+        for (var xx = c0; xx <= c1; xx++) c[xx] /= gsafe;
+        return c;
+      });
+      var nb = fresh.length, A = [], rhs = [];
+      for (var r1 = 0; r1 < nb; r1++) {
+        A.push(new Float64Array(nb)); rhs.push(0);
+        for (var xx2 = c0; xx2 <= c1; xx2++) {
+          rhs[r1] += basis[r1][xx2] * goal[xx2];
+          for (var r2 = 0; r2 < nb; r2++) A[r1][r2] += basis[r1][xx2] * basis[r2][xx2];
+        }
+        A[r1][r1] += 1e-3;   // keeps it solvable when two bands nearly coincide
+      }
+      for (var col = 0; col < nb; col++) {   // Gaussian elimination
+        var piv = col;
+        for (var rr = col + 1; rr < nb; rr++) if (Math.abs(A[rr][col]) > Math.abs(A[piv][col])) piv = rr;
+        var tmp = A[col]; A[col] = A[piv]; A[piv] = tmp; var tr = rhs[col]; rhs[col] = rhs[piv]; rhs[piv] = tr;
+        for (rr = col + 1; rr < nb; rr++) {
+          var fct = A[rr][col] / A[col][col];
+          for (var cc = col; cc < nb; cc++) A[rr][cc] -= fct * A[col][cc];
+          rhs[rr] -= fct * rhs[col];
+        }
+      }
+      var sol = new Float64Array(nb);
+      for (rr = nb - 1; rr >= 0; rr--) { var acc = rhs[rr]; for (cc = rr + 1; cc < nb; cc++) acc -= A[rr][cc] * sol[cc]; sol[rr] = acc / A[rr][rr]; }
+      fresh.forEach(function(fb, j){ fb.gain = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, sol[j])); });
+    }
+    fresh.forEach(function(fb){ params[bandKey(fb.index, 'Gain')] = params.gainScale > 0 ? fb.gain * 100 / params.gainScale : 0; });
+    setInfoText(added ? 'Sketch: ' + added + (added === 1 ? ' band' : ' bands') : 'Sketch: already there');
+    if (added) changed();
+  }
+
+  function endDrag(){
+    if (sketch.points) { var pts = sketch.points; sketch.points = null; fitSketch(pts); endGesture(); requestDraw(); return; }
+    if (drag) { drag = null; endGesture(); requestDraw(); }
+  }
   eqCanvas.addEventListener('pointerup', endDrag);
   eqCanvas.addEventListener('pointercancel', endDrag);
   eqCanvas.addEventListener('pointerleave', function(){ if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
@@ -2008,6 +2322,7 @@ if (typeof registerProcessor === 'function') {
 
   // Space plays and stops; Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) undo and redo.
   window.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && sketch.on && menuEl.hidden) { setSketch(false); return; }
     var t = e.target.tagName;
     if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
     if (e.key === ' ' && !e.repeat) { e.preventDefault(); setPlaying(!src.playing); }
