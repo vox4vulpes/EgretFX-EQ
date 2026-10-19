@@ -143,6 +143,10 @@
   .dyn-sw .lbl{font-size:8px; font-weight:600; letter-spacing:.06em;}
   .dyn-sw.is-on .lbl{color:var(--band, var(--acc));}
   .dyn-sw[disabled]{opacity:.35; cursor:default;}
+  .dyn-opts{display:flex; flex-direction:column; justify-content:center; gap:5px;}
+  .dyn-opt{font:600 9px 'IBM Plex Mono',monospace; letter-spacing:.06em; padding:4px 6px; border:1px solid var(--edge); border-radius:4px;
+    background:none; color:var(--fg-soft); cursor:pointer;}
+  .dyn-opt.is-on{border-color:var(--band, var(--acc)); color:var(--band, var(--acc));}
   .band-panel.is-moving .bp-grip{cursor:grabbing;}
   .band-panel.is-pinned{border-top-style:dashed;}
   /* The band list under the bottom bar: every band, at a glance. */
@@ -311,6 +315,10 @@
     <input type="file" id="src-file" accept="audio/*" hidden>
   </div>
   <p class="src-status" id="src-status" aria-live="polite"></p>
+  <p class="pl-label">Sidechain</p>
+  <div class="chip-row" id="sc-chips" role="group" aria-label="Sidechain source"></div>
+  <input type="file" id="sc-file" accept="audio/*" hidden>
+  <p class="src-status" id="sc-status" aria-live="polite"></p>
   <p class="pl-label">Tracks</p>
   <div class="np">
     <div class="np-name" id="np-name">&mdash;</div>
@@ -393,7 +401,7 @@
   </div>
 
   <footer class="bar bottom">
-    <button class="tb" id="phase-btn" type="button" aria-haspopup="menu" title="Processing mode">Zero Latency</button>
+    <button class="tb" id="phase-btn" type="button" aria-haspopup="menu" title="Processing mode"><span id="phase-label">Zero Latency</span> <span class="dim" id="phase-lat"></span></button>
     <button class="tb" id="char-btn" type="button" aria-haspopup="menu" title="Character: Clean, or a little analog saturation"><span class="dim">Character:</span> <span id="char-label">Clean</span></button>
     <button class="tb" id="ana-btn" type="button" aria-haspopup="menu"><span class="dim">Analyzer:</span> <span id="ana-label">Pre+Post</span></button>
     <span class="status hide-narrow" id="eq-info"></span>
@@ -408,7 +416,7 @@
   <div class="band-list" id="band-list" role="listbox" aria-label="Bands"></div>
 </div>
 <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
-<p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source.</p>
+<p class="help">Double-click the display to add a band, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source. The mode at the bottom left: Zero Latency, Natural Phase (the analog curves, a little latency) or Linear Phase (no phase change, more latency); cuts can be a brickwall there. A dynamic band can listen to the sidechain (<b>SC</b>, pick a sidechain in the player) and work frequency by frequency (<b>SPEC</b>).</p>
 </div>
 </div>
 
@@ -575,7 +583,8 @@ function designBand(band, fs, secs){
   // GAIN-Q: like an analog desk, a bell narrows as it boosts or cuts more (Q x2 at 15 dB)
   if (band.gainQ && shape === 'bell') q = Math.min(Q_MAX, q * Math.pow(2, Math.abs(g) / 15));
   var w0 = 2 * Math.PI * f / fs, n = 0, i;
-  var order = Math.max(1, Math.round(band.slope / 6)), pairs = Math.max(1, Math.round(band.slope / 12));
+  // BRICKWALL in Zero Latency: the steepest Butterworth there is (96 dB/oct)
+  var order = Math.min(16, Math.max(1, Math.round(band.slope / 6))), pairs = Math.min(MAX_SECTIONS, Math.max(1, Math.round(band.slope / 12)));
   var fLim = 0.45 * fs;   // a resonance above this can't sit at its own frequency
   if (shape === 'bell') {
     if (f > fLim) {
@@ -655,6 +664,107 @@ function designBand(band, fs, secs){
   return n;
 }
 
+// ---------- FFT (radix 2, in place; the engine and the kernel builder share it) ----------
+var FFT_TABLES = {};
+function fftTables(n){
+  var t = FFT_TABLES[n];
+  if (t) return t;
+  var bits = Math.round(Math.log2(n)), rev = new Uint32Array(n), cos = new Float64Array(n >> 1), sin = new Float64Array(n >> 1);
+  for (var i = 1; i < n; i++) rev[i] = (rev[i >> 1] >> 1) | ((i & 1) << (bits - 1));
+  for (i = 0; i < n >> 1; i++) { cos[i] = Math.cos(2 * Math.PI * i / n); sin[i] = Math.sin(2 * Math.PI * i / n); }
+  return (FFT_TABLES[n] = { rev: rev, cos: cos, sin: sin });
+}
+// re, im: the first n values (n a power of two). The inverse is scaled by 1/n.
+function fft(re, im, n, inverse){
+  var t = fftTables(n), rev = t.rev, cs = t.cos, sn = t.sin, i, j, tmp, sg = inverse ? 1 : -1;
+  for (i = 1; i < n; i++) { j = rev[i]; if (j > i) { tmp = re[i]; re[i] = re[j]; re[j] = tmp; tmp = im[i]; im[i] = im[j]; im[j] = tmp; } }
+  for (var size = 2; size <= n; size <<= 1) {
+    var half = size >> 1, step = n / size;
+    for (i = 0; i < n; i += size) {
+      for (j = 0; j < half; j++) {
+        var wr = cs[j * step], wi = sg * sn[j * step], a = i + j, b = a + half;
+        var tr = re[b] * wr - im[b] * wi, ti = re[b] * wi + im[b] * wr;
+        re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+      }
+    }
+  }
+  if (inverse) for (i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+}
+
+// ---------- the analog curves: Natural and Linear Phase, the spectral dynamics ----------
+// The same prototypes as designBand, as analog filters: nothing squeezes
+// towards Nyquist, and the phase is the analog phase. analogBand multiplies a
+// band's H(j 2 pi f) into re/im at freqs[0..n). BRICKWALL (a cut's slope 120)
+// is a near-vertical wall: 120 dB down within a semitone.
+var BRICK = 120, BRICK_FLOOR_DB = -120;
+function isBrick(band){ return (band.shape === 'lowcut' || band.shape === 'highcut') && band.slope >= BRICK; }
+function brickDb(band, f){
+  var t = 12 * Math.log2(band.shape === 'lowcut' ? f / band.freq : band.freq / f);   // semitones into the open side
+  if (!(t < 0)) return 0;
+  if (t <= -1) return BRICK_FLOOR_DB;
+  return BRICK_FLOOR_DB * (0.5 - 0.5 * Math.cos(Math.PI * -t));
+}
+function mulSection(c, f0, freqs, n, re, im, invert, scale){
+  var n2 = c[0], n1 = c[1], n0 = c[2], d2 = c[3], d1 = c[4], d0 = c[5], t;
+  if (invert) { t = n2; n2 = d2; d2 = t; t = n1; n1 = d1; d1 = t; t = n0; n0 = d0; d0 = t; }
+  for (var k = 0; k < n; k++) {
+    var x = freqs[k] / f0, nr = n0 - n2 * x * x, ni = n1 * x, dr = d0 - d2 * x * x, di = d1 * x;
+    var den = Math.max(1e-300, dr * dr + di * di);
+    var hr = (nr * dr + ni * di) / den * scale, hi = (ni * dr - nr * di) / den * scale;
+    var r = re[k], m = im[k];
+    re[k] = r * hr - m * hi; im[k] = r * hi + m * hr;
+  }
+}
+// brickApart: leave a brickwall out (the caller builds it) and return true.
+function analogBand(band, freqs, n, re, im, brickApart){
+  var shape = band.shape, f = Math.min(band.freq, FREQ_MAX), g = band.gain, q = band.q, i, k;
+  if (band.gainQ && shape === 'bell') q = Math.min(Q_MAX, q * Math.pow(2, Math.abs(g) / 15));
+  var order = Math.min(16, Math.max(1, Math.round(band.slope / 6))), pairs = Math.min(MAX_SECTIONS, Math.max(1, Math.round(band.slope / 12)));
+  if (shape === 'bell') mulSection(bellProto(g, q), f, freqs, n, re, im, g < 0, 1);
+  else if (shape === 'lowshelf' || shape === 'highshelf' || shape === 'tiltshelf') {
+    var high = shape !== 'lowshelf', flip = high === (g > 0), qs = BUTTER_Q[order];
+    var As = Math.pow(10, Math.abs(g) * 2 / order / 40), G2 = As * As;
+    for (i = 0; i < qs.length; i++) {
+      var qk = i === qs.length - 1 ? qs[i] * q / Math.SQRT1_2 : qs[i], kk = Math.sqrt(As) / qk;
+      mulSection(proto(As, As * kk, G2, As, kk, 1), f, freqs, n, re, im, flip, high ? (g > 0 ? G2 : 1 / G2) : 1);
+    }
+    if (order % 2) {
+      var G1 = Math.pow(10, Math.abs(g) / order / 20), r1 = Math.sqrt(G1);
+      mulSection(proto(0, 1, r1, 0, 1, 1 / r1), f, freqs, n, re, im, flip, high ? (g > 0 ? G1 : 1 / G1) : 1);
+    }
+    if (shape === 'tiltshelf') { var ts = Math.pow(10, -g / 40); for (k = 0; k < n; k++) { re[k] *= ts; im[k] *= ts; } }
+  } else if (shape === 'lowcut' || shape === 'highcut') {
+    if (isBrick(band)) {
+      if (brickApart) return true;
+      for (k = 0; k < n; k++) { var bm = Math.pow(10, brickDb(band, freqs[k]) / 20); re[k] *= bm; im[k] *= bm; }
+      return false;
+    }
+    var hp = shape === 'lowcut', qc = BUTTER_Q[order];
+    for (i = 0; i < qc.length; i++) {
+      var qn = i === qc.length - 1 ? qc[i] * q / Math.SQRT1_2 : qc[i];
+      mulSection(hp ? proto(1, 0, 0, 1, 1 / qn, 1) : proto(0, 0, 1, 1, 1 / qn, 1), f, freqs, n, re, im, false, 1);
+    }
+    if (order % 2) mulSection(hp ? proto(0, 1, 0, 0, 1, 1) : proto(0, 0, 1, 0, 1, 1), f, freqs, n, re, im, false, 1);
+  } else if (shape === 'notch' || shape === 'bandpass') {
+    for (i = 0; i < pairs; i++) mulSection(shape === 'bandpass' ? proto(0, 1 / q, 0, 1, 1 / q, 1) : proto(1, 0, 1, 1, 1 / q, 1), f, freqs, n, re, im, false, 1);
+  } else if (shape === 'flattilt') {
+    var lo = Math.log2(FLAT_TILT_LO / 2), step = (Math.log2(FLAT_TILT_HI * 2) - lo) / MAX_SECTIONS;
+    var Gt = Math.pow(10, g / Math.log2(FLAT_TILT_HI / FLAT_TILT_LO) * step / 20), rt = Math.sqrt(Gt);
+    var one = [f], ar = [1], ai = [0];
+    for (i = 0; i < MAX_SECTIONS; i++) {
+      var fc = Math.pow(2, lo + (i + 0.5) * step);
+      mulSection(proto(0, Gt, rt, 0, 1, rt), fc, freqs, n, re, im, false, 1);
+      mulSection(proto(0, Gt, rt, 0, 1, rt), fc, one, 1, ar, ai, false, 1);
+    }
+    var at = 1 / Math.sqrt(ar[0] * ar[0] + ai[0] * ai[0]);   // pinned to 0 dB at the band frequency
+    for (k = 0; k < n; k++) { re[k] *= at; im[k] *= at; }
+  } else if (shape === 'allpass') {
+    if (order === 1) mulSection(proto(0, -1, 1, 0, 1, 1), f, freqs, n, re, im, false, 1);
+    else for (i = 0; i < pairs; i++) mulSection(proto(1, -1 / q, 1, 1, 1 / q, 1), f, freqs, n, re, im, false, 1);
+  }
+  return false;
+}
+
 // What SOLO plays: the part of the spectrum the band works on.
 function designSolo(shape, freq, q, fs, out){
   var w0 = 2 * Math.PI * Math.min(freq, 0.45 * fs) / fs;
@@ -711,7 +821,8 @@ function autoGainDb(p, fs){
 
 // ---------- parameters and factory presets ----------
 function makeDefaults(){
-  var p = { outGain: 0, outPan: 0, gainScale: 100, autoGain: false, character: 'clean', gainQ: false };
+  // PHASE: 'zero' (Zero Latency), 'natural' or 'linear'; PHASE RES: how long Linear Phase's filter is.
+  var p = { outGain: 0, outPan: 0, gainScale: 100, autoGain: false, character: 'clean', gainQ: false, phase: 'zero', phaseRes: 'medium' };
   for (var i = 0; i < MAX_BANDS; i++) {
     p[bandKey(i, 'Used')] = false; p[bandKey(i, 'On')] = true; p[bandKey(i, 'Shape')] = 'bell';
     p[bandKey(i, 'Freq')] = 1000; p[bandKey(i, 'Gain')] = 0; p[bandKey(i, 'Q')] = 1;
@@ -719,12 +830,14 @@ function makeDefaults(){
     // DYNAMIC: the gain moves by up to RANGE when the band's part of the input passes THRESHOLD.
     p[bandKey(i, 'Dyn')] = false; p[bandKey(i, 'Range')] = -6; p[bandKey(i, 'Thresh')] = -24;
     p[bandKey(i, 'Attack')] = 10; p[bandKey(i, 'Release')] = 120;
+    // SC: the detector listens to the sidechain; SPECTRAL: frequency by frequency.
+    p[bandKey(i, 'SC')] = false; p[bandKey(i, 'Spectral')] = false;
   }
   return p;
 }
 
 // "key=value; ..." with bands as "bN=shape freq gain q [slope] [placement] [off]
-// [dyn:range,threshold,attack,release]".
+// [dyn:range,threshold,attack,release] [sc] [spec]".
 // The VST reads the same strings.
 var FACTORY_PRESETS = [
   ['Flat', ''],
@@ -748,7 +861,10 @@ var FACTORY_PRESETS = [
   ['Bass Control', 'b1=lowcut 30 0 0.71 24; b2=lowshelf 120 0 0.71 12 stereo dyn:-6,-22,15,180'],
   ['Dynamic Air', 'b1=highshelf 10000 0 0.71 12 stereo dyn:4,-40,20,300'],
   ['Mud Tamer', 'b1=bell 280 0 1.2 12 stereo dyn:-5,-26,10,150; b2=bell 4000 1 0.8'],
-  ['Tape Warmth', 'b1=lowcut 25 0 0.71 12; b2=lowshelf 100 1.5 0.71 12; b3=highshelf 12000 -1.5 0.71 6; char=warm']
+  ['Tape Warmth', 'b1=lowcut 25 0 0.71 12; b2=lowshelf 100 1.5 0.71 12; b3=highshelf 12000 -1.5 0.71 6; char=warm'],
+  ['Resonance Tamer', 'b1=bell 3000 0 0.5 12 stereo dyn:-6,-36,5,80 spec'],
+  ['Sidechain Duck', 'b1=lowshelf 150 0 0.71 12 stereo dyn:-9,-30,3,120 sc'],
+  ['Master Linear', 'b1=lowcut 25 0 0.71 120; b2=lowshelf 90 1 0.71 12; b3=highshelf 12000 1.5 0.71 6; phase=linear; res=high']
 ];
 
 function presetParams(spec){
@@ -767,6 +883,8 @@ function presetParams(spec){
       if (v[5] && PLACEMENTS.indexOf(v[5]) >= 0) p[bandKey(i, 'Place')] = v[5];
       v.slice(6).forEach(function(t){
         if (t === 'off') p[bandKey(i, 'On')] = false;
+        if (t === 'sc') p[bandKey(i, 'SC')] = true;
+        if (t === 'spec') p[bandKey(i, 'Spectral')] = true;
         var dm = t.match(/^dyn:([-\d.]+),([-\d.]+),([\d.]+),([\d.]+)$/);
         if (dm) {
           p[bandKey(i, 'Dyn')] = true; p[bandKey(i, 'Range')] = parseFloat(dm[1]); p[bandKey(i, 'Thresh')] = parseFloat(dm[2]);
@@ -779,8 +897,110 @@ function presetParams(spec){
     else if (key === 'auto') p.autoGain = v[0] === '1';
     else if (key === 'char' && CHARACTERS.indexOf(v[0]) >= 0) p.character = v[0];
     else if (key === 'gq') p.gainQ = v[0] === '1';
+    else if (key === 'phase' && ['zero', 'natural', 'linear'].indexOf(v[0]) >= 0) p.phase = v[0];
+    else if (key === 'res' && ['low', 'medium', 'high', 'max'].indexOf(v[0]) >= 0) p.phaseRes = v[0];
   });
   return p;
+}
+</script>
+
+<!-- Natural and Linear Phase: the long filters, built off the audio thread. -->
+<script id="dsp-kernel" type="text/plain">
+// ---------- the FIR kernels for Natural and Linear Phase (runs in a Worker) ----------
+// The whole EQ as four filters (left to left, right to left, left to right,
+// right to left, so mid/side and left/right bands work as one), from the
+// bands' analog curves:
+//  Linear Phase: the magnitude only, symmetric around half the kernel (no
+//    phase change at all, latency half the kernel); RES sets the length.
+//  Natural Phase: the analog magnitude and phase, delayed a little so the
+//    part the analog filter would have past Nyquist can be made.
+// Sent to the audio engine already cut in blocks and transformed.
+var KPORT = null, pending = null, busy = false;
+var PART = 256, LIN_SECONDS = { low: 0.085, medium: 0.17, high: 0.34, max: 0.68 }, NATURAL_SECONDS = 0.34, NATURAL_PRE = 256;
+function pow2(x){ return Math.pow(2, Math.round(Math.log2(x))); }
+onmessage = function(e){
+  var m = e.data;
+  if (m.type === 'port') KPORT = m.port;
+  else if (m.type === 'design') { pending = m; if (!busy) { busy = true; setTimeout(run, 0); } }
+};
+function run(){
+  var m = pending; pending = null;
+  if (m && KPORT) { var k = buildKernel(m); KPORT.postMessage(k.msg, k.transfer); }
+  if (pending) setTimeout(run, 0); else busy = false;
+}
+// The minimum-phase spectrum with the magnitude db[0..N/2] (dB) on an N-point grid, by the cepstrum.
+function minPhase(db, N, outRe, outIm){
+  var re = new Float64Array(N), im = new Float64Array(N), K = N / 2, k;
+  for (k = 0; k <= K; k++) { re[k] = db[k] * Math.LN10 / 20; if (k > 0 && k < K) re[N - k] = re[k]; }
+  fft(re, im, N, true);
+  for (k = 1; k < K; k++) re[k] *= 2;
+  for (k = K + 1; k < N; k++) re[k] = 0;
+  im.fill(0);
+  fft(re, im, N, false);
+  for (k = 0; k <= K; k++) { var mg = Math.exp(re[k]); outRe[k] = mg * Math.cos(im[k]); outIm[k] = mg * Math.sin(im[k]); }
+}
+function buildKernel(m){
+  var fs = m.fs, lin = m.mode === 'linear';
+  var K = pow2(fs * (lin ? (LIN_SECONDS[m.res] || LIN_SECONDS.medium) : NATURAL_SECONDS)), N = 2 * K, nb = K + 1, k;
+  var freqs = new Float64Array(nb);
+  for (k = 0; k < nb; k++) freqs[k] = k * fs / N;
+  var groups = {}, tRe = new Float64Array(nb), tIm = new Float64Array(nb), db = new Float64Array(nb);
+  function group(name){
+    if (!groups[name]) { var re = new Float64Array(nb); re.fill(1); groups[name] = { re: re, im: new Float64Array(nb) }; }
+    return groups[name];
+  }
+  m.bands.forEach(function(b){
+    tRe.fill(1); tIm.fill(0);
+    if (analogBand(b, freqs, nb, tRe, tIm, !lin)) {   // Natural Phase: the brickwall minimum-phase
+      for (k = 0; k < nb; k++) db[k] = brickDb(b, freqs[k]);
+      minPhase(db, N, tRe, tIm);
+    }
+    (b.place === 'stereo' ? ['left', 'right'] : [b.place]).forEach(function(name){
+      var g = group(name);
+      for (k = 0; k < nb; k++) { var r = g.re[k], i = g.im[k]; g.re[k] = r * tRe[k] - i * tIm[k]; g.im[k] = r * tIm[k] + i * tRe[k]; }
+    });
+  });
+  var one = { re: new Float64Array(nb).fill(1), im: new Float64Array(nb) };
+  var L = groups.left || one, R = groups.right || one, ll, lr = null, rl = null, rr;
+  function mul(a, b, sc){ var o = { re: new Float64Array(nb), im: new Float64Array(nb) }; for (var j = 0; j < nb; j++) { o.re[j] = (a.re[j] * b.re[j] - a.im[j] * b.im[j]) * sc; o.im[j] = (a.re[j] * b.im[j] + a.im[j] * b.re[j]) * sc; } return o; }
+  if (groups.mid || groups.side) {
+    var M = groups.mid || one, S = groups.side || one, sum = { re: new Float64Array(nb), im: new Float64Array(nb) }, dif = { re: new Float64Array(nb), im: new Float64Array(nb) };
+    for (k = 0; k < nb; k++) { sum.re[k] = M.re[k] + S.re[k]; sum.im[k] = M.im[k] + S.im[k]; dif.re[k] = M.re[k] - S.re[k]; dif.im[k] = M.im[k] - S.im[k]; }
+    ll = mul(L, sum, 0.5); rl = mul(L, dif, 0.5); lr = mul(R, dif, 0.5); rr = mul(R, sum, 0.5);
+  } else { ll = L; rr = R; }
+  if (lin) [ll, lr, rl, rr].forEach(function(h){ if (h) for (var j = 0; j < nb; j++) { h.re[j] = Math.sqrt(h.re[j] * h.re[j] + h.im[j] * h.im[j]); h.im[j] = 0; } });
+  // nothing only on one side: the right channel's filter is the left's
+  var same = !m.bands.some(function(b){ return b.place !== 'stereo'; });
+  var D = lin ? K / 2 : NATURAL_PRE, nparts = K / PART, transfer = [];
+  function parts(H){
+    if (!H) return null;
+    var re = new Float64Array(N), im = new Float64Array(N), j, n;
+    for (j = 0; j <= K; j++) {
+      var ph = -2 * Math.PI * j * D / N, c = Math.cos(ph), sn = Math.sin(ph);
+      var xr = H.re[j] * c - H.im[j] * sn, xi = H.re[j] * sn + H.im[j] * c;
+      re[j] = xr; im[j] = j === K ? 0 : xi;
+      if (j > 0 && j < K) { re[N - j] = xr; im[N - j] = -xi; }
+    }
+    fft(re, im, N, true);
+    for (n = 0; n < K; n++) {
+      var w;
+      if (lin) w = 0.5 - 0.5 * Math.cos(2 * Math.PI * (n + 0.5) / K);
+      else w = n < D ? 0.5 - 0.5 * Math.cos(Math.PI * n / D) : n > K * 0.75 ? 0.5 + 0.5 * Math.cos(Math.PI * (n - K * 0.75) / (K * 0.25)) : 1;
+      re[n] *= w;
+    }
+    var P1 = PART + 1, out = new Float32Array(nparts * P1 * 2), fr = new Float64Array(2 * PART), fi = new Float64Array(2 * PART);
+    for (j = 0; j < nparts; j++) {
+      fr.fill(0); fi.fill(0);
+      for (n = 0; n < PART; n++) fr[n] = re[j * PART + n];
+      fft(fr, fi, 2 * PART, false);
+      for (n = 0; n <= PART; n++) { out[(j * P1 + n) * 2] = fr[n]; out[(j * P1 + n) * 2 + 1] = fi[n]; }
+    }
+    transfer.push(out.buffer);
+    return out;
+  }
+  var msg = { type: 'kernel', mode: m.mode, res: m.res, fs: fs, P: PART, nparts: nparts, latency: PART + D,
+              ll: parts(ll), lr: parts(lr), rl: parts(rl), rr: same ? null : parts(rr), same: same };
+  return { msg: msg, transfer: transfer };
 }
 </script>
 
@@ -824,6 +1044,200 @@ function runSections(secs, n, z, ch, x){
   return x;
 }
 
+// ---------- NATURAL and LINEAR PHASE: the EQ as one long filter ----------
+// Uniformly partitioned convolution (overlap-save, blocks of P samples) of
+// left and right through the four kernels from the Worker. A new kernel
+// fades in over one block. Latency: P plus the kernel's own delay.
+function FirStage(P){
+  this.P = P; this.N = 2 * P;
+  this.inL = new Float64Array(this.N); this.inR = new Float64Array(this.N);
+  this.outL = new Float64Array(P); this.outR = new Float64Array(P); this.out2L = new Float64Array(P); this.out2R = new Float64Array(P);
+  this.pos = 0; this.head = 0;
+  this.re = new Float64Array(this.N); this.im = new Float64Array(this.N);
+  this.yl = new Float64Array(2 * (P + 1)); this.yr = new Float64Array(2 * (P + 1));
+  this.fdlL = []; this.fdlR = []; this.kern = null; this.next = null;
+}
+FirStage.prototype.reset = function(){
+  this.inL.fill(0); this.inR.fill(0); this.outL.fill(0); this.outR.fill(0); this.pos = 0; this.head = 0;
+  for (var i = 0; i < this.fdlL.length; i++) { this.fdlL[i].fill(0); this.fdlR[i].fill(0); }
+  this.kern = null; this.next = null;
+};
+FirStage.prototype.setKernel = function(k){
+  if (this.fdlL.length < k.nparts) {   // only between modes (the engine resets first)
+    while (this.fdlL.length < k.nparts) { this.fdlL.push(new Float64Array(2 * (this.P + 1))); this.fdlR.push(new Float64Array(2 * (this.P + 1))); }
+    this.head = 0;
+  }
+  if (this.kern) this.next = k; else this.kern = k;
+};
+function cmac(y, x, h, o, n2){
+  for (var b = 0; b < n2; b += 2) {
+    var xr = x[b], xi = x[b + 1], hr = h[o + b], hi = h[o + b + 1];
+    y[b] += xr * hr - xi * hi; y[b + 1] += xr * hi + xi * hr;
+  }
+}
+// The output spectra for kernel k, then back to time: the last P samples of the block.
+FirStage.prototype.render = function(k, oL, oR){
+  var P = this.P, N = this.N, n2 = 2 * (P + 1), nf = this.fdlL.length, yl = this.yl, yr = this.yr, re = this.re, im = this.im;
+  yl.fill(0); yr.fill(0);
+  for (var j = 0; j < k.nparts; j++) {
+    var slot = (this.head - j + nf) % nf, xl = this.fdlL[slot], xr = this.fdlR[slot], o = j * n2;
+    cmac(yl, xl, k.ll, o, n2);
+    if (k.lr) cmac(yl, xr, k.lr, o, n2);
+    cmac(yr, xr, k.same ? k.ll : k.rr, o, n2);
+    if (k.rl) cmac(yr, xl, k.rl, o, n2);
+  }
+  // both channels in one inverse transform: YL + j YR
+  for (var b = 0; b <= P; b++) {
+    var lr = yl[2 * b], li = yl[2 * b + 1], rr = yr[2 * b], ri = yr[2 * b + 1];
+    re[b] = lr - ri; im[b] = li + rr;
+    if (b > 0 && b < P) { re[N - b] = lr + ri; im[N - b] = rr - li; }
+  }
+  fft(re, im, N, true);
+  for (var i = 0; i < P; i++) { oL[i] = re[P + i]; oR[i] = im[P + i]; }
+};
+FirStage.prototype.block = function(){
+  var P = this.P, N = this.N, re = this.re, im = this.im;
+  re.set(this.inL); im.set(this.inR);
+  fft(re, im, N, false);
+  this.head = (this.head + 1) % this.fdlL.length;
+  var xl = this.fdlL[this.head], xr = this.fdlR[this.head];
+  for (var k = 0; k <= P; k++) {
+    var nk = (N - k) % N, ar = re[k], ai = im[k], br = re[nk], bi = -im[nk];
+    xl[2 * k] = (ar + br) / 2; xl[2 * k + 1] = (ai + bi) / 2;
+    xr[2 * k] = (ai - bi) / 2; xr[2 * k + 1] = -(ar - br) / 2;
+  }
+  this.render(this.kern, this.outL, this.outR);
+  if (this.next) {
+    this.render(this.next, this.out2L, this.out2R);
+    for (var i = 0; i < P; i++) {
+      var t = (i + 0.5) / P;
+      this.outL[i] += (this.out2L[i] - this.outL[i]) * t; this.outR[i] += (this.out2R[i] - this.outR[i]) * t;
+    }
+    this.kern = this.next; this.next = null;
+  }
+  this.inL.copyWithin(0, P); this.inR.copyWithin(0, P);
+};
+FirStage.prototype.process = function(L, R, len){
+  var P = this.P;
+  for (var i = 0; i < len; i++) {
+    this.inL[P + this.pos] = L[i]; this.inR[P + this.pos] = R[i];
+    L[i] = this.outL[this.pos]; R[i] = this.outR[this.pos];
+    if (++this.pos === P) { this.pos = 0; if (this.kern) this.block(); else { this.outL.fill(0); this.outR.fill(0); this.inL.copyWithin(0, P); this.inR.copyWithin(0, P); } }
+  }
+};
+
+// ---------- SPECTRAL dynamics (and every dynamic band in Natural/Linear Phase) ----------
+// A short-time FFT (2048 points at 44.1/48 kHz, hops of a quarter, square-root
+// Hann in and out): each dynamic band's gain change spread over the bins by
+// the band's own shape. A SPECTRAL band reads its detector bin by bin, so only
+// the frequencies that pass THRESHOLD move (a resonance, not the whole band);
+// the others move as a whole with the band's level. Latency: the FFT size.
+function SpecStage(fs){
+  var N = fs > 60000 ? 4096 : 2048, i;
+  this.N = N; this.H = N / 4; this.fs = fs; this.c = 0;
+  this.win = new Float64Array(N);
+  for (i = 0; i < N; i++) this.win[i] = Math.sin(Math.PI * i / N);
+  this.inL = new Float64Array(N); this.inR = new Float64Array(N); this.dI = new Float64Array(N); this.dS = new Float64Array(N);
+  this.accL = new Float64Array(N); this.accR = new Float64Array(N); this.outL = new Float64Array(this.H); this.outR = new Float64Array(this.H);
+  this.re = new Float64Array(N); this.im = new Float64Array(N); this.dre = new Float64Array(N); this.dim = new Float64Array(N);
+  this.gdb = new Float64Array(N / 2 + 1); this.freqs = new Float64Array(N / 2 + 1);
+  for (i = 0; i <= N / 2; i++) this.freqs[i] = i * fs / N;
+  this.cal = 20 * Math.log10(Math.PI / N);   // a sine's bin reads its peak level
+  this.wRe = new Float64Array(N / 2 + 1); this.wIm = new Float64Array(N / 2 + 1);
+}
+SpecStage.prototype.reset = function(){
+  [this.inL, this.inR, this.dI, this.dS, this.accL, this.accR, this.outL, this.outR].forEach(function(a){ a.fill(0); });
+  this.c = 0;
+};
+// The band's shape, 0..1 (1 where its gain change is whole).
+SpecStage.prototype.weights = function(b){
+  var key = b.tShape + '|' + b.tf + '|' + b.tq + '|' + b.tSlope + '|' + b.range + '|' + b.gainQ;
+  if (b.specKey === key) return b.specW;
+  var nb = this.N / 2 + 1, w = b.specW && b.specW.length === nb ? b.specW : new Float64Array(nb);
+  var g = Math.abs(b.range) > 0.01 ? b.range : 0;
+  if (g) {
+    this.wRe.fill(1); this.wIm.fill(0);
+    analogBand({ shape: b.tShape, freq: b.tf, gain: g, q: b.tq, slope: b.tSlope, gainQ: b.gainQ }, this.freqs, nb, this.wRe, this.wIm);
+    for (var k = 0; k < nb; k++) w[k] = Math.max(0, Math.min(1, 10 * Math.log10(this.wRe[k] * this.wRe[k] + this.wIm[k] * this.wIm[k] + 1e-30) / g));
+  } else w.fill(0);
+  b.specW = w; b.specKey = key;
+  return w;
+};
+SpecStage.prototype.process = function(L, R, dI, dS, len, eng){
+  var N = this.N, H = this.H;
+  for (var i = 0; i < len; i++) {
+    var k = N - H + this.c;
+    this.inL[k] = L[i]; this.inR[k] = R[i]; this.dI[k] = dI[i]; this.dS[k] = dS[i];
+    L[i] = this.outL[this.c]; R[i] = this.outR[this.c];
+    if (++this.c === H) { this.c = 0; this.frame(eng); }
+  }
+};
+SpecStage.prototype.frame = function(eng){
+  var N = this.N, H = this.H, nb = N / 2 + 1, win = this.win, re = this.re, im = this.im, dre = this.dre, dim = this.dim, gdb = this.gdb, n, k;
+  for (n = 0; n < N; n++) { re[n] = this.inL[n] * win[n]; im[n] = this.inR[n] * win[n]; dre[n] = this.dI[n] * win[n]; dim[n] = this.dS[n] * win[n]; }
+  fft(re, im, N, false); fft(dre, dim, N, false);
+  gdb.fill(0);
+  var any = false, fs = this.fs;
+  for (var j = 0; j < MAX_BANDS; j++) {
+    var b = eng.bands[j];
+    if (!b.viaStft || !b.tActive) continue;
+    var W = this.weights(b);
+    if (b.spectral) {
+      if (!b.specEnv || b.specEnv.length !== nb) b.specEnv = new Float64Array(nb);
+      var env = b.specEnv, useSc = b.sc && eng.scOn, shown = 0, rng = b.range, mag = Math.abs(rng), sg = rng < 0 ? -1 : 1;
+      var ca = 1 - Math.exp(-H / (Math.max(0.1, b.att) * 0.001 * fs)), cr = 1 - Math.exp(-H / (Math.max(0.1, b.rel) * 0.001 * fs));
+      for (k = 0; k < nb; k++) {
+        var w = W[k];
+        if (w < 1e-3) { env[k] = 0; continue; }
+        var nk = (N - k) % N, ar = dre[k], ai = dim[k], br = dre[nk], bi = -dim[nk], pr, pi;
+        // the input is in the real part, the sidechain in the imaginary
+        if (useSc) { pr = (ai - bi) / 2; pi = -(ar - br) / 2; } else { pr = (ar + br) / 2; pi = (ai + bi) / 2; }
+        var pw = (pr * pr + pi * pi) * w * w;
+        env[k] += (pw - env[k]) * (pw > env[k] ? ca : cr);
+        var over = 10 * Math.log10(env[k] + 1e-30) + this.cal - b.thresh;
+        if (over > 0 && mag > 0) {
+          var ch = w * sg * Math.min(mag, over * 0.75);
+          gdb[k] += ch; any = true;
+          if (Math.abs(ch) > Math.abs(shown)) shown = ch;
+        }
+      }
+      eng.dynShown[j] = shown;
+    } else if (b.dynDb) {
+      for (k = 0; k < nb; k++) gdb[k] += W[k] * b.dynDb;
+      any = true;
+    }
+  }
+  if (any) {
+    for (k = 0; k < nb; k++) {
+      if (!gdb[k]) continue;
+      var g = Math.pow(10, gdb[k] / 20);
+      re[k] *= g; im[k] *= g;
+      if (k > 0 && k < N / 2) { re[N - k] *= g; im[N - k] *= g; }
+    }
+  }
+  fft(re, im, N, true);
+  // square-root Hann twice is Hann; Hann at a quarter hop adds up to 2
+  for (n = 0; n < N; n++) { this.accL[n] += re[n] * win[n] * 0.5; this.accR[n] += im[n] * win[n] * 0.5; }
+  this.outL.set(this.accL.subarray(0, H)); this.outR.set(this.accR.subarray(0, H));
+  this.accL.copyWithin(0, H); this.accR.copyWithin(0, H); this.accL.fill(0, N - H); this.accR.fill(0, N - H);
+  this.inL.copyWithin(0, H); this.inR.copyWithin(0, H); this.dI.copyWithin(0, H); this.dS.copyWithin(0, H);
+};
+
+// A delay for two signals (the dry sound for BYPASS, the detectors).
+function StereoDelay(size){ this.a = new Float64Array(size); this.b = new Float64Array(size); this.mask = size - 1; this.w = 0; }
+StereoDelay.prototype.reset = function(){ this.a.fill(0); this.b.fill(0); this.w = 0; };
+StereoDelay.prototype.process = function(x, y, len, d){
+  if (d <= 0) return;
+  var a = this.a, b = this.b, mask = this.mask, w = this.w;
+  for (var i = 0; i < len; i++) {
+    a[w] = x[i]; b[w] = y[i];
+    var r = (w - d) & mask;
+    x[i] = a[r]; y[i] = b[r];
+    w = (w + 1) & mask;
+  }
+  this.w = w;
+};
+
 function EqEngine(fs){
   this.fs = fs;
   this.bands = [];
@@ -840,8 +1254,24 @@ function EqEngine(fs){
   // CHARACTER: soft saturation after the bands, faded like a band when it changes
   this.character = 'clean'; this.tCharacter = 'clean'; this.charMix = 0; this.gainQ = false;
   this.dcX = new Float64Array(2); this.dcY = new Float64Array(2); this.lpZ = new Float64Array(2);
+  // PHASE: the mode playing and the one wanted; a change (or the spectral stage
+  // coming or going) fades out, switches, and fades back in.
+  this.mode = 'zero'; this.res = 'medium'; this.specOn = false; this.tMode = 'zero'; this.tRes = 'medium'; this.tSpec = false;
+  this.gate = 1; this.latency = 0; this.lastKernel = null; this.scOn = false;
+  this.fir = new FirStage(256); this.spec = new SpecStage(fs);
+  this.dry = new StereoDelay(131072); this.detDelay = new StereoDelay(131072);
+  this.dryL = new Float64Array(SUB_BLOCK); this.dryR = new Float64Array(SUB_BLOCK);
+  this.detI = new Float64Array(SUB_BLOCK); this.detS = new Float64Array(SUB_BLOCK);
   this.started = false;
 }
+
+// A kernel from the Worker: used now if it's for the mode playing, kept for a switch otherwise.
+EqEngine.prototype.setKernel = function(k){
+  if (k.fs !== this.fs) return;
+  this.lastKernel = k;
+  if (this.kernelFits(k, this.mode, this.res)) this.fir.setKernel(k);
+};
+EqEngine.prototype.kernelFits = function(k, mode, res){ return !!k && mode !== 'zero' && k.mode === mode && (mode !== 'linear' || k.res === res); };
 
 // p: the flat parameters; solo: the soloed band (0-based) or -1.
 EqEngine.prototype.setParams = function(p, solo){
@@ -856,8 +1286,15 @@ EqEngine.prototype.setParams = function(p, solo){
     b.dyn = dyn;
     b.range = (p[bandKey(i, 'Range')] || 0) * p.gainScale / 100; b.thresh = p[bandKey(i, 'Thresh')];
     b.att = p[bandKey(i, 'Attack')]; b.rel = p[bandKey(i, 'Release')];
-    b.tg = b.staticG + (b.dyn ? b.dynDb : 0);
+    b.sc = !!p[bandKey(i, 'SC')]; b.spectral = !!p[bandKey(i, 'Spectral')]; b.gainQ = !!p.gainQ;
+    b.viaStft = b.dyn && (b.spectral || (p.phase || 'zero') !== 'zero');
+    if (b.viaStft && b.spectral) b.dynDb = 0;
+    b.tg = b.staticG + (b.dyn && !b.viaStft ? b.dynDb : 0);
   }
+  this.tMode = ['natural', 'linear'].indexOf(p.phase) >= 0 ? p.phase : 'zero';
+  this.tRes = p.phaseRes || 'medium';
+  this.tSpec = this.bands.some(function(bd){ return bd.viaStft; });
+  this.scOn = !!p.scOn;
   this.tCharacter = CHARACTERS.indexOf(p.character) >= 0 ? p.character : 'clean';
   if (!!p.gainQ !== this.gainQ) { this.gainQ = !!p.gainQ; for (var gq = 0; gq < MAX_BANDS; gq++) this.bands[gq].dirty = true; }
   var s = solo === undefined ? -1 : solo;
@@ -876,7 +1313,26 @@ EqEngine.prototype.setParams = function(p, solo){
     }
     this.gain = this.tGain; this.pan = this.tPan; this.power = this.tPower;
     this.character = this.tCharacter; this.charMix = this.character === 'clean' ? 0 : 1;
+    this.gate = 0;   // the mode below switches in silence, then fades in
   }
+};
+
+// PHASE and the spectral stage: switch in silence, fade back in.
+EqEngine.prototype.updateMode = function(len){
+  var want = this.tMode !== this.mode || (this.tMode === 'linear' && this.tRes !== this.res) || this.tSpec !== this.specOn;
+  if (want && this.gate === 0) {
+    this.mode = this.tMode; this.res = this.tRes; this.specOn = this.tSpec;
+    this.fir.reset(); this.spec.reset(); this.dry.reset(); this.detDelay.reset();
+    if (this.kernelFits(this.lastKernel, this.mode, this.res)) this.fir.setKernel(this.lastKernel);
+    for (var j = 0; j < MAX_BANDS; j++) if (this.bands[j].specEnv) this.bands[j].specEnv.fill(0);
+    want = false;
+  }
+  var firLat = this.mode !== 'zero' && this.fir.kern ? this.fir.kern.latency : 0;
+  this.firLatency = firLat;
+  this.latency = firLat + (this.specOn ? this.spec.N : 0);
+  var target = want || (this.mode !== 'zero' && !this.fir.kern) ? 0 : 1, g0 = this.gate;
+  this.gate = target > g0 ? Math.min(1, g0 + len * this.fadeStep) : target < g0 ? Math.max(0, g0 - len * this.fadeStep) : g0;
+  return g0;
 };
 
 EqEngine.prototype.updateBand = function(b){
@@ -932,9 +1388,11 @@ EqEngine.prototype.runBand = function(b, L, R, len){
 // DYNAMIC: the band's part of the input (as SOLO hears it), its level in dB
 // (RMS, +3 dB so a sine reads its peak), attack and release; above
 // THRESHOLD the gain moves 3/4 dB per dB (like a 4:1 compressor), at most RANGE.
-EqEngine.prototype.detect = function(b, dl, dr, len, index){
+// SC: the detector listens to the sidechain instead of the input.
+EqEngine.prototype.detect = function(b, dl, dr, sl, sr, len, index){
   var key = b.tShape + '|' + b.tf + '|' + b.tq;
   if (key !== b.detKey) { b.detKey = key; designSolo(b.tShape, b.tf, b.tq, this.fs, b.det); }
+  if (b.sc && this.scOn && sl) { dl = sl; dr = sr; }
   var ms = 0;
   for (var i = 0; i < len; i++) { var y = runSections(b.dets, 1, b.detZ, 0, (dl[i] + dr[i]) * 0.5); ms += y * y; }
   ms /= len;
@@ -943,7 +1401,7 @@ EqEngine.prototype.detect = function(b, dl, dr, len, index){
   var level = 10 * Math.log10(b.env + 1e-12) + 3.0103, over = level - b.thresh, change = 0;
   if (over > 0) change = (b.range < 0 ? -1 : 1) * Math.min(Math.abs(b.range), over * 0.75);
   b.dynDb = change;
-  b.tg = b.staticG + change;
+  if (!b.viaStft) b.tg = b.staticG + change;   // in the STFT the change is spread over the bins instead
   this.dynShown[index] = change;
 };
 
@@ -972,23 +1430,37 @@ EqEngine.prototype.runCharacter = function(L, R, len){
 };
 
 // inL/inR: input (Float32Array); outL/outR: output; n samples.
-EqEngine.prototype.process = function(inL, inR, outL, outR, n){
+// scL/scR: the sidechain (or null).
+EqEngine.prototype.process = function(inL, inR, outL, outR, n, scL, scR){
   var fs = this.fs, meter = this.meter;
   for (var off = 0; off < n; off += SUB_BLOCK) {
     var len = Math.min(SUB_BLOCK, n - off), i, j;
     var L = outL.subarray(off, off + len), R = outR.subarray(off, off + len);
-    var dl = inL.subarray(off, off + len), dr = inR.subarray(off, off + len);
+    var il = inL.subarray(off, off + len), ir = inR.subarray(off, off + len);
+    var sl = scL ? scL.subarray(off, off + len) : null, sr = scR ? scR.subarray(off, off + len) : null;
+    var gate0 = this.updateMode(len);
+    // dl/dr: the dry sound, delayed as much as the EQ (for BYPASS and SOLO)
+    var dl = this.dryL.subarray(0, len), dr = this.dryR.subarray(0, len);
     for (i = 0; i < len; i++) {
-      L[i] = dl[i]; R[i] = dr[i];
-      if (Math.abs(dl[i]) > meter[0]) meter[0] = Math.abs(dl[i]);
-      if (Math.abs(dr[i]) > meter[1]) meter[1] = Math.abs(dr[i]);
+      L[i] = dl[i] = il[i]; R[i] = dr[i] = ir[i];
+      if (Math.abs(il[i]) > meter[0]) meter[0] = Math.abs(il[i]);
+      if (Math.abs(ir[i]) > meter[1]) meter[1] = Math.abs(ir[i]);
     }
-    for (j = 0; j < MAX_BANDS; j++) if (this.bands[j].dyn) this.detect(this.bands[j], dl, dr, len, j);
+    for (j = 0; j < MAX_BANDS; j++) { var bj = this.bands[j]; if (bj.dyn && !(bj.viaStft && bj.spectral)) this.detect(bj, il, ir, sl, sr, len, j); }
+    var fir = this.mode !== 'zero';
     for (j = 0; j < MAX_BANDS; j++) {
       var b = this.bands[j];
       this.updateBand(b);
-      if (b.mix > 0 || b.mixTarget > 0) this.runBand(b, L, R, len);
+      if (!fir && (b.mix > 0 || b.mixTarget > 0)) this.runBand(b, L, R, len);
     }
+    if (fir) this.fir.process(L, R, len);
+    if (this.specOn) {
+      var di = this.detI.subarray(0, len), ds = this.detS.subarray(0, len);
+      for (i = 0; i < len; i++) { di[i] = (il[i] + ir[i]) * 0.5; ds[i] = sl ? (sl[i] + sr[i]) * 0.5 : 0; }
+      this.detDelay.process(di, ds, len, this.firLatency);   // lined up with what comes out of the EQ
+      this.spec.process(L, R, di, ds, len, this);
+    }
+    this.dry.process(dl, dr, len, this.latency);
     // SOLO: the soloed band's part of the spectrum, from the input.
     var soloTarget = this.tSolo >= 0 && this.tSolo === this.solo ? 1 : 0;
     if (this.soloMix === 0 && this.tSolo !== this.solo) { this.solo = this.tSolo; this.soloZ.fill(0); soloTarget = this.solo >= 0 ? 1 : 0; }
@@ -1015,6 +1487,8 @@ EqEngine.prototype.process = function(inL, inR, outL, outR, n){
       var t = (i + 1) / len, g = g0 + (this.gain - g0) * t, pn = p0 + (this.pan - p0) * t, w = w0 + (w1 - w0) * t;
       var ol = L[i] * g * (pn > 0 ? 1 - pn : 1), or = R[i] * g * (pn < 0 ? 1 + pn : 1);
       ol = dl[i] + w * (ol - dl[i]); or = dr[i] + w * (or - dr[i]);
+      var gt = gate0 + (this.gate - gate0) * t;
+      ol *= gt; or *= gt;
       L[i] = ol; R[i] = or;
       if (Math.abs(ol) > meter[2]) meter[2] = Math.abs(ol);
       if (Math.abs(or) > meter[3]) meter[3] = Math.abs(or);
@@ -1032,6 +1506,7 @@ if (typeof registerProcessor === 'function') {
       this.port.onmessage = (e) => {
         var m = e.data;
         if (m.type === 'params') { this.engine.setParams(m.p, m.solo); this.ready = true; }
+        else if (m.type === 'kport') m.port.onmessage = (ev) => this.engine.setKernel(ev.data);
       };
     }
     process(inputs, outputs){
@@ -1039,13 +1514,14 @@ if (typeof registerProcessor === 'function') {
       if (this.silence.length < n) this.silence = new Float32Array(n);
       var il = input && input[0] ? input[0] : this.silence, ir = input && input[1] ? input[1] : il;
       if (!this.ready) { out[0].set(il); out[1].set(ir); return true; }
-      this.engine.process(il, ir, out[0], out[1], n);
+      var sc = inputs[1], scl = sc && sc[0] ? sc[0] : null, scr = sc && sc[1] ? sc[1] : scl;
+      this.engine.process(il, ir, out[0], out[1], n, scl, scr);
       // Meters about 30 times a second.
       this.frames += n;
       if (this.frames >= sampleRate / 30) {
         this.frames = 0;
         var mt = this.engine.meter;
-        this.port.postMessage({ type: 'meter', m: [mt[0], mt[1], mt[2], mt[3]], auto: this.engine.autoDb, dyn: Array.prototype.slice.call(this.engine.dynShown) });
+        this.port.postMessage({ type: 'meter', m: [mt[0], mt[1], mt[2], mt[3]], auto: this.engine.autoDb, dyn: Array.prototype.slice.call(this.engine.dynShown), lat: this.engine.latency });
         mt.fill(0);
       }
       return true;
@@ -1066,7 +1542,7 @@ if (typeof registerProcessor === 'function') {
 
   // ---------- state ----------
   var DEFAULTS = makeDefaults();
-  var UI_DEFAULTS = { theme: 'light', anaMode: 'both', anaRes: 'high', anaSpeed: 'med', anaRange: 90, anaTilt: true, piano: true, dispRange: 12, source: 'demo' };
+  var UI_DEFAULTS = { theme: 'dark', anaMode: 'both', anaRes: 'high', anaSpeed: 'med', anaRange: 90, anaTilt: true, piano: true, dispRange: 12, source: 'demo' };
   var STATE_KEY = 'egret-eq/state/v1', USER_KEY = 'egret-eq/presets/v1', UI_KEY = 'egret-eq/ui/v1';
   var params = clone(DEFAULTS), presetName = 'Flat', ab = { cur: 'A', A: null, B: null };
   var ui = Object.assign({}, UI_DEFAULTS);
@@ -1079,6 +1555,7 @@ if (typeof registerProcessor === 'function') {
       if (saved.ab) ab = saved.ab;
     }
     ui = Object.assign(ui, JSON.parse(localStorage.getItem(UI_KEY) || '{}'));
+    if (!ui.themePicked) ui.theme = 'dark';   // dark is the default now; a theme someone picks stays
   } catch (err) { /* storage unavailable: start fresh */ }
   var selected = -1, solo = -1;
   for (var si = 0; si < MAX_BANDS && selected < 0; si++) if (params[bandKey(si, 'Used')]) selected = si;
@@ -1107,7 +1584,7 @@ if (typeof registerProcessor === 'function') {
       tipBg: 'rgba(251,248,239,0.96)', tipText: '#2a241d',
       meterBg: '#ece4cf', meterTrack: 'rgba(42,36,29,0.08)', meterLow: '#c9a35a', meterMid: '#a8700a', meterTop: '#6b4a10', meterHold: '#2a241d',
       meterLine: 'rgba(168,112,10,0.45)', meterText: 'rgba(42,36,29,0.75)', bandDarken: 0.72,
-      keyWhite: '#fbf8ef', keyBlack: '#3a3226', keyEdge: 'rgba(42,36,29,0.22)', keyLabel: 'rgba(42,36,29,0.5)'
+      scLine: 'rgba(178,70,40,0.75)', keyWhite: '#fbf8ef', keyBlack: '#3a3226', keyEdge: 'rgba(42,36,29,0.22)', keyLabel: 'rgba(42,36,29,0.5)'
     },
     dark: {
       bgTop: '#1d170c', bgBottom: '#120e06', scaleBg: 'rgba(0,0,0,0.25)', nyquist: 'rgba(0,0,0,0.4)',
@@ -1119,7 +1596,7 @@ if (typeof registerProcessor === 'function') {
       tipBg: 'rgba(23,19,8,0.92)', tipText: '#f2ecd9',
       meterBg: '#120e06', meterTrack: 'rgba(240,168,48,0.08)', meterLow: '#7a5a18', meterMid: '#f0a830', meterTop: '#f2ecd9', meterHold: '#f2ecd9',
       meterLine: 'rgba(240,168,48,0.35)', meterText: 'rgba(242,236,217,0.75)', bandDarken: 1,
-      keyWhite: '#3d3322', keyBlack: '#0c0904', keyEdge: 'rgba(240,168,48,0.16)', keyLabel: 'rgba(242,236,217,0.45)'
+      scLine: 'rgba(240,130,90,0.8)', keyWhite: '#3d3322', keyBlack: '#0c0904', keyEdge: 'rgba(240,168,48,0.16)', keyLabel: 'rgba(242,236,217,0.45)'
     }
   };
   var T = THEMES.light;
@@ -1143,8 +1620,22 @@ if (typeof registerProcessor === 'function') {
 
   // ---------- audio ----------
   var ctx = null, node = null, inputBus = null, preAna = null, postAna = null, preBuf = null, postBuf = null;
+  var scBus = null, scAna = null, scBuf = null, kworker = null, lastDesign = '', latency = 0;
   function sampleRateNow(){ return ctx ? ctx.sampleRate : 48000; }
-  function sendParams(){ if (node) node.port.postMessage({ type: 'params', p: Object.assign({}, params, { power: !bypassed }), solo: solo }); }
+  function sendParams(){
+    if (node) node.port.postMessage({ type: 'params', p: Object.assign({}, params, { power: !bypassed, scOn: sc.source !== 'off' }), solo: solo });
+    sendDesign();
+  }
+  // Natural and Linear Phase: the Worker builds the long filter from the bands (static gains).
+  function sendDesign(){
+    if (!kworker || !ctx || !params.phase || params.phase === 'zero') return;
+    var bands = [];
+    for (var i = 0; i < MAX_BANDS; i++) { var b = bandOf(params, i); if (b.used && b.on) bands.push(b); }
+    var msg = { type: 'design', mode: params.phase, res: params.phaseRes, fs: ctx.sampleRate, bands: bands }, key = JSON.stringify(msg);
+    if (key === lastDesign) return;
+    lastDesign = key;
+    kworker.postMessage(msg);
+  }
 
   function initAudio(){
     if (ctx) return;
@@ -1152,6 +1643,7 @@ if (typeof registerProcessor === 'function') {
     inputBus = ctx.createGain();
     preAna = ctx.createAnalyser(); postAna = ctx.createAnalyser();
     inputBus.connect(preAna);
+    scBus = ctx.createGain(); scAna = ctx.createAnalyser(); scBus.connect(scAna);
     applyAnalyzer();
     invalidateCurves();
     if (!ctx.audioWorklet) { $('no-worklet').hidden = false; return; }
@@ -1159,14 +1651,23 @@ if (typeof registerProcessor === 'function') {
     // A data: URL rather than a blob: Chrome refuses blob worklets on pages opened from a file.
     var url = 'data:application/javascript;charset=utf-8,' + encodeURIComponent(source);
     ctx.audioWorklet.addModule(url).then(function(){
-      node = new AudioWorkletNode(ctx, 'egret-eq', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+      node = new AudioWorkletNode(ctx, 'egret-eq', { numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [2],
                                                      channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' });
-      inputBus.connect(node);
+      inputBus.connect(node, 0, 0);
+      scBus.connect(node, 0, 1);
+      try {
+        var ksrc = $('dsp-shared').textContent + $('dsp-kernel').textContent;
+        kworker = new Worker(URL.createObjectURL(new Blob([ksrc], { type: 'application/javascript' })));
+        var chan = new MessageChannel();
+        kworker.postMessage({ type: 'port', port: chan.port1 }, [chan.port1]);
+        node.port.postMessage({ type: 'kport', port: chan.port2 }, [chan.port2]);
+      } catch (err) { kworker = null; }
       node.connect(postAna);
       node.connect(ctx.destination);
-      node.port.onmessage = function(e){ if (e.data.type === 'meter') { onMeter(e.data.m); onDyn(e.data.dyn); } };
+      node.port.onmessage = function(e){ if (e.data.type === 'meter') { onMeter(e.data.m); onDyn(e.data.dyn); onLatency(e.data.lat); } };
       sendParams();
       if (src.playing) startSource();
+      startSc();
     }, function(){ $('no-worklet').hidden = false; });
   }
   // The browser starts audio on the first click or key; BYPASS is the EQ's own switch.
@@ -1322,6 +1823,49 @@ if (typeof registerProcessor === 'function') {
       setPlaying(true);
     }, function(){ setSrcStatus('Couldn’t read ' + file.name); });
   }
+
+  // ---------- the sidechain: another sound for the dynamic bands to listen to ----------
+  // It isn't heard; a band with SC on follows its level instead of the input's.
+  var SC_SOURCES = ['off', 'demo', 'noise', 'file'], SC_LABELS = ['OFF', 'DEMO', 'NOISE', 'FILE'];
+  var sc = { source: 'off', node: null, file: null, fileName: '' };
+  function stopSc(){ if (sc.node) { try { sc.node.stop(); } catch (err) {} sc.node.disconnect(); sc.node = null; } }
+  function startSc(){
+    stopSc();
+    if (!ctx || !node || sc.source === 'off') return;
+    var buf = sc.source === 'demo' ? (src.demo || (src.demo = toBuffer(makeDemo(ctx.sampleRate)))) :
+              sc.source === 'noise' ? (src.noise || (src.noise = toBuffer(makeNoise(ctx.sampleRate)))) : sc.file;
+    if (!buf) return;
+    var s = ctx.createBufferSource();
+    s.buffer = buf; s.loop = true; s.connect(scBus); s.start();
+    sc.node = s;
+  }
+  function setSc(source){
+    sc.source = source;
+    if (source !== 'off') ensurePower();
+    startSc(); sendParams(); renderSc(); requestDraw();
+  }
+  var scButtons = SC_SOURCES.map(function(s, i){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip-btn'; b.textContent = SC_LABELS[i];
+    b.addEventListener('click', function(){ if (s === 'file' && !sc.file) { $('sc-file').click(); return; } setSc(s); });
+    $('sc-chips').appendChild(b);
+    return b;
+  });
+  function renderSc(){
+    scButtons.forEach(function(b, i){ var on = SC_SOURCES[i] === sc.source; b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    $('sc-status').textContent = sc.source === 'off' ? 'Bands with SC on listen to the input' : sc.source === 'demo' ? 'Demo loop: the kick ducks SC bands' :
+                                 sc.source === 'noise' ? 'Pink noise' : sc.fileName;
+  }
+  $('sc-file').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    ensurePower();
+    file.arrayBuffer().then(function(data){ return ctx.decodeAudioData(data); }).then(function(buf){
+      sc.file = buf; sc.fileName = file.name; setSc('file');
+    }, function(){ $('sc-status').textContent = 'Couldn’t read ' + file.name; });
+  });
+  renderSc();
 
   // ---------- the player: tracks from music/playlist.json, or your own ----------
   var player = { tracks: [], index: -1, audio: new Audio(), node: null, seeking: false };
@@ -1659,6 +2203,16 @@ if (typeof registerProcessor === 'function') {
                             function(v){ if (selected >= 0) { params[bandParam(k[1])] = v; changed(); } });
     $('dyn-knobs').appendChild(kn.el); knobRenders.push(kn.render);
   });
+  var dynOpts = document.createElement('div');
+  dynOpts.className = 'dyn-opts';
+  [['SC', 'SC', 'Sidechain: listen to the sidechain (pick one in the player) instead of the input'],
+   ['Spectral', 'SPEC', 'Spectral: work frequency by frequency, so only what passes the threshold moves (a resonance, not the whole band)']].forEach(function(o){
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'dyn-opt'; b.id = 'dyn-' + o[0].toLowerCase(); b.textContent = o[1]; b.title = o[2];
+    b.addEventListener('click', function(){ setBand(o[0], !params[bandParam(o[0])]); });
+    dynOpts.appendChild(b);
+  });
+  $('dyn-knobs').appendChild(dynOpts);
   knobRenders.push(buildDragValue($('dv-scale'), KNOB_DEFS.gainScale, 'Scale', function(){ return params.gainScale; }, function(v){ params.gainScale = v; changed(); }));
   knobRenders.push(buildDragValue($('dv-gain'), KNOB_DEFS.outGain, 'Out', function(){ return params.outGain; }, function(v){ params.outGain = v; changed(); }));
   knobRenders.push(buildDragValue($('dv-pan'), KNOB_DEFS.outPan, 'Pan', function(){ return params.outPan; }, function(v){ params.outPan = v; changed(); }));
@@ -1669,8 +2223,11 @@ if (typeof registerProcessor === 'function') {
   $('bp-shape').addEventListener('click', function(){
     showMenu($('bp-shape'), SHAPES.map(function(s, i){ return { label: SHAPE_LABELS[i], checked: params[bandParam('Shape')] === s, action: function(){ setBand('Shape', s); } }; }));
   });
+  function slopeLabel(s){ return s >= BRICK ? 'Brickwall' : s + ' dB/oct'; }
   $('bp-slope').addEventListener('click', function(){
-    showMenu($('bp-slope'), SLOPES.map(function(s, i){ return { label: SLOPE_LABELS[i], checked: params[bandParam('Slope')] === s, action: function(){ setBand('Slope', s); } }; }));
+    var shape = params[bandParam('Shape')], list = SLOPES.slice();
+    if (shape === 'lowcut' || shape === 'highcut') list.push(BRICK);   // a wall in Natural/Linear Phase, 96 dB/oct in Zero Latency
+    showMenu($('bp-slope'), list.map(function(s){ return { label: slopeLabel(s), checked: params[bandParam('Slope')] === s, action: function(){ setBand('Slope', s); } }; }));
   });
   $('bp-place').addEventListener('click', function(){
     var names = ['Stereo', 'Left', 'Right', 'Mid', 'Side'];
@@ -1697,7 +2254,7 @@ if (typeof registerProcessor === 'function') {
     panel.style.setProperty('--band', c);
     $('bp-title').textContent = 'BAND ' + (selected + 1);
     $('bp-shape').textContent = SHAPE_LABELS[SHAPES.indexOf(shape)];
-    $('bp-slope').textContent = shapeHasSlope(shape) ? params[bandParam('Slope')] + ' dB/oct' : '—';
+    $('bp-slope').textContent = shapeHasSlope(shape) ? slopeLabel(params[bandParam('Slope')]) : '—';
     $('bp-slope').disabled = !shapeHasSlope(shape);
     $('bp-place').textContent = { stereo: 'Stereo', left: 'Left', right: 'Right', mid: 'Mid', side: 'Side' }[params[bandParam('Place')]];
     document.querySelector('[data-knob="gain"]').classList.toggle('is-disabled', !shapeHasGain(shape));
@@ -1712,6 +2269,10 @@ if (typeof registerProcessor === 'function') {
     sw.classList.toggle('is-on', dyn); sw.setAttribute('aria-pressed', dyn ? 'true' : 'false');
     sw.setAttribute('aria-label', 'Dynamic ' + (dyn ? 'on' : 'off'));
     $('dyn-knobs').hidden = !dyn;
+    ['SC', 'Spectral'].forEach(function(n){
+      var b = $('dyn-' + n.toLowerCase()), on = !!params[bandParam(n)];
+      b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
     $('band-panel').classList.toggle('is-ghost', !!ui.panelGhost);
     $('bp-ghost').classList.toggle('is-on', !!ui.panelGhost); $('bp-ghost').setAttribute('aria-pressed', ui.panelGhost ? 'true' : 'false');
     renderRangeRing();
@@ -1811,10 +2372,27 @@ if (typeof registerProcessor === 'function') {
   $('range-box').addEventListener('click', function(){
     showMenu($('range-box'), [{ header: 'Display range' }].concat([3, 6, 12, 30].map(function(r){ return { label: '±' + r + ' dB', checked: ui.dispRange === r, action: function(){ ui.dispRange = r; uiChanged(); } }; })));
   });
+  // PHASE: Zero Latency (the bands as analog-matched filters), Natural Phase
+  // (the analog curves, magnitude and phase, a little latency), Linear Phase
+  // (no phase change at all; the longer RES, the finer down low, the more latency).
+  var PHASE_LABELS = { zero: 'Zero Latency', natural: 'Natural Phase', linear: 'Linear Phase' };
+  var RES_LABELS = { low: 'Low', medium: 'Medium', high: 'High', max: 'Maximum' };
   $('phase-btn').addEventListener('click', function(){
-    showMenu($('phase-btn'), [{ header: 'Processing mode' }, { label: 'Zero Latency', checked: true, action: function(){} },
-      { label: 'Natural Phase (coming)', disabled: true }, { label: 'Linear Phase (coming)', disabled: true }]);
+    var items = [{ header: 'Processing mode' }];
+    ['zero', 'natural', 'linear'].forEach(function(m){ items.push({ label: PHASE_LABELS[m], checked: (params.phase || 'zero') === m, action: function(){ params.phase = m; changed(); } }); });
+    items.push({ sep: true }, { header: 'Linear Phase resolution' });
+    ['low', 'medium', 'high', 'max'].forEach(function(r){ items.push({ label: RES_LABELS[r], checked: params.phaseRes === r, disabled: params.phase !== 'linear', action: function(){ params.phaseRes = r; changed(); } }); });
+    showMenu($('phase-btn'), items);
   });
+  function onLatency(l){ if (l !== undefined && l !== latency) { latency = l; renderPhase(); } }
+  function renderPhase(){
+    var m = params.phase || 'zero';
+    $('phase-label').textContent = PHASE_LABELS[m] + (m === 'linear' ? ' · ' + RES_LABELS[params.phaseRes || 'medium'] : '');
+    var ms = latency / sampleRateNow() * 1000;
+    // in Zero Latency only the spectral dynamics add any
+    $('phase-lat').textContent = latency ? (m === 'zero' ? 'spectral ' : '') + (ms < 10 ? ms.toFixed(1) : Math.round(ms)) + ' ms' : '';
+    $('phase-btn').title = 'Processing mode' + (latency ? ' — latency ' + latency + ' samples' : ' — no latency');
+  }
   function anaMenu(){
     var pre = ui.anaMode === 'pre' || ui.anaMode === 'both', post = ui.anaMode === 'post' || ui.anaMode === 'both';
     function setMode(p, q){ ui.anaMode = p && q ? 'both' : p ? 'pre' : q ? 'post' : 'off'; uiChanged(); }
@@ -1849,6 +2427,7 @@ if (typeof registerProcessor === 'function') {
   });
   document.addEventListener('fullscreenchange', function(){ setTimeout(fitEq, 50); });
   function renderBars(){
+    renderPhase();
     $('ana-label').textContent = { off: 'Off', pre: 'Pre', post: 'Post', both: 'Pre+Post' }[ui.anaMode] + (freeze ? ' (frozen)' : '');
     $('range-box').textContent = ui.dispRange + ' dB';
     $('char-label').textContent = CHARACTER_LABELS[Math.max(0, CHARACTERS.indexOf(params.character))];
@@ -1872,7 +2451,7 @@ if (typeof registerProcessor === 'function') {
     selected = i; changed();
     return i;
   }
-  var BAND_FIELDS = ['Used', 'On', 'Shape', 'Freq', 'Gain', 'Q', 'Slope', 'Place', 'Dyn', 'Range', 'Thresh', 'Attack', 'Release'];
+  var BAND_FIELDS = ['Used', 'On', 'Shape', 'Freq', 'Gain', 'Q', 'Slope', 'Place', 'Dyn', 'Range', 'Thresh', 'Attack', 'Release', 'SC', 'Spectral'];
   function deleteBand(i){
     if (i < 0 || !params[bandKey(i, 'Used')]) return;
     BAND_FIELDS.forEach(function(n){ params[bandKey(i, n)] = DEFAULTS[bandKey(i, n)]; });
@@ -2125,6 +2704,7 @@ if (typeof registerProcessor === 'function') {
     return { x: x, y: y };
   }
 
+  var colF = null;
   var cols = 0, colCos = null, colSin = null, colCos2 = null, colSin2 = null, colFs = 0;
   var curveCache = [], totalCurve = null, curvesValid = false;
   function invalidateCurves(){ curvesValid = false; }
@@ -2143,8 +2723,9 @@ if (typeof registerProcessor === 'function') {
     var fs = sampleRateNow(), n = Math.max(2, Math.round(view.plotW));
     if (n === cols && fs === colFs) return;
     cols = n; colFs = fs;
-    colCos = new Float64Array(n); colSin = new Float64Array(n); colCos2 = new Float64Array(n); colSin2 = new Float64Array(n);
+    colCos = new Float64Array(n); colSin = new Float64Array(n); colCos2 = new Float64Array(n); colSin2 = new Float64Array(n); colF = new Float64Array(n);
     for (var i = 0; i < n; i++) {
+      colF[i] = xf(i);
       var w = 2 * Math.PI * Math.min(xf(i), fs / 2) / fs;
       colCos[i] = Math.cos(w); colSin[i] = Math.sin(w); colCos2[i] = Math.cos(2 * w); colSin2[i] = Math.sin(2 * w);
     }
@@ -2159,10 +2740,20 @@ if (typeof registerProcessor === 'function') {
     if (!b.used) return null;
     cache = cache || curveCache;
     b.gain += extra || 0;
-    var key = b.shape + '|' + b.freq + '|' + b.gain + '|' + b.q + '|' + b.slope;
+    var analog = params.phase === 'natural' || params.phase === 'linear';
+    var key = b.shape + '|' + b.freq + '|' + b.gain + '|' + b.q + '|' + b.slope + '|' + b.gainQ + '|' + analog;
     var c = cache[i];
     if (c && c.key === key) return c.db;
-    var n = designBand(b, colFs, CURVE_SECS), db = new Float32Array(cols);
+    var db = new Float32Array(cols);
+    if (analog) {
+      // Natural and Linear Phase play the analog curve (a brickwall is a wall)
+      var re = new Float64Array(cols).fill(1), im = new Float64Array(cols);
+      analogBand(b, colF, cols, re, im);
+      for (var a = 0; a < cols; a++) db[a] = colF[a] >= colFs / 2 ? db[Math.max(0, a - 1)] : 10 * Math.log10(Math.max(re[a] * re[a] + im[a] * im[a], 1e-30));
+      cache[i] = { key: key, db: db };
+      return db;
+    }
+    var n = designBand(b, colFs, CURVE_SECS);
     for (var k = 0; k < cols; k++) {
       var m2 = 1;
       for (var s = 0; s < n; s++) {
@@ -2199,6 +2790,7 @@ if (typeof registerProcessor === 'function') {
     [preAna, postAna].forEach(function(a){ a.fftSize = ANA_SIZES[ui.anaRes]; a.smoothingTimeConstant = ANA_SMOOTH[ui.anaSpeed]; });
     preBuf = new Float32Array(preAna.frequencyBinCount); postBuf = new Float32Array(postAna.frequencyBinCount);
     preBuf.fill(-200); postBuf.fill(-200);
+    scBuf = null;
   }
   // The spectrum as drawn: one level (analyzer dB, calibrated and tilted) every 2 px.
   function spectrumCols(buf){
@@ -2273,6 +2865,8 @@ if (typeof registerProcessor === 'function') {
         spectrumPath(postBuf, true); eg.fillStyle = T.postFill; eg.fill();
         spectrumPath(postBuf, false); eg.strokeStyle = T.postLine; eg.lineWidth = 1; eg.stroke();
       }
+      // the sidechain, as a line of its own
+      if (sc.source !== 'off' && scBuf && scBuf.length === preBuf.length) { spectrumPath(scBuf, false); eg.strokeStyle = T.scLine; eg.lineWidth = 1.2; eg.setLineDash([5, 3]); eg.stroke(); eg.setLineDash([]); }
     }
     var y0 = gy(0), clip = function(v){ return Math.max(-2, Math.min(bottom + 2, gy(v))); };
     // DYNAMIC: the range the band can move through, shaded, its far edge dashed
@@ -2488,6 +3082,10 @@ if (typeof registerProcessor === 'function') {
     if (live && preAna && !freeze && !grab && ui.anaMode !== 'off') {
       if (preBuf.length !== preAna.frequencyBinCount) applyAnalyzer();
       preAna.getFloatFrequencyData(preBuf); postAna.getFloatFrequencyData(postBuf);
+      if (sc.source !== 'off') {
+        if (!scBuf || scBuf.length !== preBuf.length) { scAna.fftSize = preAna.fftSize; scAna.smoothingTimeConstant = preAna.smoothingTimeConstant; scBuf = new Float32Array(scAna.frequencyBinCount); }
+        scAna.getFloatFrequencyData(scBuf);
+      }
     }
     if (live) for (var i = 0; i < 4; i++) meterShown[i] *= 0.97;
     drawEq(); drawMeter();
@@ -2890,7 +3488,7 @@ if (typeof registerProcessor === 'function') {
     birdTimer = setTimeout(function(){ subText.innerHTML = subOriginal; }, 2600);
   });
 
-  $('theme-btn').addEventListener('click', function(){ ui.theme = ui.theme === 'dark' ? 'light' : 'dark'; applyTheme(); save(); curveCache = []; renderAll(); });
+  $('theme-btn').addEventListener('click', function(){ ui.theme = ui.theme === 'dark' ? 'light' : 'dark'; ui.themePicked = true; applyTheme(); save(); curveCache = []; renderAll(); });
   window.addEventListener('resize', fitEq);
   applyTheme();
   renderSource(); renderPlayer(); renderPresetName();
