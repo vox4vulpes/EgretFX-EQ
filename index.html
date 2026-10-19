@@ -451,7 +451,7 @@
   <div class="band-list" id="band-list" role="listbox" aria-label="Bands"></div>
 </div>
 <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
-<p class="help">Scroll over the frequency scale to zoom in around a frequency, double-click the scale for the whole range. Click the free screen to add the band its ghost shows (with a band selected, the first click deselects); with no bands yet, drag to draw the curve with the pencil, left to right, back to the left to take it back, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source. The mode at the bottom left: Zero Latency, Natural Phase (the analog curves, a little latency) or Linear Phase (no phase change, more latency); cuts can be a brickwall there. A dynamic band can listen to the sidechain (<b>SC</b>, pick a sidechain in the player) and work frequency by frequency (<b>SPEC</b>).</p>
+<p class="help">Scroll over the frequency scale to zoom in around a frequency, double-click the scale for the whole range. Click the free screen to add the band its ghost shows (with a band selected, the first click deselects); with no bands yet, drag to draw the curve with the pencil, left to right, back to the left to take it back, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Rest the mouse on the spectrum's shaded part (no button) to grab it: it holds its maxima and marks the resonances; press one and pull up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source. The mode at the bottom left: Zero Latency, Natural Phase (the analog curves, a little latency) or Linear Phase (no phase change, more latency); cuts can be a brickwall there. A dynamic band can listen to the sidechain (<b>SC</b>, pick a sidechain in the player) and work frequency by frequency (<b>SPEC</b>).</p>
 </div>
 </div>
 
@@ -2890,15 +2890,19 @@ if (typeof registerProcessor === 'function') {
   }
   // The spectrum as drawn: one level (analyzer dB, calibrated and tilted) every 2 px.
   function spectrumCols(buf){
-    var fs = sampleRateNow(), binHz = fs / (buf.length * 2), step = 2, xs = [], vs = [];
-    for (var x = 0; x <= view.plotW; x += step) {
-      var f0 = xf(x - step / 2), f1 = xf(x + step / 2), k0 = f0 / binHz, k1 = f1 / binHz, v;
-      if (f0 >= fs / 2) break;
-      if (k1 - k0 < 1) { var kc = Math.min(buf.length - 2, (k0 + k1) / 2), i0 = Math.floor(kc), fr = kc - i0; v = buf[i0] * (1 - fr) + buf[i0 + 1] * fr; }
-      else { v = -200; for (var k = Math.ceil(k0); k <= Math.min(buf.length - 1, Math.floor(k1)); k++) if (buf[k] > v) v = buf[k]; }
-      xs.push(x); vs.push(v + ANA_CAL + (ui.anaTilt ? 4.5 * Math.log2(xf(x) / 1000) : 0));
+    var fs = sampleRateNow(), xs = [], vs = [];
+    for (var x = 0; x <= view.plotW; x += 2) {
+      if (xf(x - 1) >= fs / 2) break;
+      xs.push(x); vs.push(spectrumLevelAt(buf, x));
     }
     return { xs: xs, vs: vs };
+  }
+  function spectrumLevelAt(buf, x){
+    var fs = sampleRateNow(), binHz = fs / (buf.length * 2), f0 = xf(x - 1), f1 = xf(x + 1), k0 = f0 / binHz, k1 = f1 / binHz, v;
+    if (f0 >= fs / 2) return -200;
+    if (k1 - k0 < 1) { var kc = Math.min(buf.length - 2, (k0 + k1) / 2), i0 = Math.floor(kc), fr = kc - i0; v = buf[i0] * (1 - fr) + buf[i0 + 1] * fr; }
+    else { v = -200; for (var k = Math.ceil(k0); k <= Math.min(buf.length - 1, Math.floor(k1)); k++) if (buf[k] > v) v = buf[k]; }
+    return v + ANA_CAL + (ui.anaTilt ? 4.5 * Math.log2(xf(x) / 1000) : 0);
   }
   function spectrumPath(buf, close){
     var c = spectrumCols(buf), pts = [], bottom = view.h - view.bottom;
@@ -3057,17 +3061,17 @@ if (typeof registerProcessor === 'function') {
       eg.fillStyle = T.eqLabel0; eg.globalAlpha = 0.08; eg.fillRect(rx, ry, rw, rh); eg.globalAlpha = 1;
       eg.strokeStyle = T.eqLabel0; eg.lineWidth = 1; eg.setLineDash([4, 3]); eg.strokeRect(rx + 0.5, ry + 0.5, rw, rh); eg.setLineDash([]);
     }
-    // Spectrum Grab: the peaks of the held spectrum, the one under the pointer lit
-    if (grab && grab.active && !grab.made) {
-      eg.fillStyle = T.eqLabel0; eg.globalAlpha = 0.06; eg.fillRect(0, view.top, PW, bottom - view.top); eg.globalAlpha = 1;
+    // Spectrum Grab: the held maxima, and the resonances with their frequencies (the one near the pointer lit)
+    if (grab && !grab.made) {
+      spectrumPath(grab.max, false); eg.strokeStyle = T.curve; eg.globalAlpha = 0.9; eg.lineWidth = 1.5; eg.stroke(); eg.globalAlpha = 1;
+      eg.font = '600 10px "IBM Plex Mono", monospace'; eg.textAlign = 'center'; eg.textBaseline = 'middle';
       grab.peaks.forEach(function(pk, n){
-        var hot = n === grab.hot;
-        eg.beginPath(); eg.arc(pk.x, pk.y, hot ? 6 : 3.5, 0, 2 * Math.PI);
-        eg.fillStyle = hot ? T.curve : T.offFill; eg.fill();
-        eg.strokeStyle = T.curve; eg.lineWidth = hot ? 2 : 1.2; eg.stroke();
-        if (hot) {
-          eg.globalAlpha = 0.5; eg.setLineDash([3, 3]); eg.beginPath(); eg.moveTo(pk.x, view.top); eg.lineTo(pk.x, bottom); eg.stroke(); eg.setLineDash([]); eg.globalAlpha = 1;
-        }
+        var hot = n === grab.hot, label = fmtHz(pk.freq), tw = eg.measureText(label).width + 10, ly = Math.max(10, pk.y - 16);
+        eg.beginPath(); eg.arc(pk.x, pk.y, hot ? 4.5 : 3.5, 0, 2 * Math.PI); eg.fillStyle = T.eqLabel0; eg.fill();
+        eg.globalAlpha = hot ? 1 : 0.75; eg.fillStyle = T.eqLabel0;
+        roundRect(eg, pk.x - tw / 2, ly - 8, tw, 16, 3); eg.fill();
+        eg.globalAlpha = 1; eg.fillStyle = T.badgeText; eg.fillText(label, pk.x, ly + 0.5);
+        if (hot) { eg.strokeStyle = T.curve; eg.lineWidth = 1; roundRect(eg, pk.x - tw / 2, ly - 8, tw, 16, 3); eg.stroke(); }
       });
     }
     drawCurveHover();
@@ -3115,7 +3119,7 @@ if (typeof registerProcessor === 'function') {
     var lit = [];
     var show = drag ? drag.band : hover >= 0 ? hover : selected;
     if (show >= 0 && params[bandKey(show, 'Used')]) lit.push({ m: Math.round(midiOf(params[bandKey(show, 'Freq')])), c: bandColor(show), a: 0.85 });
-    if (grab && grab.active && !grab.made && grab.hot >= 0) lit.push({ m: Math.round(midiOf(grab.peaks[grab.hot].freq)), c: T.curve, a: 0.45 });
+    if (grab && !grab.made && grab.hot >= 0) lit.push({ m: Math.round(midiOf(grab.peaks[grab.hot].freq)), c: T.curve, a: 0.45 });
     else if (pianoPointer >= 0 && !drag) lit.push({ m: Math.round(midiOf(xf(pianoPointer))), c: T.eqLabel0, a: 0.3 });
     eg.strokeStyle = T.keyEdge; eg.lineWidth = 1;
     for (var m = m0; m <= m1; m++) {
@@ -3189,9 +3193,10 @@ if (typeof registerProcessor === 'function') {
   function frame(){
     drawQueued = false;
     var live = isPowered() && ctx && ctx.state === 'running';
-    if (live && preAna && !freeze && !grab && ui.anaMode !== 'off') {
+    if (live && preAna && !freeze && ui.anaMode !== 'off') {
       if (preBuf.length !== preAna.frequencyBinCount) applyAnalyzer();
       preAna.getFloatFrequencyData(preBuf); postAna.getFloatFrequencyData(postBuf);
+      updateGrab();
       if (sc.source !== 'off') {
         if (!scBuf || scBuf.length !== preBuf.length) { scAna.fftSize = preAna.fftSize; scAna.smoothingTimeConstant = preAna.smoothingTimeConstant; scBuf = new Float32Array(scAna.frequencyBinCount); }
         scAna.getFloatFrequencyData(scBuf);
@@ -3224,10 +3229,14 @@ if (typeof registerProcessor === 'function') {
     eqCanvas.focus();
     var p = localPos(e), i = hitBand(p);
     if (e.button !== 0) return;
-    // the pencil: EQ Sketch on, or no bands yet (then holding still still grabs the spectrum)
+    if (grab && !grab.made) {   // Spectrum Grab: a press on a lit peak makes the bell; elsewhere it only ends it
+      if (pressGrab(p)) { eqCanvas.setPointerCapture(e.pointerId); return; }
+      endGrab();
+      return;
+    }
+    // the pencil: EQ Sketch on, or no bands yet
     if (i < 0 && p.x <= view.plotW && (sketch.on || usedCount() === 0)) {
       sketch.points = [p]; ghost = null; beginGesture(); eqCanvas.setPointerCapture(e.pointerId);
-      if (!sketch.on) armGrab(p);
       requestDraw(); return;
     }
     var ai = i < 0 ? hitArrow(p) : -1;
@@ -3249,7 +3258,6 @@ if (typeof registerProcessor === 'function') {
       if (p.x <= view.plotW) {
         rubber = { x0: p.x, y0: p.y, x1: p.x, y1: p.y, add: e.shiftKey || e.ctrlKey || e.metaKey, base: new Set(group), moved: false, detail: e.detail };
         eqCanvas.setPointerCapture(e.pointerId);
-        armGrab(p);
       }
       return;
     }
@@ -3263,7 +3271,6 @@ if (typeof registerProcessor === 'function') {
   });
   eqCanvas.addEventListener('pointermove', function(e){
     var p = localPos(e);
-    if (grab && grab.active && !grab.made) { moveGrab(p); return; }
     if (sketch.points) { sketchMove(p); requestDraw(); return; }
     if (drag && drag.range) {
       drag.fy += (p.y - drag.lastY) * (e.shiftKey ? 0.15 : 1); drag.lastY = p.y;
@@ -3272,10 +3279,9 @@ if (typeof registerProcessor === 'function') {
       changed();
       return;
     }
-    if (grab && grab.active && !grab.made) { moveGrab(p); return; }
     if (rubber) {
       rubber.x1 = p.x; rubber.y1 = p.y;
-      if (Math.abs(rubber.x1 - rubber.x0) + Math.abs(rubber.y1 - rubber.y0) > 4) { rubber.moved = true; disarmGrab(); }
+      if (Math.abs(rubber.x1 - rubber.x0) + Math.abs(rubber.y1 - rubber.y0) > 4) rubber.moved = true;
       if (rubber.moved) {
         var x0 = Math.min(rubber.x0, rubber.x1), x1 = Math.max(rubber.x0, rubber.x1), y0 = Math.min(rubber.y0, rubber.y1), y1 = Math.max(rubber.y0, rubber.y1);
         var inside = [];
@@ -3308,6 +3314,7 @@ if (typeof registerProcessor === 'function') {
     }
     var h = hitBand(p);
     if (h !== hover) { hover = h; requestDraw(); }
+    hoverGrab(p);
     // the tag: over the nearest dot within reach
     var near = -1, nd = 70 * 70;
     for (var ti = 0; ti < MAX_BANDS; ti++) {
@@ -3330,11 +3337,13 @@ if (typeof registerProcessor === 'function') {
     pianoPointer = pp;
     setInfo(p);
   });
-  // ---------- Spectrum Grab: hold the mouse on the spectrum, pull a peak into a band ----------
-  // Holding still on the background for a moment holds the spectrum and marks its
-  // peaks; the one nearest the pointer is lit. Pull up or down and a bell appears
-  // on it, as wide as the peak, and follows the pointer like any dot.
-  var GRAB_HOLD_MS = 350, GRAB_X_SPEED = 0.1, grab = null;
+  // ---------- Spectrum Grab ----------
+  // Resting the pointer on the spectrum's shaded part for a moment, without a
+  // button: the analyzer starts holding its maxima (a bright line) and marks
+  // the resonances with their frequencies. Press one and a bell appears on it,
+  // as wide as the peak; pull it up or down (sideways it creeps, a tenth as
+  // fast, so it stays on its peak). Leaving the shaded part ends it.
+  var GRAB_HOVER_MS = 600, GRAB_X_SPEED = 0.1, grab = null, grabTimer = null, grabAt = null;
   function grabSource(){
     if (!preBuf || ui.anaMode === 'off') return null;
     return ui.anaMode === 'post' ? postBuf : preBuf;
@@ -3343,73 +3352,97 @@ if (typeof registerProcessor === 'function') {
     var c = spectrumCols(buf), vs = c.vs, n = vs.length, sm = new Float64Array(n), peaks = [];
     for (var j = 0; j < n; j++) sm[j] = (vs[Math.max(0, j - 1)] + 2 * vs[j] + vs[Math.min(n - 1, j + 1)]) / 4;
     var oct = view.plotW / (LOG_SPAN / Math.LN2) / 2;   // columns (2 px each) in an octave
+    var win = Math.max(4, Math.round(oct / 3));          // a peak is the highest within a third of an octave
     for (j = 2; j < n - 2; j++) {
       var v = sm[j];
       if (v < -ui.anaRange + 6) continue;
       var top = true;
-      for (var d = -4; d <= 4 && top; d++) if (d && sm[Math.max(0, Math.min(n - 1, j + d))] > v) top = false;
+      for (var d = -win; d <= win && top; d++) if (d && j + d >= 0 && j + d < n && sm[j + d] > v) top = false;
       if (!top) continue;
       // how far it stands out: the lowest point within an octave on each side, before anything higher
       var lo = v, ro = v, k;
       for (k = j - 1; k >= 0 && k >= j - oct && sm[k] <= v; k--) lo = Math.min(lo, sm[k]);
       for (k = j + 1; k < n && k <= j + oct && sm[k] <= v; k++) ro = Math.min(ro, sm[k]);
-      var prom = v - Math.max(lo, ro);
-      if (prom < 5) continue;
-      // its width where it is half as prominent: that's the bell's Q
-      var half = v - prom / 2, a = j, b = j;
+      var prom = v - Math.min(lo, ro);   // standing out on at least one side
+      if (prom < 3) continue;
+      // its width where it is half as prominent (on its lower side): that's the bell's Q
+      var half = v - Math.max(1.5, v - Math.max(lo, ro)) / 2, a = j, b = j;
       while (a > 0 && sm[a - 1] > half) a--;
       while (b < n - 1 && sm[b + 1] > half) b++;
       var r = Math.max(1.05, xf(c.xs[b] + 1) / xf(c.xs[a] - 1));
       peaks.push({ x: c.xs[j], y: Math.max(view.top, ay(v)), freq: xf(c.xs[j]), prom: prom, q: Math.max(0.5, Math.min(12, Math.sqrt(r) / (r - 1))) });
       j += 3;
     }
-    peaks.sort(function(p1, p2){ return p2.prom - p1.prom; });
-    return peaks.slice(0, 16);
+    // the loudest first, never two so close their labels would meet
+    peaks.sort(function(p1, p2){ return p2.y === p1.y ? p2.prom - p1.prom : p1.y - p2.y; });
+    var picked = [];
+    peaks.forEach(function(pk){ if (picked.length < 8 && picked.every(function(q){ return Math.abs(q.x - pk.x) >= 56; })) picked.push(pk); });
+    return picked;
   }
-  function armGrab(p){
-    if (!grabSource() || !isPowered()) return;
-    grab = { x0: p.x, y0: p.y, p: p, active: false, made: false, hot: -1, peaks: [] };
-    grab.timer = setTimeout(function(){
-      if (!grab || grab.active) return;
-      if (sketch.points) {   // the pencil started without bands: drawing wins, holding still grabs
-        if (sketch.points.length > 1) { grab = null; return; }
-      }
-      grab.peaks = findPeaks(grabSource());
-      if (!grab.peaks.length) { grab = null; return; }
-      grab.active = true; rubber = null;
-      if (sketch.points) { sketch.points = null; endGesture(); }
-      eqCanvas.style.cursor = 'grab';
-      moveGrab(grab.p);
-    }, GRAB_HOLD_MS);
+  // Is p in the shaded part, under the spectrum (or under the held maxima)?
+  function underSpectrum(p, buf){
+    if (!buf || p.x > view.plotW || p.y >= view.h - view.bottom) return false;
+    return p.y > ay(spectrumLevelAt(buf, p.x)) + 2;
   }
-  function disarmGrab(){ if (grab) clearTimeout(grab.timer); grab = null; }
-  function moveGrab(p){
-    grab.p = p;
-    if (!grab.active) return;
+  function hoverGrab(p){
+    if (grab) {
+      if (grab.made) return;
+      if (!underSpectrum({ x: p.x, y: p.y + 14 }, grab.max)) { endGrab(); return; }
+      grab.p = p; pickHot(p); requestDraw();
+      return;
+    }
+    var buf = grabSource();
+    if (!isPowered() || drag || rubber || sketch.points || hover >= 0 || !underSpectrum(p, buf)) { clearTimeout(grabTimer); grabTimer = null; grabAt = null; return; }
+    if (grabAt && Math.hypot(p.x - grabAt.x, p.y - grabAt.y) > 12) { clearTimeout(grabTimer); grabTimer = null; }   // resting, not passing by
+    if (!grabTimer) { grabAt = p; grabTimer = setTimeout(startGrab, GRAB_HOVER_MS); }
+  }
+  function startGrab(){
+    grabTimer = null;
+    var src = grabSource();
+    if (!src || !grabAt) return;
+    grab = { made: false, hot: -1, max: Float32Array.from(src), peaks: [], p: grabAt };
+    ghost = null; curveHover = null;
+    updateGrab();
+    eqCanvas.style.cursor = 'pointer';
+    requestDraw();
+  }
+  function endGrab(){
+    clearTimeout(grabTimer); grabTimer = null; grabAt = null;
+    if (!grab) return;
+    grab = null;
+    eqCanvas.style.cursor = sketch.on ? 'cell' : '';
+    setInfo(null); requestDraw();
+  }
+  // every analyzer frame: hold the maxima, find the resonances
+  function updateGrab(){
+    var src = grabSource();
+    if (!grab || grab.made || !src) return;
+    if (grab.max.length !== src.length) grab.max = Float32Array.from(src);
+    for (var k = 0; k < src.length; k++) if (src[k] > grab.max[k]) grab.max[k] = src[k];
+    grab.peaks = findPeaks(grab.max).slice(0, 8);
+    if (grab.p) pickHot(grab.p);
+  }
+  function pickHot(p){
     var best = -1, bd = 60;
     grab.peaks.forEach(function(pk, n){ var d = Math.abs(pk.x - p.x); if (d < bd) { bd = d; best = n; } });
     grab.hot = best;
-    if (best >= 0) {
-      var pk = grab.peaks[best];
-      $('eq-info').textContent = 'Grab ' + fmtHz(pk.freq) + ' · ' + noteName(pk.freq) + ' — pull up or down';
-    } else $('eq-info').textContent = 'Spectrum Grab: move to a peak, then pull up or down';
-    if (best >= 0 && Math.abs(p.y - grab.y0) > 6) {
-      // pulled: the bell is made on the peak and dragged from here on
-      var pkm = grab.peaks[best], f = Math.min(FREQ_MAX, Math.max(FREQ_MIN, pkm.freq));
-      beginGesture();
-      var i = addBand(f, 0, 'bell');
-      if (i < 0) { endGesture(); return; }
-      params[bandKey(i, 'Q')] = pkm.q;
-      grab.made = true;
-      select(i);
-      eqCanvas.style.cursor = 'grabbing';
-      // a grabbed bell is for up and down: sideways it creeps (a tenth as fast), so it stays on its peak
-      drag = { band: i, lastX: p.x, lastY: p.y, xk: GRAB_X_SPEED, members: [{ i: i, fx: fx(f), fy: gy(0) + (p.y - grab.y0) }] };
-      var g = Math.max(-ui.dispRange, Math.min(ui.dispRange, yg(drag.members[0].fy)));
-      if (params.gainScale > 0) params[bandKey(i, 'Gain')] = Math.max(-GAIN_MAX, Math.min(GAIN_MAX, g * 100 / params.gainScale));
-      changed();
-    }
-    requestDraw();
+    $('eq-info').textContent = best >= 0 ? fmtHz(grab.peaks[best].freq) + ' · ' + noteName(grab.peaks[best].freq) + ' — press, pull up or down'
+                                          : 'Spectrum Grab: move to a peak';
+  }
+  // A press in Spectrum Grab: a bell on the lit peak, dragged from here on.
+  function pressGrab(p){
+    if (!grab || grab.hot < 0) return false;
+    var pk = grab.peaks[grab.hot], f = Math.min(FREQ_MAX, Math.max(FREQ_MIN, pk.freq));
+    beginGesture();
+    var i = addBand(f, 0, 'bell');
+    if (i < 0) { endGesture(); return false; }
+    params[bandKey(i, 'Q')] = pk.q;
+    grab.made = true;
+    select(i);
+    eqCanvas.style.cursor = 'grabbing';
+    drag = { band: i, lastX: p.x, lastY: p.y, xk: GRAB_X_SPEED, members: [{ i: i, fx: fx(f), fy: gy(0) }] };
+    changed();
+    return true;
   }
 
   // ---------- EQ Sketch: draw the curve you want, bands are found to make it ----------
@@ -3419,7 +3452,7 @@ if (typeof registerProcessor === 'function') {
   var sketch = { on: false, points: null };
   function sketchMove(p){
     var pts = sketch.points, last = pts[pts.length - 1];
-    if (p.x > last.x + 0.5) { pts.push(p); if (grab && !grab.active) disarmGrab(); return; }
+    if (p.x > last.x + 0.5) { pts.push(p); return; }
     if (p.x < last.x - 0.5) {
       while (pts.length > 1 && pts[pts.length - 1].x > p.x) pts.pop();
       return;
@@ -3519,20 +3552,19 @@ if (typeof registerProcessor === 'function') {
   // Near the curve: the dot a double-click there would make, and above it the
   // shape it would be (a bell, or a cut at the very ends).
   var curveHover = null;
-  function shapeAt(f){ return f <= 25 ? 'lowcut' : f >= 18000 ? 'highcut' : 'bell'; }
+  function shapeAt(f){ return f <= 25 ? 'lowshelf' : f >= 18000 ? 'highshelf' : 'bell'; }   // shelves at the very ends
   function drawCurveHover(){
-    if (!curveHover || drag || sketch.points || rubber || (grab && grab.active)) return;
+    if (!curveHover || drag || sketch.points || rubber || (grab && !grab.made)) return;
     var x = curveHover.x, y = curveHover.y, shape = shapeAt(xf(x));
     eg.beginPath(); eg.arc(x, y, 6.5, 0, 2 * Math.PI);
     eg.fillStyle = T.eqLabel0; eg.globalAlpha = 0.9; eg.fill(); eg.globalAlpha = 1;
     eg.strokeStyle = T.dotEdge; eg.lineWidth = 1; eg.stroke();
     // the shape's icon
     var iy = y > 40 ? y - 20 : y + 20;
-    eg.beginPath();
-    if (shape === 'bell') { eg.moveTo(x - 7, iy + 3); eg.bezierCurveTo(x - 3, iy + 3, x - 3, iy - 4, x, iy - 4); eg.bezierCurveTo(x + 3, iy - 4, x + 3, iy + 3, x + 7, iy + 3); }
-    else if (shape === 'lowcut') { eg.moveTo(x - 6, iy + 4); eg.lineTo(x - 2, iy - 3); eg.lineTo(x + 7, iy - 3); }
-    else { eg.moveTo(x - 7, iy - 3); eg.lineTo(x + 2, iy - 3); eg.lineTo(x + 6, iy + 4); }
-    eg.strokeStyle = T.curve; eg.lineWidth = 1.5; eg.lineJoin = 'round'; eg.lineCap = 'round'; eg.globalAlpha = 0.85; eg.stroke(); eg.globalAlpha = 1;
+    eg.save(); eg.translate(x - 8, iy - 8);
+    eg.strokeStyle = T.curve; eg.lineWidth = 1.5; eg.lineJoin = 'round'; eg.lineCap = 'round'; eg.globalAlpha = 0.85;
+    eg.stroke(new Path2D(SHAPE_ICONS[shape]));
+    eg.restore();
   }
   // A click where nothing is selected adds the band the ghost shows (on the curve, if it's at the curve).
   var lastClickAdd = 0;
@@ -3547,11 +3579,11 @@ if (typeof registerProcessor === 'function') {
   // Over the free screen, a ghost of the curve a band added there would make (dashed while a band is selected).
   var ghost = null;
   function drawGhost(clip){
-    if (!ghost || drag || sketch.points || rubber || (grab && grab.active) || !colCos) return;
+    if (!ghost || drag || sketch.points || rubber || (grab && !grab.made) || !colCos) return;
     var dashed = selected >= 0;   // a band is selected: the first click only deselects
-    var f = Math.min(FREQ_MAX, Math.max(FREQ_MIN, xf(ghost.x))), shape = f <= 25 ? 'lowcut' : f >= 18000 ? 'highcut' : 'bell';
-    var g = shape === 'bell' ? Math.max(-ui.dispRange, Math.min(ui.dispRange, yg(ghost.y))) : 0;
-    var band = { shape: shape, freq: f, gain: g, q: shape === 'bell' ? 1 : 0.71, slope: shape === 'bell' ? 12 : 24, gainQ: !!params.gainQ };
+    var f = Math.min(FREQ_MAX, Math.max(FREQ_MIN, xf(ghost.x))), shape = shapeAt(f);
+    var g = Math.max(-ui.dispRange, Math.min(ui.dispRange, yg(ghost.y)));
+    var band = { shape: shape, freq: f, gain: g, q: shape === 'bell' ? 1 : 0.71, slope: 12, gainQ: !!params.gainQ };
     var db = new Float64Array(cols);
     if (params.phase === 'natural' || params.phase === 'linear') {
       var re = new Float64Array(cols).fill(1), im = new Float64Array(cols);
@@ -3582,7 +3614,7 @@ if (typeof registerProcessor === 'function') {
     eg.globalAlpha = 0.35; eg.strokeStyle = T.curve; eg.lineWidth = 1.5; eg.shadowColor = T.curveGlow; eg.shadowBlur = dashed ? 0 : 8; eg.stroke(); eg.shadowBlur = 0;
     eg.setLineDash([]);
     // a soft glow where the dot would be
-    var gx = fx(f), gyy = shape === 'bell' ? gy(g) : y0, glow = eg.createRadialGradient(gx, gyy, 0, gx, gyy, 22);
+    var gx = fx(f), gyy = gy(g), glow = eg.createRadialGradient(gx, gyy, 0, gx, gyy, 22);
     glow.addColorStop(0, T.eqLabel0); glow.addColorStop(1, 'rgba(0,0,0,0)');
     eg.globalAlpha = 0.35; eg.fillStyle = glow; eg.fillRect(gx - 22, gyy - 22, 44, 44);
     eg.globalAlpha = 1;
@@ -3725,16 +3757,7 @@ if (typeof registerProcessor === 'function') {
 
   var rubber = null;
   function endDrag(){
-    if (grab) {
-      var gr = grab; disarmGrab();
-      if (gr.active) {
-        eqCanvas.style.cursor = sketch.on ? 'cell' : '';
-        if (drag) { drag = null; endGesture(); }
-        else setInfo(null);
-        requestDraw();
-        return;
-      }
-    }
+    if (grab && grab.made) { drag = null; endGesture(); endGrab(); return; }
     if (rubber) {
       var r = rubber; rubber = null;
       // a plain click on the background: with a band selected, deselects; with none, adds the ghost's band
@@ -3751,7 +3774,7 @@ if (typeof registerProcessor === 'function') {
   }
   eqCanvas.addEventListener('pointerup', endDrag);
   eqCanvas.addEventListener('pointercancel', endDrag);
-  eqCanvas.addEventListener('pointerleave', function(){ pianoPointer = -1; ghost = null; curveHover = null; hideTagSoon(); if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
+  eqCanvas.addEventListener('pointerleave', function(){ pianoPointer = -1; ghost = null; curveHover = null; hideTagSoon(); if (!drag) endGrab(); if (!drag) { hover = -1; setInfo(null); requestDraw(); } });
   eqCanvas.addEventListener('contextmenu', function(e){
     e.preventDefault();
     var p = localPos(e), i = hitBand(p);
