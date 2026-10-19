@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(EgretEq VERSION 1.0.0)
+project(EgretEq VERSION 1.1.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -27,6 +27,7 @@ if(EGRET_BUILD_PLUGIN)
         FORMATS VST3 Standalone
         IS_SYNTH FALSE
         NEEDS_MIDI_INPUT FALSE
+        NEEDS_CURL TRUE     # the update check, on Linux
         VST3_CATEGORIES Fx EQ
         # SVG so JUCE renders every icon size crisply (16-256 px on Windows).
         ICON_BIG Resources/icon.svg
@@ -37,11 +38,12 @@ if(EGRET_BUILD_PLUGIN)
         Source/EqDsp.cpp
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
+        Source/UpdateChecker.cpp
     )
 
+    # Networking (the update check) uses libcurl on Linux, the system's own elsewhere.
     target_compile_definitions(EgretEq PUBLIC
         JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
     )
 

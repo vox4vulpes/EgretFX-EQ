@@ -3,7 +3,7 @@
 namespace
 {
     // The panel at the web page's plugin size (950 px wide); the window scales it.
-    constexpr int panelWidth = 950, topH = 38, screenH = 540, bottomH = 32, panelHeight = topH + screenH + bottomH;
+    constexpr int panelWidth = 950, topH = 38, screenH = 540, bottomH = 32, listH = 36, panelHeight = topH + screenH + bottomH + listH;
     constexpr int meterW = 30;
     constexpr float defaultScale = 0.9f;
     constexpr double pi = juce::MathConstants<double>::pi;
@@ -339,6 +339,7 @@ juce::String EqKnob::format (Unit u, double v)
         }
         case Unit::q:   return juce::String (v, v < 10 ? 2 : 1);
         case Unit::pan: return std::abs (v) < 0.5 ? juce::String ("C") : (v < 0 ? "L" : "R") + juce::String (juce::roundToInt (std::abs (v)));
+        case Unit::ms:  return v >= 1000 ? juce::String (v / 1000, 2) + " s" : v < 10 ? juce::String (v, 1) + " ms" : juce::String (juce::roundToInt (v)) + " ms";
         case Unit::pct: break;
     }
     return juce::String (juce::roundToInt (v)) + "%";
@@ -359,9 +360,10 @@ bool EqKnob::parse (Unit u, juce::String text, double& v)
     const auto number = text.initialSectionContainingOnly ("+-.0123456789");
     const auto unitText = text.substring (number.length()).trim();
     if (! number.containsAnyOf ("0123456789")) return false;
-    if (! juce::StringArray { "", "k", "khz", "hz", "db", "%" }.contains (unitText)) return false;
+    if (! juce::StringArray { "", "k", "khz", "hz", "db", "%", "ms", "s" }.contains (unitText)) return false;
     v = number.getDoubleValue();
     if (unitText == "k" || unitText == "khz") v *= 1000;
+    if (u == Unit::ms && unitText == "s") v *= 1000;
     return true;
 }
 
@@ -369,7 +371,7 @@ void EqKnob::updateReadout() { readout.setText (format (unit, slider.getValue())
 
 void EqKnob::resized()
 {
-    slider.setBounds ((getWidth() - 42) / 2, 0, 42, 42);
+    slider.setBounds ((getWidth() - 34) / 2, 4, 34, 34);   // the ring around it (RANGE) takes the mouse outside
     readout.setBounds (0, 42, getWidth(), 13);
     if (typing != nullptr) typing->setBounds (readout.getBounds().expanded (0, 1));
 }
@@ -395,13 +397,72 @@ void EqKnob::paint (juce::Graphics& g)
     pointer.addRoundedRectangle (-1.25f, -13.5f, 2.5f, 5.5f, 1.2f);
     g.setColour (accent);
     g.fillPath (pointer, juce::AffineTransform::rotation (start + pos * (end - start)).translated (centre));
+    if (rangeParam != nullptr && param != nullptr)
+    {
+        // RANGE: from the gain to where the dynamics can take it
+        const auto gainNow = (double) slider.getValue();
+        const auto target = juce::jlimit (-eq::gainMax, eq::gainMax, gainNow + rangeParam->convertFrom0to1 (rangeParam->getValue()));
+        const auto a0 = start + pos * (end - start), a1 = start + param->convertTo0to1 ((float) target) * (end - start);
+        juce::Path ringTrack, arc;
+        ringTrack.addCentredArc (centre.x, centre.y, 25, 25, 0, start, end, true);
+        g.setColour (t.track);
+        g.strokePath (ringTrack, juce::PathStrokeType (2.0f));
+        arc.addCentredArc (centre.x, centre.y, 25, 25, 0, juce::jmin (a0, a1), juce::jmax (a0, a1) + 0.001f, true);
+        g.setColour (accent);
+        g.strokePath (arc, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.fillEllipse (juce::Rectangle<float> (6.4f, 6.4f).withCentre (centre + juce::Point<float> (std::sin (a1), -std::cos (a1)) * 25.0f));
+    }
     g.setColour (t.fgSoft);
     g.setFont (sansFont (8.5f, true).withExtraKerningFactor (0.06f));
     g.drawText (labelText, juce::Rectangle<int> (0, 55, getWidth(), 11), juce::Justification::centred, false);
 }
 
+void EqKnob::setRangeRing (juce::RangedAudioParameter* r)
+{
+    if (r == rangeParam) return;
+    rangeParam = r;
+    repaint();
+}
+
+bool EqKnob::onRing (juce::Point<float> p) const
+{
+    if (rangeParam == nullptr) return false;
+    const auto d = p.getDistanceFrom ({ getWidth() * 0.5f, 21.0f });
+    return d >= 18.0f && d <= 31.0f;
+}
+
+void EqKnob::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.eventComponent != this || ! onRing (e.position)) return;
+    if (beforeRingDrag) beforeRingDrag();
+    ringDragging = true;
+    ringDragY = e.position.y;
+    ringDragValue = rangeParam->convertFrom0to1 (rangeParam->getValue());
+    rangeParam->beginChangeGesture();
+}
+
+void EqKnob::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! ringDragging) return;
+    ringDragValue += (ringDragY - e.position.y) * (e.mods.isShiftDown() ? 0.03f : 0.15f);
+    ringDragY = e.position.y;
+    const auto v = juce::jlimit (-30.0f, 30.0f, std::round (ringDragValue * 10.0f) / 10.0f);
+    rangeParam->setValueNotifyingHost (rangeParam->convertTo0to1 (v));
+    repaint();
+}
+
+void EqKnob::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    if (e.eventComponent != this || ! onRing (e.position)) return;
+    rangeParam->beginChangeGesture();
+    rangeParam->setValueNotifyingHost (rangeParam->convertTo0to1 (-6.0f));
+    rangeParam->endChangeGesture();
+    repaint();
+}
+
 void EqKnob::mouseUp (const juce::MouseEvent& e)
 {
+    if (ringDragging) { ringDragging = false; rangeParam->endChangeGesture(); return; }
     if (e.eventComponent == &readout && readout.contains (e.getEventRelativeTo (&readout).getPosition()))
         startTyping();
 }
@@ -541,10 +602,30 @@ void DragValue::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWhee
 }
 
 //==============================================================================
-BandPanel::BandPanel (EgretEqProcessor& p, EqView& v, EqDisplay& d)
-    : processor (p), view (v), display (d), freq ("Freq", EqKnob::Unit::hz, v), gain ("Gain", EqKnob::Unit::dB, v), q ("Q", EqKnob::Unit::q, v)
+void DynSwitch::paintButton (juce::Graphics& g, bool, bool)
 {
-    for (auto* b : { &shape, &slope, &place, &bypass, &solo, &prev, &next, &remove })
+    const auto& t = view.theme();
+    const auto on = getToggleState();
+    const auto alpha = isEnabled() ? 1.0f : 0.35f;
+    const auto track = juce::Rectangle<float> (12, 24).withCentre ({ getWidth() * 0.5f, 14.0f });
+    g.setColour ((on ? accent : t.track).withMultipliedAlpha (alpha));
+    g.fillRoundedRectangle (track, 6.0f);
+    const auto thumb = juce::Rectangle<float> (8, 8).withCentre ({ track.getCentreX(), on ? track.getY() + 6 : track.getBottom() - 6 });
+    g.setColour (t.floatShadow.withMultipliedAlpha (alpha));
+    g.fillEllipse (thumb.translated (0, 1));
+    g.setColour (t.knobHi.withMultipliedAlpha (alpha));
+    g.fillEllipse (thumb);
+    g.setColour ((on ? accent : t.fgSoft).withMultipliedAlpha (alpha));
+    g.setFont (sansFont (8.0f, true));
+    g.drawText ("DYN", juce::Rectangle<int> (0, 28, getWidth(), 10), juce::Justification::centred, false);
+}
+
+//==============================================================================
+BandPanel::BandPanel (EgretEqProcessor& p, EqView& v, EqDisplay& d)
+    : processor (p), view (v), display (d), freq ("Freq", EqKnob::Unit::hz, v), gain ("Gain", EqKnob::Unit::dB, v), q ("Q", EqKnob::Unit::q, v),
+      thresh ("Thresh", EqKnob::Unit::dB, v), attack ("Attack", EqKnob::Unit::ms, v), release ("Release", EqKnob::Unit::ms, v), dynSwitch (v)
+{
+    for (auto* b : { &shape, &slope, &place, &bypass, &solo, &prev, &next, &remove, &ghost })
     {
         b->view = &view;
         b->setWantsKeyboardFocus (false);
@@ -557,7 +638,25 @@ BandPanel::BandPanel (EgretEqProcessor& p, EqView& v, EqDisplay& d)
     prev.setButtonText (utf8 ("\xe2\x80\xb9")); prev.setTooltip ("Previous band");
     next.setButtonText (utf8 ("\xe2\x80\xba")); next.setTooltip ("Next band");
     remove.setButtonText (utf8 ("\xe2\x9c\x95")); remove.setTooltip ("Remove the band (Delete, or Alt-click its dot)");
+    ghost.icon = juce::Drawable::parseSVGPath ("M6 1.4a4.6 4.6 0 010 9.2z");
+    ghost.icon.addPath (stroked (juce::Drawable::parseSVGPath ("M10.6 6a4.6 4.6 0 11-9.2 0 4.6 4.6 0 019.2 0z"), 1.3f));
+    ghost.setTooltip ("See-through panel");
+    ghost.onClick = [this] { view.panelGhost = ! view.panelGhost; repaint(); if (onViewChanged) onViewChanged(); };
     for (auto* k : { &freq, &gain, &q }) addAndMakeVisible (*k);
+    for (auto* k : { &thresh, &attack, &release }) addChildComponent (*k);
+    dynSwitch.setTooltip ("Dynamic: the gain moves with the level of this band's part of the sound. Or drag the arrow under the dot.");
+    dynSwitch.setWantsKeyboardFocus (false);
+    addAndMakeVisible (dynSwitch);
+    dynSwitch.onClick = [this]
+    {
+        if (view.selected < 0) return;
+        const auto b = processor.readParams().bands[(size_t) view.selected];
+        if (! eq::hasGain (b.shape)) return;
+        processor.undo.beginNewTransaction();
+        if (! b.dyn && std::abs (b.range) < 0.1) display.setBandParam (view.selected, "Range", -6.0f);
+        display.setBandParam (view.selected, "Dyn", b.dyn ? 0.0f : 1.0f);
+    };
+    gain.beforeRingDrag = [this] { processor.undo.beginNewTransaction(); };
 
     auto menu = [this] (BarButton& b, const char* id, juce::StringArray labels)
     {
@@ -593,7 +692,7 @@ BandPanel::BandPanel (EgretEqProcessor& p, EqView& v, EqDisplay& d)
     prev.onClick = [this] { if (onStep) onStep (-1); };
     next.onClick = [this] { if (onStep) onStep (1); };
     remove.onClick = [this] { display.deleteBand (view.selected); };
-    setSize (406, 108);
+    setSize (wantedWidth(), 114);
 }
 
 void BandPanel::refresh (const eq::Params& p)
@@ -604,11 +703,13 @@ void BandPanel::refresh (const eq::Params& p)
     if (bound != view.selected)
     {
         bound = view.selected;
-        freq.setParameter (processor.apvts.getParameter (EgretEqProcessor::bandId (bound, "Freq")));
-        gain.setParameter (processor.apvts.getParameter (EgretEqProcessor::bandId (bound, "Gain")));
-        q.setParameter (processor.apvts.getParameter (EgretEqProcessor::bandId (bound, "Q")));
+        auto get = [this] (const char* n) { return processor.apvts.getParameter (EgretEqProcessor::bandId (bound, n)); };
+        freq.setParameter (get ("Freq")); gain.setParameter (get ("Gain")); q.setParameter (get ("Q"));
+        thresh.setParameter (get ("Thresh")); attack.setParameter (get ("Attack")); release.setParameter (get ("Release"));
     }
-    for (auto* k : { &freq, &gain, &q }) k->setAccent (colour);
+    const auto dyn = p.isDynamic (view.selected);
+    gain.setRangeRing (dyn ? processor.apvts.getParameter (EgretEqProcessor::bandId (bound, "Range")) : nullptr);
+    for (auto* k : { &freq, &gain, &q, &thresh, &attack, &release }) k->setAccent (colour);
     for (auto* s : { &shape, &slope, &place }) s->setColour (juce::TextButton::buttonOnColourId, colour);
     shape.setButtonText (eq::shapeLabels[(int) b.shape]);
     slope.setButtonText (eq::hasSlope (b.shape) ? juce::String (b.slope) + " dB/oct" : utf8 ("\xe2\x80\x94"));
@@ -619,6 +720,16 @@ void BandPanel::refresh (const eq::Params& p)
     bypass.setToggleState (b.on, juce::dontSendNotification);
     solo.setToggleState (processor.soloBand == view.selected, juce::dontSendNotification);
     solo.setEnabled (eq::canSolo (b.shape));
+    dynSwitch.accent = colour;
+    dynSwitch.setEnabled (eq::hasGain (b.shape));
+    dynSwitch.setToggleState (dyn, juce::dontSendNotification);
+    ghost.setToggleState (view.panelGhost, juce::dontSendNotification);
+    if (dyn != showDyn)
+    {
+        showDyn = dyn;
+        for (auto* k : { &thresh, &attack, &release }) k->setVisible (dyn);
+        setSize (wantedWidth(), getHeight());
+    }
     repaint();
 }
 
@@ -627,28 +738,89 @@ void BandPanel::paint (juce::Graphics& g)
     const auto& t = view.theme();
     const auto r = getLocalBounds().toFloat().reduced (2.0f);
     const auto colour = view.selected >= 0 ? t.band (view.selected) : t.acc;
-    g.setColour (t.floatShadow.withMultipliedAlpha (0.6f));
-    g.fillRoundedRectangle (r.translated (0, 2), 8.0f);
-    g.setColour (t.floatBg);
+    if (! view.panelGhost)
+    {
+        g.setColour (t.floatShadow.withMultipliedAlpha (0.6f));
+        g.fillRoundedRectangle (r.translated (0, 2), 8.0f);
+    }
+    g.setColour (view.panelGhost ? t.floatBg.withAlpha (0.42f) : t.floatBg);
     g.fillRoundedRectangle (r, 8.0f);
     g.setColour (t.floatBorder);
     g.drawRoundedRectangle (r, 8.0f, 1.0f);
     g.setColour (colour);
-    g.fillRoundedRectangle (r.withHeight (2.0f).reduced (4.0f, 0.0f), 1.0f);
+    if (view.panelPinned)   // moved aside: a dashed top edge
+        for (float x = r.getX() + 6; x < r.getRight() - 6; x += 8) g.fillRect (x, r.getY(), 4.0f, 2.0f);
+    else
+        g.fillRoundedRectangle (r.withHeight (2.0f).reduced (4.0f, 0.0f), 1.0f);
+    // the grip
+    g.setColour (t.fgSoft.withAlpha (0.55f));
+    for (int i = 0; i < 7; ++i) g.fillRect (getWidth() / 2.0f - 17 + i * 5, 6.0f, 2.0f, 4.0f);
+    g.setColour (colour);
     g.setFont (monoFont (10.0f).withExtraKerningFactor (0.08f));
-    g.drawText ("BAND " + juce::String (view.selected + 1), juce::Rectangle<int> (10, 7, 104, 14), juce::Justification::centred, false);
+    g.drawText ("BAND " + juce::String (view.selected + 1), juce::Rectangle<int> (10, 13, 104, 14), juce::Justification::centred, false);
+    if (showDyn)
+    {
+        g.setColour (t.floatBorder);
+        g.fillRect (dynDividerX, 22, 1, 70);
+    }
 }
 
 void BandPanel::resized()
 {
-    auto col = juce::Rectangle<int> (10, 23, 104, 22);
+    auto col = juce::Rectangle<int> (10, 29, 104, 22);
     for (auto* b : { &shape, &slope, &place }) { b->setBounds (col); col.translate (0, 26); }
-    auto kx = 122;
-    for (auto* k : { &freq, &gain, &q }) { k->setBounds (kx, 18, 66, 68); kx += 70; }
-    const auto bx = kx + 4;
-    bypass.setBounds (bx, 22, 26, 22); solo.setBounds (bx + 30, 22, 26, 22);
-    prev.setBounds (bx, 48, 26, 22); next.setBounds (bx + 30, 48, 26, 22);
-    remove.setBounds (bx, 74, 56, 22);
+    freq.setBounds (122, 24, 66, 68);
+    gain.setBounds (192, 24, 66, 68);
+    dynSwitch.setBounds (258, 30, 18, 40);
+    q.setBounds (280, 24, 66, 68);
+    auto kx = 350;
+    if (showDyn)
+    {
+        dynDividerX = kx + 4;
+        kx += 10;
+        for (auto* k : { &thresh, &attack, &release }) { k->setBounds (kx, 24, 66, 68); kx += 70; }
+    }
+    const auto bx = kx + 6;
+    bypass.setBounds (bx, 28, 26, 22); solo.setBounds (bx + 30, 28, 26, 22);
+    prev.setBounds (bx, 54, 26, 22); next.setBounds (bx + 30, 54, 26, 22);
+    remove.setBounds (bx, 80, 56, 22);
+    ghost.setBounds (getWidth() - 26, 2, 20, 14);
+}
+
+// The grip along the top edge: drag the panel aside; double-click puts it back under the band.
+void BandPanel::mouseDown (const juce::MouseEvent& e)
+{
+    moving = e.position.y < 16 && e.position.x < getWidth() - 28;
+    if (moving) moveStart = getPosition();
+}
+
+void BandPanel::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! moving || getParentComponent() == nullptr) return;
+    const auto parent = getParentComponent()->getLocalBounds();
+    const auto pos = moveStart + juce::Point<int> (e.getDistanceFromDragStartX(), e.getDistanceFromDragStartY());
+    const auto x = juce::jlimit (0, juce::jmax (0, parent.getWidth() - getWidth()), pos.x);
+    const auto y = juce::jlimit (0, juce::jmax (0, parent.getHeight() - getHeight()), pos.y);
+    view.panelPinned = true;
+    view.panelX = (float) x / (float) parent.getWidth();
+    view.panelY = (float) y / (float) parent.getHeight();
+    setTopLeftPosition (x, y);
+    repaint();
+}
+
+void BandPanel::mouseUp (const juce::MouseEvent&)
+{
+    if (moving && onViewChanged) onViewChanged();
+    moving = false;
+}
+
+void BandPanel::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    if (e.position.y >= 16) return;
+    view.panelPinned = false;
+    display.placePanel();
+    repaint();
+    if (onViewChanged) onViewChanged();
 }
 
 //==============================================================================
@@ -678,6 +850,24 @@ EqDisplay::EqDisplay (EgretEqProcessor& p, EqView& v) : processor (p), view (v)
     addAndMakeVisible (rangeBox);
     panel = std::make_unique<BandPanel> (p, v, *this);
     addChildComponent (*panel);
+    sketchButton.view = &view;
+    sketchButton.icon = stroked (juce::Drawable::parseSVGPath ("M2.5 13.5l1-3.5 7.5-7.5 2.5 2.5L6 12.5zM9.5 4l2.5 2.5"), 1.5f);
+    sketchButton.getProperties().set ("boxed", true);
+    sketchButton.filledWhenOn = true;
+    sketchButton.setTooltip ("EQ Sketch: draw the curve you want, the bands follow (Esc to stop)");
+    sketchButton.setWantsKeyboardFocus (false);
+    sketchButton.onClick = [this] { setSketch (! view.sketch); };
+    addAndMakeVisible (sketchButton);
+}
+
+void EqDisplay::setSketch (bool on)
+{
+    view.sketch = on;
+    sketching = false;
+    sketchPoints.clear();
+    sketchButton.setToggleState (on, juce::dontSendNotification);
+    setMouseCursor (on ? juce::MouseCursor::CopyingCursor : juce::MouseCursor::CrosshairCursor);
+    repaint();
 }
 
 namespace
@@ -695,6 +885,7 @@ float EqDisplay::ay (double db) const { return (float) (viewTop + (-db / view.an
 void EqDisplay::resized()
 {
     rangeBox.setBounds (getWidth() - 12 - 54, 8, 54, 22);
+    sketchButton.setBounds (8, getHeight() - 24 - 28, 28, 28);
     placePanel();
 }
 
@@ -779,24 +970,206 @@ void EqDisplay::computeCurves()
         const auto& b = params.bands[(size_t) i];
         if (! b.used) { curves[(size_t) i].clear(); continue; }
         auto key = b; key.on = true; key.place = eq::Place::stereo;
-        const auto g = params.effectiveGain (i);
-        if (fresh || curves[(size_t) i].empty() || ! (curveKeys[(size_t) i] == key) || curveGains[(size_t) i] != g)
+        key.dyn = false; key.range = key.thresh = key.attack = key.release = 0;
+        const auto g = liveGain (i);
+        if (fresh || curves[(size_t) i].empty() || ! (curveKeys[(size_t) i] == key) || std::abs (curveGains[(size_t) i] - g) > 0.02)
         {
             curveKeys[(size_t) i] = key; curveGains[(size_t) i] = g;
-            const auto n = eq::designBand (b.shape, b.freq, g, b.q, b.slope, fs, secs);
-            auto& db = curves[(size_t) i];
-            db.resize ((size_t) cols);
-            for (int k = 0; k < cols; ++k)
+            curves[(size_t) i] = bandCurveAt (b, g);
+        }
+        if (params.isDynamic (i))   // the band's resting curve and the far edge of its range
+        {
+            const auto gs = params.effectiveGain (i), gr = gs + b.range * params.gainScale / 100;
+            if (fresh || staticCurves[(size_t) i].empty() || ! (rangeKeys[(size_t) i] == key) || staticGains[(size_t) i] != gs || rangeGains[(size_t) i] != gr)
             {
-                const auto w = 2 * pi * juce::jmin (xf ((float) k), fs / 2) / fs;
-                double m2 = 1;
-                for (int s = 0; s < n; ++s) { const auto m = eq::sectionMag (secs[s], w); m2 *= m * m; }
-                db[(size_t) k] = (float) (10 * std::log10 (juce::jmax (m2, 1e-30)));
+                rangeKeys[(size_t) i] = key; staticGains[(size_t) i] = gs; rangeGains[(size_t) i] = gr;
+                staticCurves[(size_t) i] = bandCurveAt (b, gs);
+                rangeCurves[(size_t) i] = bandCurveAt (b, gr);
             }
         }
+        (void) secs;
         if (b.on)
             for (int k = 0; k < cols; ++k) total[(size_t) k] += curves[(size_t) i][(size_t) k];
     }
+}
+
+std::vector<float> EqDisplay::bandCurveAt (const eq::Band& b, double gain) const
+{
+    const auto fs = processor.getSampleRateNow();
+    const auto cols = juce::jmax (2, plotWidth());
+    eq::Section secs[eq::maxSections];
+    const auto n = eq::designBand (b.shape, b.freq, gain, b.q, b.slope, fs, secs);
+    std::vector<float> db ((size_t) cols);
+    for (int k = 0; k < cols; ++k)
+    {
+        const auto w = 2 * pi * juce::jmin (xf ((float) k), fs / 2) / fs;
+        double m2 = 1;
+        for (int s = 0; s < n; ++s) { const auto m = eq::sectionMag (secs[s], w); m2 *= m * m; }
+        db[(size_t) k] = (float) (10 * std::log10 (juce::jmax (m2, 1e-30)));
+    }
+    return db;
+}
+
+double EqDisplay::liveGain (int i) const
+{
+    return params.effectiveGain (i) + (params.isDynamic (i) && params.bands[(size_t) i].on ? processor.getDynamicChange (i) : 0.0);
+}
+
+juce::Point<float> EqDisplay::rangePos (int i) const
+{
+    const auto p = nodePos (i);
+    const double R = view.dispRange;
+    return { p.x, gy (juce::jlimit (-R, R, params.effectiveGain (i) + params.bands[(size_t) i].range * params.gainScale / 100)) };
+}
+
+// Under the selected dot (above it when the dot is low): the arrow that makes the band dynamic.
+juce::Point<float> EqDisplay::arrowPos (int i) const
+{
+    const auto p = nodePos (i);
+    return { p.x, p.y > getHeight() - viewBottom - 34 ? p.y - 20 : p.y + 20 };
+}
+
+int EqDisplay::hitArrow (juce::Point<float> p) const
+{
+    const auto i = view.selected;
+    if (i < 0 || ! params.bands[(size_t) i].used || params.isDynamic (i) || ! eq::hasGain (params.bands[(size_t) i].shape)) return -1;
+    return arrowPos (i).getDistanceSquaredFrom (p) < 81 ? i : -1;
+}
+
+int EqDisplay::hitRange (juce::Point<float> p) const
+{
+    for (int i = eq::maxBands - 1; i >= 0; --i)
+        if (params.bands[(size_t) i].used && params.isDynamic (i) && rangePos (i).getDistanceSquaredFrom (p) < 64)
+            return i;
+    return -1;
+}
+
+// EQ Sketch: the drawn line is the curve wanted over the stretch it covers.
+// What's missing there (wanted minus what the EQ does now) is filled greedily:
+// at the biggest difference a bell as wide as that difference (or a shelf
+// when it runs off an end of the line), until it's within half a dB or the
+// bands run out; then the new bands' gains are settled together by least
+// squares (each band's curve per dB of gain), as on the web page.
+void EqDisplay::fitSketch()
+{
+    if (sketchPoints.size() < 2) return;
+    computeCurves();
+    const auto cols = curveCols;
+    std::vector<double> want ((size_t) cols, 0.0);
+    std::vector<char> has ((size_t) cols, 0);
+    for (size_t j = 1; j < sketchPoints.size(); ++j)
+    {
+        const auto a = sketchPoints[j - 1], b = sketchPoints[j];
+        const auto x0 = juce::roundToInt (juce::jmin (a.x, b.x)), x1 = juce::roundToInt (juce::jmax (a.x, b.x));
+        for (int x = juce::jmax (0, x0); x <= juce::jmin (cols - 1, x1); ++x)
+        {
+            const auto t = x1 == x0 ? 0.0f : juce::jlimit (0.0f, 1.0f, (x - a.x) / (b.x - a.x));
+            want[(size_t) x] = yg (a.y + (b.y - a.y) * t);
+            has[(size_t) x] = 1;
+        }
+    }
+    int c0 = -1, c1 = -1;
+    for (int x = 0; x < cols; ++x) if (has[(size_t) x]) { if (c0 < 0) c0 = x; c1 = x; }
+    if (c0 < 0 || c1 - c0 < 3) return;
+    for (int x = c0; x <= c1; ++x) if (! has[(size_t) x]) want[(size_t) x] = want[(size_t) x - 1];
+    std::vector<double> res ((size_t) cols, 0.0), sm ((size_t) cols, 0.0);
+    for (int x = c0; x <= c1; ++x) res[(size_t) x] = want[(size_t) x] - total[(size_t) x];
+    for (int x = c0; x <= c1; ++x)   // a light smoothing, so a shaky hand doesn't turn into bands
+    {
+        double sum = 0; int n = 0;
+        for (int d = -4; d <= 4; ++d) if (x + d >= c0 && x + d <= c1) { sum += res[(size_t) (x + d)]; ++n; }
+        sm[(size_t) x] = sum / n;
+    }
+    res = sm;
+    const auto goal = res;
+    struct Fresh { int index; eq::Band band; double gain; };
+    std::vector<Fresh> fresh;
+    auto usedNow = params;
+    for (int round = 0; round < 12; ++round)
+    {
+        int kmax = -1; double vmax = 0;
+        for (int x = c0; x <= c1; ++x) if (std::abs (res[(size_t) x]) > vmax) { vmax = std::abs (res[(size_t) x]); kmax = x; }
+        if (kmax < 0 || vmax < 0.5) break;
+        int free = -1;
+        for (int bi = 0; bi < eq::maxBands; ++bi) if (! usedNow.bands[(size_t) bi].used) { free = bi; break; }
+        if (free < 0) break;
+        const auto g = res[(size_t) kmax], half = std::abs (g) / 2;
+        int kl = kmax, kr = kmax;
+        while (kl > c0 && std::abs (res[(size_t) kl - 1]) > half && res[(size_t) kl - 1] * g > 0) --kl;
+        while (kr < c1 && std::abs (res[(size_t) kr + 1]) > half && res[(size_t) kr + 1] * g > 0) ++kr;
+        eq::Band band;
+        band.used = true; band.shape = eq::Shape::bell; band.freq = xf ((float) kmax); band.q = 1; band.slope = 12;
+        if (kl <= c0 && kr < c1) { band.shape = eq::Shape::lowshelf; band.freq = xf ((float) kr); band.q = 0.71; }
+        else if (kr >= c1 && kl > c0) { band.shape = eq::Shape::highshelf; band.freq = xf ((float) kl); band.q = 0.71; }
+        else
+        {
+            const auto bw = juce::jmax (0.15, std::log2 (xf (kr + 0.5f) / xf (kl - 0.5f))), r2 = std::pow (2.0, bw);
+            band.q = juce::jlimit (0.3, 12.0, std::sqrt (r2) / (r2 - 1));
+        }
+        band.freq = juce::jlimit (eq::freqMin, eq::freqMax, band.freq);
+        const auto gain = juce::jlimit (-eq::gainMax, eq::gainMax, g);
+        const auto curve = bandCurveAt (band, gain);
+        for (int x = c0; x <= c1; ++x) res[(size_t) x] -= curve[(size_t) x];
+        usedNow.bands[(size_t) free].used = true;
+        fresh.push_back ({ free, band, gain });
+    }
+    for (int pass = 0; pass < 4 && ! fresh.empty(); ++pass)
+    {
+        const auto nb = (int) fresh.size();
+        std::vector<std::vector<float>> basis;
+        for (auto& f : fresh)
+        {
+            const auto gs = std::abs (f.gain) < 0.05 ? (f.gain < 0 ? -0.05 : 0.05) : f.gain;
+            auto c = bandCurveAt (f.band, gs);
+            for (auto& v : c) v = (float) (v / gs);
+            basis.push_back (std::move (c));
+        }
+        std::vector<std::vector<double>> A ((size_t) nb, std::vector<double> ((size_t) nb, 0.0));
+        std::vector<double> rhs ((size_t) nb, 0.0);
+        for (int r1 = 0; r1 < nb; ++r1)
+        {
+            for (int x = c0; x <= c1; ++x)
+            {
+                rhs[(size_t) r1] += basis[(size_t) r1][(size_t) x] * goal[(size_t) x];
+                for (int r2 = 0; r2 < nb; ++r2) A[(size_t) r1][(size_t) r2] += basis[(size_t) r1][(size_t) x] * basis[(size_t) r2][(size_t) x];
+            }
+            A[(size_t) r1][(size_t) r1] += 1e-3;   // keeps it solvable when two bands nearly coincide
+        }
+        for (int col = 0; col < nb; ++col)   // Gaussian elimination
+        {
+            int piv = col;
+            for (int r = col + 1; r < nb; ++r) if (std::abs (A[(size_t) r][(size_t) col]) > std::abs (A[(size_t) piv][(size_t) col])) piv = r;
+            std::swap (A[(size_t) col], A[(size_t) piv]); std::swap (rhs[(size_t) col], rhs[(size_t) piv]);
+            for (int r = col + 1; r < nb; ++r)
+            {
+                const auto f = A[(size_t) r][(size_t) col] / A[(size_t) col][(size_t) col];
+                for (int c = col; c < nb; ++c) A[(size_t) r][(size_t) c] -= f * A[(size_t) col][(size_t) c];
+                rhs[(size_t) r] -= f * rhs[(size_t) col];
+            }
+        }
+        std::vector<double> sol ((size_t) nb, 0.0);
+        for (int r = nb - 1; r >= 0; --r)
+        {
+            auto acc = rhs[(size_t) r];
+            for (int c = r + 1; c < nb; ++c) acc -= A[(size_t) r][(size_t) c] * sol[(size_t) c];
+            sol[(size_t) r] = acc / A[(size_t) r][(size_t) r];
+        }
+        for (int j = 0; j < nb; ++j) fresh[(size_t) j].gain = juce::jlimit (-eq::gainMax, eq::gainMax, sol[(size_t) j]);
+    }
+    if (fresh.empty()) { info = "Sketch: already there"; return; }
+    processor.undo.beginNewTransaction();
+    for (const auto& f : fresh)
+    {
+        setBandParam (f.index, "Used", 1); setBandParam (f.index, "On", 1); setBandParam (f.index, "Shape", (float) f.band.shape);
+        setBandParam (f.index, "Freq", (float) f.band.freq);
+        setBandParam (f.index, "Gain", params.gainScale > 0 ? (float) (f.gain * 100 / params.gainScale) : 0.0f);
+        setBandParam (f.index, "Q", (float) f.band.q); setBandParam (f.index, "Slope", 1); setBandParam (f.index, "Place", 0);
+        setBandParam (f.index, "Dyn", 0);
+    }
+    params = processor.readParams();
+    view.selected = fresh.back().index;
+    info = "Sketch: " + juce::String ((int) fresh.size()) + (fresh.size() == 1 ? " band" : " bands");
+    if (onSelectionChanged) onSelectionChanged();
 }
 
 // Under the band, like Pro-Q's: centred on its dot, or at the top when the dot is low.
@@ -807,7 +1180,13 @@ void EqDisplay::placePanel()
     if (! has) return;
     const auto p = nodePos (view.selected);
     const auto pw = panel->getWidth(), ph = panel->getHeight();
-    const auto x = juce::jlimit (8, juce::jmax (8, plotWidth() - pw - 8), juce::roundToInt (p.x - pw / 2.0f));
+    if (view.panelPinned)   // moved aside: it stays where it was put
+    {
+        panel->setTopLeftPosition (juce::jlimit (0, juce::jmax (0, getWidth() - pw), juce::roundToInt (view.panelX * getWidth())),
+                                   juce::jlimit (0, juce::jmax (0, getHeight() - ph), juce::roundToInt (view.panelY * getHeight())));
+        return;
+    }
+    const auto x = juce::jlimit (44, juce::jmax (44, plotWidth() - pw - 8), juce::roundToInt (p.x - pw / 2.0f));   // clear of the Sketch button
     const auto y = p.y > getHeight() - viewBottom - ph - 30 ? 34 : juce::roundToInt (getHeight() - viewBottom - 8 - ph);
     panel->setTopLeftPosition (x, y);
 }
@@ -930,9 +1309,30 @@ void EqDisplay::paint (juce::Graphics& g)
                 g.setColour (t.postLine); g.strokePath (spectrumPath (post.getDb(), binHz, false), juce::PathStrokeType (1.0f));
             }
         }
-        // each band's own curve, filled to 0 dB
         const auto y0 = gy (0);
         auto clipY = [&] (double v) { return juce::jlimit (-2.0f, bottom + 2, gy (v)); };
+        // DYNAMIC: the range each band can move through, shaded, its far edge dashed
+        for (int i = 0; i < eq::maxBands; ++i)
+        {
+            if (! params.bands[(size_t) i].used || ! params.isDynamic (i) || rangeCurves[(size_t) i].empty()) continue;
+            const auto& st = staticCurves[(size_t) i];
+            const auto& far = rangeCurves[(size_t) i];
+            const auto cols = juce::jmin ((int) st.size(), (int) far.size());
+            juce::Path zone, edge;
+            for (int k = 0; k < cols; ++k) { const auto y = clipY (st[(size_t) k]); if (k == 0) zone.startNewSubPath (0, y); else zone.lineTo ((float) k, y); }
+            for (int k = cols - 1; k >= 0; --k) zone.lineTo ((float) k, clipY (far[(size_t) k]));
+            zone.closeSubPath();
+            for (int k = 0; k < cols; ++k) { const auto y = clipY (far[(size_t) k]); if (k == 0) edge.startNewSubPath (0, y); else edge.lineTo ((float) k, y); }
+            const auto c = t.band (i);
+            g.setColour (c.withAlpha (0.13f));
+            g.fillPath (zone);
+            juce::Path dashed;
+            const float dashes[] = { 4.0f, 3.0f };
+            juce::PathStrokeType (1.0f).createDashedStroke (dashed, edge, dashes, 2);
+            g.setColour (c.withAlpha (0.8f));
+            g.fillPath (dashed);
+        }
+        // each band's own curve (as heard now), filled to 0 dB
         for (int i = 0; i < eq::maxBands; ++i)
         {
             const auto& db = curves[(size_t) i];
@@ -974,6 +1374,30 @@ void EqDisplay::paint (juce::Graphics& g)
             if (! b.used) continue;
             const auto p = nodePos (i);
             const auto c = t.band (i);
+            if (params.isDynamic (i))
+            {
+                // the range handle: a dashed line to it from the dot, a diamond; a tick at the gain heard now
+                const auto hp = rangePos (i);
+                juce::Path line, dashed;
+                line.startNewSubPath (p); line.lineTo (hp);
+                const float dots[] = { 2.0f, 2.0f };
+                juce::PathStrokeType (1.0f).createDashedStroke (dashed, line, dots, 2);
+                g.setColour (c.withAlpha (0.7f)); g.fillPath (dashed);
+                juce::Path diamond;
+                diamond.addQuadrilateral (hp.x, hp.y - 5, hp.x + 5, hp.y, hp.x, hp.y + 5, hp.x - 5, hp.y);
+                g.setColour (t.offFill); g.fillPath (diamond);
+                g.setColour (c); g.strokePath (diamond, juce::PathStrokeType (1.5f));
+                g.fillRect (p.x - 7, gy (juce::jlimit (-R, R, liveGain (i))) - 1, 14.0f, 2.0f);
+            }
+            else if (i == view.selected && eq::hasGain (b.shape))
+            {
+                // the arrow: pull it up or down to make the band dynamic
+                const auto ap = arrowPos (i);
+                const auto dir = ap.y > p.y ? 1.0f : -1.0f;
+                juce::Path arrow;
+                arrow.addTriangle (ap.x - 5, ap.y - 3 * dir, ap.x + 5, ap.y - 3 * dir, ap.x, ap.y + 4 * dir);
+                g.setColour (c.withAlpha (0.85f)); g.fillPath (arrow);
+            }
             if (i == view.selected) { g.setColour (t.ring); g.drawEllipse (juce::Rectangle<float> (21, 21).withCentre (p), 1.5f); }
             else if (i == hover) { g.setColour (t.ringHover); g.drawEllipse (juce::Rectangle<float> (20, 20).withCentre (p), 1.0f); }
             const auto dot = juce::Rectangle<float> (13, 13).withCentre (p);
@@ -995,6 +1419,25 @@ void EqDisplay::paint (juce::Graphics& g)
                 bx += tw + 3;
             }
         }
+        // EQ Sketch: the line being drawn
+        if (sketchPoints.size() > 1)
+        {
+            juce::Path line;
+            line.startNewSubPath (sketchPoints.front());
+            for (const auto& sp : sketchPoints) line.lineTo (sp);
+            g.setColour (t.eqLabel0.withAlpha (0.85f));
+            g.strokePath (line, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+    }
+    if (view.sketch)
+    {
+        const juce::String hint ("Draw the curve you want; the bands follow");
+        const auto font = monoFont (10.5f);
+        const juce::Rectangle<float> box (8, 8, juce::GlyphArrangement::getStringWidth (font, hint) + 16, 20);
+        g.setColour (t.floatBg); g.fillRoundedRectangle (box, 4.0f);
+        g.setColour (t.floatBorder); g.drawRoundedRectangle (box, 4.0f, 1.0f);
+        g.setColour (t.acc); g.setFont (font);
+        g.drawText (hint, box, juce::Justification::centred, false);
     }
     // the hovered or dragged band's numbers
     const auto show = drag.band >= 0 ? drag.band : hover;
@@ -1057,6 +1500,29 @@ void EqDisplay::mouseDown (const juce::MouseEvent& e)
     grabKeyboardFocus();
     if (! e.mods.isLeftButtonDown()) return;
     const auto i = hitBand (e.position);
+    if (view.sketch && i < 0 && e.position.x <= plotWidth())
+    {
+        sketching = true;
+        sketchPoints = { e.position };
+        repaint();
+        return;
+    }
+    if (i < 0)
+    {
+        const auto ai = hitArrow (e.position);
+        const auto ri = ai >= 0 ? ai : hitRange (e.position);
+        if (ri >= 0)
+        {
+            if (ri != view.selected) { view.selected = ri; if (onSelectionChanged) onSelectionChanged(); }
+            processor.undo.beginNewTransaction();
+            if (ai >= 0) { setBandParam (ai, "Range", 0.0f); setBandParam (ai, "Dyn", 1.0f); params = processor.readParams(); }
+            drag.band = ri; drag.range = true;
+            drag.fy = ai >= 0 ? nodePos (ri).y : rangePos (ri).y;
+            drag.last = e.position;
+            bandParam (ri, "Range")->beginChangeGesture();
+            return;
+        }
+    }
     if (i < 0)
     {
         if (view.selected >= 0 && e.getNumberOfClicks() == 1) { view.selected = -1; if (onSelectionChanged) onSelectionChanged(); }
@@ -1071,6 +1537,7 @@ void EqDisplay::mouseDown (const juce::MouseEvent& e)
     }
     processor.undo.beginNewTransaction();
     drag.band = i;
+    drag.range = false;
     drag.fx = fx (params.bands[(size_t) i].freq);
     drag.fy = nodePos (i).y;
     drag.last = e.position;
@@ -1079,6 +1546,23 @@ void EqDisplay::mouseDown (const juce::MouseEvent& e)
 
 void EqDisplay::mouseDrag (const juce::MouseEvent& e)
 {
+    if (sketching) { sketchPoints.push_back (e.position); repaint(); return; }
+    if (drag.band >= 0 && drag.range)
+    {
+        drag.fy += (e.position.y - drag.last.y) * (e.mods.isShiftDown() ? 0.15f : 1.0f);
+        drag.last = e.position;
+        const double R = view.dispRange;
+        const auto target = juce::jlimit (-R, R, yg (drag.fy));
+        if (params.gainScale > 0)
+        {
+            auto* p = bandParam (drag.band, "Range");
+            const auto r = juce::jlimit (-eq::gainMax, eq::gainMax, target * 100 / params.gainScale - params.bands[(size_t) drag.band].gain);
+            p->setValueNotifyingHost (p->convertTo0to1 ((float) r));
+        }
+        params = processor.readParams();
+        repaint();
+        return;
+    }
     if (drag.band < 0) return;
     const auto k = e.mods.isShiftDown() ? 0.15f : 1.0f;
     drag.fx += (e.position.x - drag.last.x) * k;
@@ -1103,7 +1587,9 @@ void EqDisplay::mouseDrag (const juce::MouseEvent& e)
 
 void EqDisplay::mouseUp (const juce::MouseEvent&)
 {
-    if (drag.band >= 0)
+    if (sketching) { sketching = false; fitSketch(); sketchPoints.clear(); repaint(); return; }
+    if (drag.band >= 0 && drag.range) bandParam (drag.band, "Range")->endChangeGesture();
+    else if (drag.band >= 0)
         for (auto* n : { "Freq", "Gain", "Q" }) bandParam (drag.band, n)->endChangeGesture();
     drag.band = -1;
     repaint();
@@ -1142,6 +1628,7 @@ void EqDisplay::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWhee
 
 bool EqDisplay::keyPressed (const juce::KeyPress& key)
 {
+    if (key.getKeyCode() == juce::KeyPress::escapeKey && view.sketch) { setSketch (false); return true; }
     const auto i = view.selected;
     if (i < 0 || ! params.bands[(size_t) i].used) return false;
     const auto fine = key.getModifiers().isShiftDown() ? 0.2 : 1.0;
@@ -1258,8 +1745,197 @@ void BirdView::tick()
 }
 
 //==============================================================================
+BandListView::BandListView (EgretEqProcessor& p, EqView& v, EqDisplay& d) : processor (p), view (v), display (d)
+{
+    setTitle ("Bands");
+}
+
+void BandListView::refresh (const eq::Params& p)
+{
+    if (p == params && view.selected == shownSelected) return;
+    params = p;
+    shownSelected = view.selected;
+    // left to right as on the display: by frequency
+    std::vector<int> order;
+    for (int i = 0; i < eq::maxBands; ++i) if (params.bands[(size_t) i].used) order.push_back (i);
+    std::stable_sort (order.begin(), order.end(), [this] (int a, int b) { return params.bands[(size_t) a].freq < params.bands[(size_t) b].freq; });
+    chips.clear();
+    float x = 10;
+    const auto numFont = monoFont (11.0f, true), shapeFont = sansFont (10.5f);
+    for (auto i : order)
+    {
+        const auto w = 8 + 9 + 6 + juce::GlyphArrangement::getStringWidth (numFont, juce::String (i + 1)) + 6
+                     + juce::GlyphArrangement::getStringWidth (shapeFont, eq::shapeLabels[(int) params.bands[(size_t) i].shape]) + 10;
+        chips.push_back ({ i, juce::Rectangle<float> (x, 6, w, 24) });
+        x += w + 5;
+    }
+    addBox = { x, 6, 32, 24 };
+    contentWidth = x + 32 + 10;
+    scroll = juce::jlimit (0.0f, juce::jmax (0.0f, contentWidth - getWidth()), scroll);
+    // keep the selected band in view
+    for (const auto& c : chips)
+        if (c.band == view.selected)
+        {
+            if (c.box.getX() - scroll < 0) scroll = c.box.getX() - 10;
+            else if (c.box.getRight() - scroll > getWidth()) scroll = c.box.getRight() - getWidth() + 10;
+        }
+    repaint();
+}
+
+int BandListView::chipAt (juce::Point<float> p) const
+{
+    p.x += scroll;
+    for (const auto& c : chips) if (c.box.contains (p)) return c.band;
+    return addBox.contains (p) ? -2 : -1;
+}
+
+void BandListView::paint (juce::Graphics& g)
+{
+    const auto& t = view.theme();
+    g.fillAll (t.barLo);
+    g.setColour (t.edge);
+    g.fillRect (0, 0, getWidth(), 1);
+    const juce::Graphics::ScopedSaveState state (g);
+    g.addTransform (juce::AffineTransform::translation (-scroll, 0));
+    if (chips.empty())
+    {
+        g.setColour (t.fgSoft);
+        g.setFont (sansFont (11.0f));
+        g.drawText ("No bands yet: double-click the display, or", juce::Rectangle<float> (10, 6, 300, 24), juce::Justification::centredLeft, false);
+        addBox.setX (270);
+    }
+    for (const auto& c : chips)
+    {
+        const auto& b = params.bands[(size_t) c.band];
+        const auto colour = t.band (c.band);
+        const auto alpha = b.on ? 1.0f : 0.45f;
+        g.setColour (t.floatBg.withMultipliedAlpha (alpha));
+        g.fillRoundedRectangle (c.box, 12.0f);
+        g.setColour ((c.band == view.selected ? colour : t.floatBorder).withMultipliedAlpha (alpha));
+        g.drawRoundedRectangle (c.box.reduced (0.5f), 12.0f, c.band == view.selected ? 2.0f : 1.0f);
+        auto r = c.box.reduced (8, 0);
+        const auto dot = juce::Rectangle<float> (9, 9).withCentre ({ r.getX() + 4.5f, r.getCentreY() });
+        g.setColour (colour.withMultipliedAlpha (alpha));
+        if (b.on) g.fillEllipse (dot); else g.drawEllipse (dot.reduced (0.75f), 1.5f);
+        r.removeFromLeft (15);
+        const juce::String num (c.band + 1);
+        g.setFont (monoFont (11.0f, true));
+        g.drawText (num, r, juce::Justification::centredLeft, false);
+        r.removeFromLeft (juce::GlyphArrangement::getStringWidth (monoFont (11.0f, true), num) + 6);
+        g.setColour (t.fg.withMultipliedAlpha (alpha));
+        g.setFont (sansFont (10.5f));
+        g.drawText (eq::shapeLabels[(int) b.shape], r, juce::Justification::centredLeft, false);
+    }
+    g.setColour (t.hover);
+    g.fillRoundedRectangle (addBox, 12.0f);
+    g.setColour (t.floatBorder);
+    g.drawRoundedRectangle (addBox.reduced (0.5f), 12.0f, 1.0f);
+    g.setColour (t.fg);
+    g.setFont (sansFont (13.0f));
+    g.drawText ("+", addBox, juce::Justification::centred, false);
+    g.addTransform (juce::AffineTransform::translation (scroll, 0));
+    if (contentWidth > getWidth())   // the scrollbar: thin, in the theme's colour
+    {
+        const auto w = (float) getWidth();
+        const auto thumbW = juce::jmax (30.0f, w * w / contentWidth), thumbX = scroll / (contentWidth - w) * (w - thumbW);
+        g.setColour (t.accSoft);
+        g.fillRoundedRectangle (juce::Rectangle<float> (thumbX, (float) getHeight() - 4, thumbW, 3), 1.5f);
+    }
+}
+
+void BandListView::mouseUp (const juce::MouseEvent& e)
+{
+    if (e.getNumberOfClicks() > 1 || e.mouseWasDraggedSinceMouseDown()) return;
+    const auto c = chipAt (e.position);
+    if (c == -2) { display.addBand (1000, 0, eq::Shape::bell); return; }
+    if (c >= 0 && c != view.selected)
+    {
+        view.selected = c;
+        if (processor.soloBand >= 0 && processor.soloBand != c) processor.soloBand = -1;
+        if (onSelectionChanged) onSelectionChanged();
+    }
+}
+
+void BandListView::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    const auto c = chipAt (e.position);
+    if (c < 0) return;
+    processor.undo.beginNewTransaction();
+    display.setBandParam (c, "On", params.bands[(size_t) c].on ? 0.0f : 1.0f);
+}
+
+// The mouse wheel scrolls the list sideways.
+void BandListView::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w)
+{
+    if (contentWidth <= getWidth()) return;
+    const auto d = std::abs (w.deltaY) > std::abs (w.deltaX) ? w.deltaY : -w.deltaX;
+    scroll = juce::jlimit (0.0f, contentWidth - getWidth(), scroll - d * 400.0f * (w.isReversed ? -1.0f : 1.0f));
+    repaint();
+}
+
+//==============================================================================
+UpdateBanner::UpdateBanner (UpdateChecker& c, const EqView& v) : checker (c), view (v)
+{
+    for (auto* b : { &update, &later })
+    {
+        b->view = &view;
+        b->getProperties().set ("boxed", true);
+        b->setWantsKeyboardFocus (false);
+        addAndMakeVisible (*b);
+    }
+    update.getProperties().set ("accent", true);
+    update.onClick = [this, safe = juce::Component::SafePointer<UpdateBanner> (this)]
+    {
+        status = "Getting the update...";
+        progress = 0;
+        repaint();
+        checker.install ([safe] (float p, const juce::String& text)
+        {
+            if (safe == nullptr) return;
+            safe->progress = p;
+            safe->status = text;
+            safe->repaint();
+        });
+    };
+    later.onClick = [this] { checker.dismiss (version); setVisible (false); };
+}
+
+void UpdateBanner::show (const juce::String& v)
+{
+    version = v;
+    status.clear();
+    progress = -1;
+    setVisible (true);
+    repaint();
+}
+
+void UpdateBanner::paint (juce::Graphics& g)
+{
+    const auto& t = view.theme();
+    const auto box = getLocalBounds().toFloat().reduced (1.0f);
+    g.setColour (t.floatShadow); g.fillRoundedRectangle (box.translated (0, 2), 6.0f);
+    g.setColour (t.floatSolid); g.fillRoundedRectangle (box, 6.0f);
+    g.setColour (t.acc); g.drawRoundedRectangle (box, 6.0f, 1.0f); g.fillRect (box.withWidth (4.0f));
+    g.setColour (t.fg);
+    g.setFont (sansFont (12.0f, true));
+    const auto textArea = getLocalBounds().withTrimmedLeft (14).withTrimmedRight (150);
+    g.drawText ("Egret EQ " + version + " is out", textArea.withHeight (getHeight() / 2 + 4).withY (2), juce::Justification::bottomLeft, true);
+    g.setColour (t.fgSoft);
+    g.setFont (sansFont (10.5f));
+    const auto line = status.isNotEmpty() ? status + (progress > 0 && progress < 1 ? " " + juce::String (juce::roundToInt (progress * 100)) + "%" : juce::String())
+                                          : "You have " + UpdateChecker::currentVersion();
+    g.drawText (line, textArea.withTrimmedTop (getHeight() / 2 + 2), juce::Justification::topLeft, true);
+}
+
+void UpdateBanner::resized()
+{
+    later.setBounds (getWidth() - 62, (getHeight() - 24) / 2, 54, 24);
+    update.setBounds (later.getX() - 72, (getHeight() - 24) / 2, 66, 24);
+}
+
+//==============================================================================
 EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
-    : AudioProcessorEditor (p), audioProcessor (p), display (p, view), meter (view)
+    : AudioProcessorEditor (p), audioProcessor (p), display (p, view), meter (view), bandList (p, view, display), updateBanner (*updates, view)
 {
     setLookAndFeel (&lnf);
     panel.painter = [this] (juce::Graphics& g) { paintPanel (g); };
@@ -1271,6 +1947,8 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
     view.anaSpeed = ui.getProperty ("anaSpeed", 2); view.anaRange = ui.getProperty ("anaRange", 90);
     view.dispRange = ui.getProperty ("dispRange", 12); view.anaTilt = ui.getProperty ("anaTilt", true);
     view.dark = ui.getProperty ("theme", "light").toString() == "dark";
+    view.panelPinned = ui.getProperty ("panelPinned", false); view.panelX = ui.getProperty ("panelX", 0.3f); view.panelY = ui.getProperty ("panelY", 0.6f);
+    view.panelGhost = ui.getProperty ("panelGhost", false); view.bandList = ui.getProperty ("bandList", true);
     const auto params = audioProcessor.readParams();
     for (int i = 0; i < eq::maxBands && view.selected < 0; ++i) if (params.bands[(size_t) i].used) view.selected = i;
 
@@ -1284,8 +1962,8 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
         juce::Timer::callAfterDelay (2600, [safe] { if (safe != nullptr) { safe->brandSub = subtitleText(); safe->panel.repaint (safe->topBar); } });
     };
     panel.addAndMakeVisible (bird);
-    for (auto* b : { &undoButton, &redoButton, &abButton, &copyButton, &presetPrev, &presetButton, &presetNext, &themeButton, &bypassButton,
-                     &phaseButton, &anaButton, &sourceButton, &playButton, &autoButton })
+    for (auto* b : { &undoButton, &redoButton, &abButton, &copyButton, &presetPrev, &presetButton, &presetNext, &themeButton, &helpButton, &bypassButton,
+                     &phaseButton, &charButton, &anaButton, &sourceButton, &playButton, &listButton, &autoButton })
     {
         b->view = &view;
         b->setWantsKeyboardFocus (false);
@@ -1324,6 +2002,8 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
     presetButton.setTooltip ("Presets");
     presetButton.onClick = [this] { presetMenu(); };
     themeButton.onClick = [this] { view.dark = ! view.dark; saveView(); applyTheme(); };
+    helpButton.setTooltip ("Help, updates, about");
+    helpButton.onClick = [this] { helpMenu(); };
     bypassButton.led = true;
     bypassButton.setTooltip ("Bypass: hear the sound without the EQ");
     {
@@ -1340,8 +2020,17 @@ EgretEqEditor::EgretEqEditor (EgretEqProcessor& p)
     display.onSelectionChanged = [this] { selectionChanged(); };
     display.onFile = [this] (const juce::File& f) { loadFile (f); };
     display.panel->onStep = [this] (int d) { stepBand (d); };
+    display.panel->onViewChanged = [this] { saveView(); };
     panel.addAndMakeVisible (display);
     panel.addAndMakeVisible (meter);
+    bandList.onSelectionChanged = [this] { selectionChanged(); };
+    panel.addAndMakeVisible (bandList);
+    panel.addChildComponent (updateBanner);
+    listButton.setTooltip ("Show or hide the list of bands");
+    listButton.onClick = [this] { view.bandList = ! view.bandList; saveView(); layoutPanel(); };
+    charButton.getProperties().set ("dimPrefix", "Character:");
+    charButton.setTooltip ("Character: Clean, or a little analog saturation");
+    charButton.onClick = [this] { characterMenu(); };
 
     // ---- bottom bar
     phaseButton.setTooltip ("Processing mode");
@@ -1434,6 +2123,45 @@ void EgretEqEditor::saveView()
     ui.setProperty ("anaSpeed", view.anaSpeed, nullptr); ui.setProperty ("anaRange", view.anaRange, nullptr);
     ui.setProperty ("dispRange", view.dispRange, nullptr); ui.setProperty ("anaTilt", view.anaTilt, nullptr);
     ui.setProperty ("theme", view.dark ? "dark" : "light", nullptr);
+    ui.setProperty ("panelPinned", view.panelPinned, nullptr); ui.setProperty ("panelX", view.panelX, nullptr); ui.setProperty ("panelY", view.panelY, nullptr);
+    ui.setProperty ("panelGhost", view.panelGhost, nullptr); ui.setProperty ("bandList", view.bandList, nullptr);
+}
+
+void EgretEqEditor::characterMenu()
+{
+    juce::PopupMenu m;
+    m.addSectionHeader ("Character");
+    const auto cur = audioProcessor.readParams().character;
+    const char* notes[] = { "", " \u2014 a little saturation", " \u2014 more, and a softer top" };
+    for (int i = 0; i < eq::numCharacters; ++i)
+        m.addItem (i + 1, eq::characterLabels[i] + juce::String (juce::CharPointer_UTF8 (notes[i])), true, (int) cur == i);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&charButton), [this] (int r)
+    {
+        if (r <= 0) return;
+        audioProcessor.undo.beginNewTransaction();
+        auto* c = audioProcessor.apvts.getParameter ("character");
+        c->beginChangeGesture(); c->setValueNotifyingHost (c->convertTo0to1 ((float) (r - 1))); c->endChangeGesture();
+    });
+}
+
+void EgretEqEditor::helpMenu()
+{
+    juce::PopupMenu m;
+    m.addSectionHeader ("Egret EQ " + UpdateChecker::currentVersion());
+    m.addItem (1, "Check for updates now");
+    m.addItem (2, "Check for updates when the plugin starts", true, updates->isAutomatic());
+    m.addSeparator();
+    m.addItem (3, "What's new (releases)");
+    m.addItem (4, "Egret EQ in your browser");
+    m.addItem (5, "Egret FX: every Egret effect");
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&helpButton), [this] (int r)
+    {
+        if (r == 1) { updates->checkNow(); manualCheck = true; display.info = "Looking for updates..."; }
+        if (r == 2) updates->setAutomatic (! updates->isAutomatic());
+        if (r == 3) juce::URL ("https://github.com/" + juce::String (UpdateChecker::repo) + "/releases").launchInDefaultBrowser();
+        if (r == 4) juce::URL ("https://vox4vulpes.github.io/EgretFX-EQ/").launchInDefaultBrowser();
+        if (r == 5) juce::URL ("https://github.com/vox4vulpes/EgretFX").launchInDefaultBrowser();
+    });
 }
 
 void EgretEqEditor::applyTheme()
@@ -1601,6 +2329,8 @@ void EgretEqEditor::refreshAll()
     presetButton.setButtonText (audioProcessor.getPresetName() + (audioProcessor.isPresetEdited() ? " (edited)" : ""));
     static const char* modes[] = { "Off", "Pre", "Post", "Pre+Post" };
     anaButton.setButtonText (juce::String (modes[juce::jlimit (0, 3, view.anaMode)]) + (view.freeze ? " (frozen)" : ""));
+    charButton.setButtonText (eq::characterLabels[(int) p.character]);
+    listButton.setToggleState (view.bandList, juce::dontSendNotification);
     autoButton.setToggleState (p.autoGain, juce::dontSendNotification);
     autoButton.setButtonText (p.autoGain ? "Auto Gain " + EqKnob::format (EqKnob::Unit::dB, eq::autoGainDb (p, audioProcessor.getSampleRateNow())) : juce::String ("Auto Gain"));
     if (EgretEqProcessor::isStandalone())
@@ -1623,6 +2353,20 @@ void EgretEqEditor::timerCallback()
         view.loadWarnUntil = juce::Time::getMillisecondCounterHiRes() + 5000;
     if (count <= eq::bandsLight) view.loadWarnUntil = 0;
     lastBandCount = count;
+    bandList.refresh (p);
+    const auto upd = updates->getResult();
+    if (upd.state == UpdateChecker::Result::State::newer && ! updates->isDismissed (upd.latest) && ! updateBanner.isVisible() && shownUpdate != upd.latest)
+    {
+        shownUpdate = upd.latest;
+        updateBanner.show (upd.latest);
+    }
+    if (manualCheck && upd.state != UpdateChecker::Result::State::checking)
+    {
+        manualCheck = false;
+        if (upd.state == UpdateChecker::Result::State::upToDate) display.info = "You have the latest version (" + UpdateChecker::currentVersion() + ")";
+        else if (upd.state == UpdateChecker::Result::State::failed) display.info = "Couldn't reach GitHub to look for updates";
+        else if (upd.state == UpdateChecker::Result::State::newer) { updateBanner.show (upd.latest); shownUpdate = upd.latest; }
+    }
     display.tick (p);
     meter.push (audioProcessor.takeMeters());
     bird.tick();
@@ -1668,14 +2412,17 @@ void EgretEqEditor::paintPanel (juce::Graphics& g)
     g.setColour (t.fgSoft);
     g.setFont (monoFont (10.5f));
     const auto infoX = (EgretEqProcessor::isStandalone() ? playButton.getRight() : anaButton.getRight()) + 10;
-    g.drawText (display.info, juce::Rectangle<int> (infoX, bottomBar.getY(), juce::jmax (0, autoButton.getX() - infoX - 10), bottomH),
+    g.drawText (display.info, juce::Rectangle<int> (infoX, bottomBar.getY(), juce::jmax (0, listButton.getX() - infoX - 10), bottomH),
                 juce::Justification::centredLeft, true);
 }
 
 void EgretEqEditor::layoutPanel()
 {
+    const auto displayH = screenH + (view.bandList ? 0 : listH);
     topBar = { 0, 0, panelWidth, topH };
-    bottomBar = { 0, topH + screenH, panelWidth, bottomH };
+    bottomBar = { 0, topH + displayH, panelWidth, bottomH };
+    bandList.setVisible (view.bandList);
+    bandList.setBounds (0, bottomBar.getBottom(), panelWidth, listH);
     // top: logo, undo, redo, A/B, copy | preset | theme, power
     const auto logoFont = sansFont (21.0f, true);
     auto x = 10 + juce::roundToInt (juce::GlyphArrangement::getStringWidth (logoFont, "EGRET EQ")) + 8;
@@ -1686,21 +2433,25 @@ void EgretEqEditor::layoutPanel()
     auto place = [&x] (juce::Component& c, int w) { c.setBounds (x, 7, w, 24); x += w + 4; };
     place (undoButton, 30); place (redoButton, 30); x += 4;
     place (abButton, 48); place (copyButton, 84);
-    const auto presetW = 220, cx = 610;
+    const auto presetW = 210, cx = 590;
     presetPrev.setBounds (cx - presetW / 2 - 26, 7, 24, 24);
     presetButton.setBounds (cx - presetW / 2, 7, presetW, 24);
     presetNext.setBounds (cx + presetW / 2 + 2, 7, 24, 24);
     bypassButton.setBounds (panelWidth - 10 - 90, 7, 90, 24);
-    themeButton.setBounds (bypassButton.getX() - 34, 7, 30, 24);
+    helpButton.setBounds (bypassButton.getX() - 50, 7, 46, 24);
+    themeButton.setBounds (helpButton.getX() - 34, 7, 30, 24);
 
     // the screen
-    display.setBounds (0, topH, panelWidth - meterW, screenH);
-    meter.setBounds (panelWidth - meterW, topH, meterW, screenH);
+    display.setBounds (0, topH, panelWidth - meterW, displayH);
+    meter.setBounds (panelWidth - meterW, topH, meterW, displayH);
+    updateBanner.setBounds ((panelWidth - meterW - 470) / 2, topH + 40, 470, 46);
 
     // bottom: mode, analyzer, (source, play) | auto gain, scale, out, pan
     const auto by = bottomBar.getY() + 4, bh = bottomH - 8;
     auto bx = 10;
     phaseButton.setBounds (bx, by, 100, bh); bx += 104;
+    const auto charW = juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (12.0f), "Character: " + charButton.getButtonText())) + 18;
+    charButton.setBounds (bx, by, charW, bh); bx += charW + 4;
     const auto anaW = juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (12.0f), "Analyzer: " + anaButton.getButtonText())) + 18;
     anaButton.setBounds (bx, by, anaW, bh); bx += anaW + 4;
     if (EgretEqProcessor::isStandalone())
@@ -1718,4 +2469,5 @@ void EgretEqEditor::layoutPanel()
     }
     const auto aw = juce::roundToInt (juce::GlyphArrangement::getStringWidth (sansFont (12.0f), autoButton.getButtonText())) + 18;
     autoButton.setBounds (rx - aw, by, aw, bh);
+    listButton.setBounds (autoButton.getX() - 58, by, 54, bh);
 }

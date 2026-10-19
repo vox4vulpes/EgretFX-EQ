@@ -23,6 +23,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout EgretEqProcessor::createLayo
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "gainScale", 1 }, "Gain Scale", juce::NormalisableRange<float> (0.0f, 200.0f), 100.0f));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "autoGain", 1 }, "Auto Gain", false));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "power", 1 }, "Power", true));
+    // Added in 1.1 (new IDs only, so 1.0 projects still load).
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "character", 2 }, "Character", juce::StringArray { "Clean", "Subtle", "Warm" }, 0));
 
     juce::StringArray shapes, slopes, places;
     for (auto* s : eq::shapeLabels) shapes.add (s);
@@ -40,6 +42,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout EgretEqProcessor::createLayo
         group->addChild (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { bandId (i, "Q"), 1 }, name + "Q", logRange ((float) eq::qMin, (float) eq::qMax), 1.0f));
         group->addChild (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { bandId (i, "Slope"), 1 }, name + "Slope", slopes, 1));
         group->addChild (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { bandId (i, "Place"), 1 }, name + "Stereo", places, 0));
+        group->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { bandId (i, "Dyn"), 2 }, name + "Dynamic", false));
+        group->addChild (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { bandId (i, "Range"), 2 }, name + "Range", juce::NormalisableRange<float> (-30.0f, 30.0f), -6.0f));
+        group->addChild (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { bandId (i, "Thresh"), 2 }, name + "Threshold", juce::NormalisableRange<float> (-60.0f, 0.0f), -24.0f));
+        group->addChild (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { bandId (i, "Attack"), 2 }, name + "Attack", logRange (0.5f, 500.0f), 10.0f));
+        group->addChild (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { bandId (i, "Release"), 2 }, name + "Release", logRange (10.0f, 5000.0f), 120.0f));
         layout.add (std::move (group));
     }
     return layout;
@@ -53,15 +60,18 @@ EgretEqProcessor::EgretEqProcessor()
     for (int i = 0; i < eq::maxBands; ++i)
     {
         auto get = [this, i] (const char* n) { return apvts.getRawParameterValue (bandId (i, n)); };
-        refs[(size_t) i] = { get ("Used"), get ("On"), get ("Shape"), get ("Freq"), get ("Gain"), get ("Q"), get ("Slope"), get ("Place") };
+        refs[(size_t) i] = { get ("Used"), get ("On"), get ("Shape"), get ("Freq"), get ("Gain"), get ("Q"), get ("Slope"), get ("Place"),
+                             get ("Dyn"), get ("Range"), get ("Thresh"), get ("Attack"), get ("Release") };
     }
     outGain = apvts.getRawParameterValue ("outGain");
     outPan = apvts.getRawParameterValue ("outPan");
     gainScale = apvts.getRawParameterValue ("gainScale");
     autoGain = apvts.getRawParameterValue ("autoGain");
     power = apvts.getRawParameterValue ("power");
+    character = apvts.getRawParameterValue ("character");
     formats.registerBasicFormats();
     rememberPreset ("Flat");
+    updates->checkOnLaunch();
 }
 
 bool EgretEqProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -92,12 +102,15 @@ eq::Params EgretEqProcessor::readParams() const
         b.q = r.q->load();
         b.slope = eq::slopes[juce::jlimit (0, eq::numSlopes - 1, juce::roundToInt (r.slope->load()))];
         b.place = (eq::Place) juce::jlimit (0, eq::numPlaces - 1, juce::roundToInt (r.place->load()));
+        b.dyn = r.dyn->load() > 0.5f;
+        b.range = r.range->load(); b.thresh = r.thresh->load(); b.attack = r.attack->load(); b.release = r.release->load();
     }
     p.outGain = outGain->load();
     p.outPan = outPan->load();
     p.gainScale = gainScale->load();
     p.autoGain = autoGain->load() > 0.5f;
     p.power = power->load() > 0.5f;
+    p.character = (eq::Character) juce::jlimit (0, eq::numCharacters - 1, juce::roundToInt (character->load()));
     return p;
 }
 
@@ -127,11 +140,15 @@ void EgretEqProcessor::writeParams (const eq::Params& p)
         for (int k = 0; k < eq::numSlopes; ++k) if (eq::slopes[k] == b.slope) slopeIndex = k;
         set (bandId (i, "Slope"), (float) slopeIndex);
         set (bandId (i, "Place"), (float) b.place);
+        set (bandId (i, "Dyn"), b.dyn ? 1.0f : 0.0f);
+        set (bandId (i, "Range"), (float) b.range); set (bandId (i, "Thresh"), (float) b.thresh);
+        set (bandId (i, "Attack"), (float) b.attack); set (bandId (i, "Release"), (float) b.release);
     }
     set ("outGain", (float) p.outGain);
     set ("outPan", (float) p.outPan);
     set ("gainScale", (float) p.gainScale);
     set ("autoGain", p.autoGain ? 1.0f : 0.0f);
+    set ("character", (float) p.character);
 }
 
 //==============================================================================
@@ -272,12 +289,14 @@ juce::String EgretEqProcessor::paramsToSpec (const eq::Params& p)
         const auto& b = p.bands[(size_t) i];
         if (! b.used) continue;
         items.add ("b" + juce::String (i + 1) + "=" + eq::shapeKeys[(int) b.shape] + " " + juce::String (b.freq, 6) + " " + juce::String (b.gain, 6)
-                   + " " + juce::String (b.q, 6) + " " + juce::String (b.slope) + " " + eq::placeKeys[(int) b.place] + (b.on ? "" : " off"));
+                   + " " + juce::String (b.q, 6) + " " + juce::String (b.slope) + " " + eq::placeKeys[(int) b.place] + (b.on ? "" : " off")
+                   + (b.dyn ? " dyn:" + juce::String (b.range, 4) + "," + juce::String (b.thresh, 4) + "," + juce::String (b.attack, 4) + "," + juce::String (b.release, 4) : juce::String()));
     }
     items.add ("scale=" + juce::String (p.gainScale, 6));
     items.add ("gain=" + juce::String (p.outGain, 6));
     items.add ("pan=" + juce::String (p.outPan, 6));
     items.add (juce::String ("auto=") + (p.autoGain ? "1" : "0"));
+    items.add (juce::String ("char=") + eq::characterKeys[(int) p.character]);
     return items.joinIntoString ("; ");
 }
 

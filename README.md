@@ -35,6 +35,12 @@ changing its shape, slope or stereo placement crossfades, so nothing clicks.
   four resolutions and five speeds, 60/90/120 dB range, **TILT** (4.5 dB per
   octave, so music looks flat) and **FREEZE**; **EQ ±** sets the curve's scale
   (3, 6, 12 or 30 dB)
+- **Dynamic EQ** — pull the arrow under the selected dot: the band follows the
+  level of its own part of the sound (**THRESH**, **ATTACK**, **RELEASE**) and
+  moves by up to its range (the diamond, or the ring around GAIN); **DYN**
+  beside GAIN switches it
+- **EQ Sketch** — the pencil: draw the curve you want, bands are placed to make it
+- **Character** — Clean, Subtle or Warm saturation
 - **Output** — **SCALE** (all gains at once, 0–200%), **GAIN**, **PAN**, and
   **AUTO GAIN**, which keeps the loudness level while you EQ
 - **Presets** — factory settings and your own; **UNDO** / **REDO**
@@ -56,6 +62,9 @@ line (the coefficients match exactly), with the same panel.
 - In a DAW it works on its track (stereo or mono); the standalone app adds the
   demo loop, files and pink noise.
 - The window can be resized; the panel scales with it.
+- When it starts, the plugin looks on GitHub for a newer version (one request
+  for the latest release's public details) and offers to update; **Help**
+  turns that off.
 
 To build it yourself (C++17; on Linux a few dev packages, see
 [`.github/workflows/build-vst.yml`](.github/workflows/build-vst.yml)):

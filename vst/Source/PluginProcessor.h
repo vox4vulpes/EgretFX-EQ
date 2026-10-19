@@ -5,6 +5,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "EqDsp.h"
+#include "UpdateChecker.h"
 
 // Egret EQ as a plugin: every band setting a parameter (48 bands), the web
 // version's engine, factory presets and user presets as files, undo, A/B.
@@ -45,6 +46,7 @@ public:
     // SOLO: not a parameter, it's for listening.
     std::atomic<int> soloBand { -1 };
     std::array<float, 4> takeMeters() { return engine.takeMeters(); }
+    float getDynamicChange (int band) const { return engine.getDynamicChange (band); }
     double getAutoGainDb() const { return eq::autoGainDb (readParams(), sampleRate); }
 
     // The analyzer: what goes in (pre) and what comes out (post), mono, for the editor.
@@ -91,14 +93,15 @@ private:
     static juce::String paramsToSpec (const eq::Params&);
 
     eq::Engine engine;
+    juce::SharedResourcePointer<UpdateChecker> updates;   // looks for a newer version when the plugin starts
     eq::Params lastParams;
     int lastSolo = -2;
     double sampleRate = 48000;
     juce::AudioBuffer<float> scratch;
 
-    struct BandRefs { std::atomic<float> *used, *on, *shape, *freq, *gain, *q, *slope, *place; };
+    struct BandRefs { std::atomic<float> *used, *on, *shape, *freq, *gain, *q, *slope, *place, *dyn, *range, *thresh, *attack, *release; };
     std::array<BandRefs, eq::maxBands> refs {};
-    std::atomic<float> *outGain = nullptr, *outPan = nullptr, *gainScale = nullptr, *autoGain = nullptr, *power = nullptr;
+    std::atomic<float> *outGain = nullptr, *outPan = nullptr, *gainScale = nullptr, *autoGain = nullptr, *power = nullptr, *character = nullptr;
 
     struct Clip { std::vector<float> left, right; };
     std::atomic<int> source { (int) Source::demo };

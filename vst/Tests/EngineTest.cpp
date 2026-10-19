@@ -96,6 +96,28 @@ int main()
         check (ag < -1 && ag > -6, "auto gain turns a +6 shelf down", ag, -3);
         check (std::abs (sineGain (a, 100).first - ag) < 0.05, "auto gain heard below the shelf", sineGain (a, 100).first, ag);
     }
+    // 4b. Dynamics: nothing below the threshold, the full range well above it; Character.
+    {
+        const auto down = presetParams ("b2=bell 1000 0 1 12 stereo dyn:-8,-30,5,80");
+        auto at = [&] (const Params& p, double dbfs)
+        {
+            Engine e; e.prepare (48000); e.setParams (p, -1);
+            const int n = 48000;
+            std::vector<float> x ((size_t) n), oL ((size_t) n), oR ((size_t) n);
+            for (int i = 0; i < n; ++i) x[(size_t) i] = (float) (std::pow (10.0, dbfs / 20) * std::sin (2 * 3.14159265358979 * 1000 * i / 48000));
+            for (int o = 0; o + 128 <= n; o += 128) e.process (x.data() + o, x.data() + o, oL.data() + o, oR.data() + o, 128);
+            double a = 0, b = 0;
+            for (int i = n / 2; i < n; ++i) { a += x[(size_t) i] * x[(size_t) i]; b += oL[(size_t) i] * oL[(size_t) i]; }
+            return 10 * std::log10 (b / a);
+        };
+        check (std::abs (at (down, -50)) < 0.05, "dynamic band below its threshold", at (down, -50), 0);
+        check (std::abs (at (down, -6) + 8) < 0.05, "dynamic band well above: the full range", at (down, -6), -8);
+        const auto up = presetParams ("b2=bell 1000 0 1 12 stereo dyn:6,-30,5,80");
+        check (std::abs (at (up, -6) - 6) < 0.05, "dynamic band upward", at (up, -6), 6);
+        const auto warm = presetParams ("b1=bell 1000 0 1; char=warm");
+        check (std::abs (at (warm, -20)) < 0.1, "Warm leaves quiet sound alone", at (warm, -20), 0);
+        check (at (warm, 0) < -1.5 && at (warm, 0) > -3.5, "Warm rounds a full-scale sine", at (warm, 0), -2.4);
+    }
     // 5. Every setting stable, at every rate.
     {
         // Our own random numbers, the same on every platform.

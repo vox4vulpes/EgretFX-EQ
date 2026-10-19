@@ -4,6 +4,7 @@
 #include <functional>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
+#include "UpdateChecker.h"
 
 // The web version's two themes (its CSS variables and the screen's colours).
 struct EqTheme
@@ -42,6 +43,9 @@ struct EqView
     int anaMode = 3, anaRes = 2, anaSpeed = 2, anaRange = 90, dispRange = 12;   // as the web page's ui settings
     bool anaTilt = true, freeze = false, dark = false;
     double loadWarnUntil = 0;   // the "more than 24 bands" note shows until then (ms)
+    // the band panel moved aside (as a share of the screen), see-through; the band list; EQ Sketch
+    bool panelPinned = false, panelGhost = false, bandList = true, sketch = false;
+    float panelX = 0, panelY = 0;
     const EqTheme& theme() const { return EqTheme::get (dark); }
 };
 
@@ -60,13 +64,19 @@ public:
 class EqKnob : public juce::Component
 {
 public:
-    enum class Unit { hz, dB, q, pct, pan };
+    enum class Unit { hz, dB, q, pct, pan, ms };
     EqKnob (const juce::String& label, Unit, const EqView&);
     void setParameter (juce::RangedAudioParameter*);
+    // RANGE as a ring around this knob (GAIN): an arc from the gain to gain + range; nullptr hides it.
+    void setRangeRing (juce::RangedAudioParameter* range);
     void setAccent (juce::Colour);
     void resized() override;
     void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    std::function<void()> beforeRingDrag;
     static juce::String format (Unit, double v);
     static bool parse (Unit, juce::String text, double& value);
 
@@ -77,6 +87,10 @@ private:
     const EqView& view;
     juce::String labelText;
     juce::RangedAudioParameter* param = nullptr;
+    juce::RangedAudioParameter* rangeParam = nullptr;
+    float ringDragY = 0, ringDragValue = 0;
+    bool ringDragging = false;
+    bool onRing (juce::Point<float>) const;
     juce::Slider slider;
     juce::Label readout;
     std::unique_ptr<juce::SliderParameterAttachment> attachment;
@@ -111,7 +125,20 @@ private:
 
 class EqDisplay;
 
-// The band panel: under the selected band, like Pro-Q's.
+// DYN beside GAIN: a small slide switch for the band's dynamics.
+class DynSwitch : public juce::Button
+{
+public:
+    explicit DynSwitch (const EqView& v) : juce::Button ("DYN"), view (v) {}
+    juce::Colour accent;
+    void paintButton (juce::Graphics&, bool isMouseOver, bool isDown) override;
+
+private:
+    const EqView& view;
+};
+
+// The band panel: under the selected band, like Pro-Q's. Drag it aside by the
+// grip on its top edge (double-click puts it back); it can be see-through.
 class BandPanel : public juce::Component
 {
 public:
@@ -119,15 +146,68 @@ public:
     void refresh (const eq::Params&);
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
     std::function<void (int)> onStep;   // previous / next band
+    std::function<void()> onViewChanged;   // moved, put back, see-through
 
 private:
+    int wantedWidth() const { return showDyn ? 640 : 420; }
     EgretEqProcessor& processor;
     EqView& view;
     EqDisplay& display;
-    BarButton shape, slope, place, bypass, solo, prev, next, remove;
-    EqKnob freq, gain, q;
+    BarButton shape, slope, place, bypass, solo, prev, next, remove, ghost;
+    EqKnob freq, gain, q, thresh, attack, release;
+    DynSwitch dynSwitch;
     int bound = -2;
+    bool showDyn = false, moving = false;
+    int dynDividerX = 0;
+    juce::Point<int> moveStart;
+};
+
+// The band list under the bottom bar: every band, left to right as on the
+// display, its colour, number and shape; the wheel scrolls it sideways.
+class BandListView : public juce::Component
+{
+public:
+    BandListView (EgretEqProcessor&, EqView&, EqDisplay&);
+    void refresh (const eq::Params&);
+    void paint (juce::Graphics&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    std::function<void()> onSelectionChanged;
+
+private:
+    struct Chip { int band; juce::Rectangle<float> box; };
+    int chipAt (juce::Point<float>) const;   // band, -2 for "+", -1 for nothing
+    EgretEqProcessor& processor;
+    EqView& view;
+    EqDisplay& display;
+    eq::Params params;
+    std::vector<Chip> chips;
+    juce::Rectangle<float> addBox;
+    float scroll = 0, contentWidth = 0;
+    int shownSelected = -2;
+};
+
+// "Egret EQ x.y.z is out": Update, Later. Over the top of the display.
+class UpdateBanner : public juce::Component
+{
+public:
+    UpdateBanner (UpdateChecker&, const EqView&);
+    void show (const juce::String& version);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    UpdateChecker& checker;
+    const EqView& view;
+    BarButton update { "Update" }, later { "Later" };
+    juce::String version, status;
+    float progress = -1;
 };
 
 // The EQ screen: grid, scales, analyzer, each band's curve, the sum, the dots.
@@ -153,6 +233,9 @@ public:
     void filesDropped (const juce::StringArray& files, int, int) override;
 
     void tick (const eq::Params&);   // the editor's timer: analyzer frame, panel, repaint
+    void placePanel();
+    void setSketch (bool);
+    BarButton sketchButton;
     juce::String info;               // the hint in the bottom bar
     void addBand (double freq, double gain, eq::Shape);
     void deleteBand (int band);
@@ -173,22 +256,30 @@ private:
     void computeCurves();
     juce::Path spectrumPath (const std::vector<float>& db, double binHz, bool close) const;
     void setInfo (juce::Point<float>* p);
-    void placePanel();
     juce::RangedAudioParameter* bandParam (int band, const char* name) const;
+    juce::Point<float> rangePos (int band) const;
+    juce::Point<float> arrowPos (int band) const;
+    int hitRange (juce::Point<float>) const;
+    int hitArrow (juce::Point<float>) const;
+    double liveGain (int band) const;   // static gain + the dynamic change heard now
+    void fitSketch();
+    std::vector<float> bandCurveAt (const eq::Band&, double gain) const;
 
     EgretEqProcessor& processor;
     EqView& view;
     eq::Params params;
-    std::array<std::vector<float>, eq::maxBands> curves;
-    std::array<eq::Band, eq::maxBands> curveKeys {};
-    std::array<double, eq::maxBands> curveGains {};
+    std::array<std::vector<float>, eq::maxBands> curves, staticCurves, rangeCurves;
+    std::array<eq::Band, eq::maxBands> curveKeys {}, rangeKeys {};
+    std::array<double, eq::maxBands> curveGains {}, staticGains {}, rangeGains {};
+    std::vector<juce::Point<float>> sketchPoints;
+    bool sketching = false;
     std::vector<float> total;
     double curveFs = 0, curveScale = -1;
     int curveCols = 0;
     eq::Analyzer pre, post;
     std::vector<float> pull;
     int hover = -1;
-    struct Drag { int band = -1; float fx = 0, fy = 0; juce::Point<float> last; } drag;
+    struct Drag { int band = -1; bool range = false; float fx = 0, fy = 0; juce::Point<float> last; } drag;
     bool dragOver = false;
 };
 
@@ -253,6 +344,8 @@ private:
     void presetMenu();
     void analyzerMenu();
     void sourceMenu();
+    void characterMenu();
+    void helpMenu();
     void loadFile (const juce::File&);
 
     EgretEqProcessor& audioProcessor;
@@ -264,7 +357,7 @@ private:
     // top bar
     BirdView bird;
     juce::String brandSub;
-    BarButton undoButton, redoButton, abButton, copyButton, presetPrev { "<" }, presetButton, presetNext { ">" }, themeButton, bypassButton { "BYPASS" };
+    BarButton undoButton, redoButton, abButton, copyButton, presetPrev { "<" }, presetButton, presetNext { ">" }, themeButton, helpButton { "Help" }, bypassButton { "BYPASS" };
     std::unique_ptr<juce::ParameterAttachment> bypassAttachment;   // lit when the "power" parameter is off
     juce::Rectangle<int> topBar, bottomBar;
     juce::String shownPresetSig;
@@ -274,10 +367,15 @@ private:
     MeterView meter;
 
     // bottom bar
-    BarButton phaseButton { "Zero Latency" }, anaButton, sourceButton, playButton, autoButton;
+    BarButton phaseButton { "Zero Latency" }, charButton, anaButton, sourceButton, playButton, listButton { "Bands" }, autoButton;
+    BandListView bandList;
+    juce::SharedResourcePointer<UpdateChecker> updates;
+    UpdateBanner updateBanner;
     std::unique_ptr<DragValue> scaleValue, gainValue, panValue;
     juce::String shownInfo, shownAuto;
     int lastBandCount = -1;
+    juce::String shownUpdate;
+    bool manualCheck = false;
     std::unique_ptr<juce::FileChooser> chooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EgretEqEditor)

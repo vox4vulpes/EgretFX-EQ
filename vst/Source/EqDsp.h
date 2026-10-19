@@ -36,15 +36,25 @@ namespace eq
         double freq = 1000, gain = 0, q = 1;
         int slope = 12;
         Place place = Place::stereo;
+        // DYNAMIC: the gain moves by up to RANGE when the band's part of the input passes THRESHOLD.
+        bool dyn = false;
+        double range = -6, thresh = -24, attack = 10, release = 120;
         bool operator== (const Band& o) const;
     };
+
+    enum class Character { clean, subtle, warm };
+    constexpr int numCharacters = 3;
+    extern const char* const characterKeys[numCharacters];    // "clean", "subtle", "warm"
+    extern const char* const characterLabels[numCharacters];  // "Clean", "Subtle", "Warm"
 
     struct Params
     {
         std::array<Band, maxBands> bands {};
         double outGain = 0, outPan = 0, gainScale = 100;
         bool autoGain = false, power = true;
+        Character character = Character::clean;
         bool operator== (const Params& o) const;
+        bool isDynamic (int band) const;   // dynamic, and a shape with gain
         bool operator!= (const Params& o) const { return ! (*this == o); }
         double effectiveGain (int band) const;   // the band's gain after GAIN SCALE (0 for shapes without gain)
     };
@@ -70,6 +80,8 @@ namespace eq
         double getAutoGainDb() const { return autoDb; }
         // Peaks since the last call: in L, in R, out L, out R.
         std::array<float, 4> takeMeters();
+        // Each band's dynamic gain change now (dB), for the display.
+        float getDynamicChange (int band) const { return dynShown[(size_t) band].load (std::memory_order_relaxed); }
 
     private:
         struct BandState
@@ -82,9 +94,18 @@ namespace eq
             Place place = Place::stereo, tPlace = Place::stereo;
             bool tActive = false, dirty = true;
             double f = 1000, g = 0, q = 1, tf = 1000, tg = 0, tq = 1, mix = 0, mixTarget = 0;
+            // dynamics: the detector (the band's part of the input) and its level
+            bool dyn = false;
+            double range = -6, thresh = -24, att = 10, rel = 120, env = 0, dynDb = 0, staticG = 0;
+            Section det;
+            std::array<double, 4> detZ {};
+            Shape detShape = Shape::bell;
+            double detF = -1, detQ = -1;
         };
         void updateBand (BandState&);
         void runBand (BandState&, double* L, double* R, int len);
+        void detect (BandState&, const double* dl, const double* dr, int len, int index);
+        void runCharacter (double* L, double* R, int len);
 
         double fs = 48000, fadeStep = 0, glide = 0;
         std::array<BandState, maxBands> bands {};
@@ -94,6 +115,10 @@ namespace eq
         std::array<double, 4> soloZ {};
         double gain = 1, tGain = 1, pan = 0, tPan = 0, power = 1, tPower = 1, autoDb = 0;
         bool started = false;
+        Character character = Character::clean, tCharacter = Character::clean;
+        double charMix = 0;
+        std::array<double, 2> dcX {}, dcY {}, lpZ {};
+        std::array<std::atomic<float>, maxBands> dynShown {};
         std::array<std::atomic<float>, 4> meters {};
         std::array<double, 32> bufL {}, bufR {};
     };
@@ -101,7 +126,8 @@ namespace eq
     //==============================================================================
     struct FactoryPreset { const char* name; const char* spec; };
     const std::vector<FactoryPreset>& factoryPresets();
-    // "key=value; ..." with bands as "bN=shape freq gain q [slope] [placement] [off]".
+    // "key=value; ..." with bands as "bN=shape freq gain q [slope] [placement] [off]
+    // [dyn:range,threshold,attack,release]", and char=clean|subtle|warm.
     Params presetParams (const std::string& spec);
 
     // The standalone app's sources, as the web page makes them.

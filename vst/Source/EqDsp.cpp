@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <sstream>
 
 namespace eq
@@ -168,11 +169,15 @@ namespace eq
 
     bool Band::operator== (const Band& o) const
     {
-        return used == o.used && on == o.on && shape == o.shape && freq == o.freq && gain == o.gain && q == o.q && slope == o.slope && place == o.place;
+        return used == o.used && on == o.on && shape == o.shape && freq == o.freq && gain == o.gain && q == o.q && slope == o.slope && place == o.place
+            && dyn == o.dyn && range == o.range && thresh == o.thresh && attack == o.attack && release == o.release;
     }
+    bool Params::isDynamic (int i) const { return bands[(size_t) i].dyn && hasGain (bands[(size_t) i].shape); }
+    const char* const characterKeys[numCharacters] = { "clean", "subtle", "warm" };
+    const char* const characterLabels[numCharacters] = { "Clean", "Subtle", "Warm" };
     bool Params::operator== (const Params& o) const
     {
-        return bands == o.bands && outGain == o.outGain && outPan == o.outPan && gainScale == o.gainScale && autoGain == o.autoGain && power == o.power;
+        return bands == o.bands && outGain == o.outGain && outPan == o.outPan && gainScale == o.gainScale && autoGain == o.autoGain && power == o.power && character == o.character;
     }
     double Params::effectiveGain (int i) const
     {
@@ -372,8 +377,15 @@ namespace eq
             const auto& src = p.bands[(size_t) i];
             b.tShape = src.shape; b.tSlope = src.slope; b.tPlace = src.place;
             b.tActive = src.used && src.on;
-            b.tf = src.freq; b.tq = src.q; b.tg = p.effectiveGain (i);
+            b.tf = src.freq; b.tq = src.q;
+            b.staticG = p.effectiveGain (i);
+            const auto dyn = b.tActive && p.isDynamic (i);
+            if (dyn != b.dyn) { b.env = 0; b.dynDb = 0; b.detZ.fill (0); }
+            b.dyn = dyn;
+            b.range = src.range * p.gainScale / 100; b.thresh = src.thresh; b.att = src.attack; b.rel = src.release;
+            b.tg = b.staticG + (b.dyn ? b.dynDb : 0);
         }
+        tCharacter = p.character;
         tSolo = soloBand >= 0 && soloBand < maxBands && p.bands[(size_t) soloBand].used && canSolo (p.bands[(size_t) soloBand].shape) ? soloBand : -1;
         autoDb = p.autoGain ? autoGainDb (p, fs) : 0;
         tGain = std::pow (10.0, (p.outGain + autoDb) / 20);
@@ -389,6 +401,7 @@ namespace eq
                 b.f = b.tf; b.g = b.tg; b.q = b.tq; b.mix = b.mixTarget = b.tActive ? 1 : 0; b.dirty = true;
             }
             gain = tGain; pan = tPan; power = tPower;
+            character = tCharacter; charMix = character == Character::clean ? 0 : 1;
         }
     }
 
@@ -409,7 +422,12 @@ namespace eq
             auto moved = false;
             if (b.f != b.tf) { b.f *= std::pow (b.tf / b.f, k); if (std::abs (std::log (b.tf / b.f)) < 1e-4) b.f = b.tf; moved = true; }
             if (b.q != b.tq) { b.q *= std::pow (b.tq / b.q, k); if (std::abs (std::log (b.tq / b.q)) < 1e-4) b.q = b.tq; moved = true; }
-            if (b.g != b.tg) { b.g += (b.tg - b.g) * k; if (std::abs (b.tg - b.g) < 1e-3) b.g = b.tg; moved = true; }
+            if (b.g != b.tg)
+            {
+                if (b.dyn) b.g = b.tg;   // the detector's attack and release already shape it
+                else { b.g += (b.tg - b.g) * k; if (std::abs (b.tg - b.g) < 1e-3) b.g = b.tg; }
+                moved = true;
+            }
             if (moved) b.dirty = true;
         }
         if (b.dirty)
@@ -491,6 +509,8 @@ namespace eq
                 peaks[0] = std::max (peaks[0], std::abs (inL[off + i]));
                 peaks[1] = std::max (peaks[1], std::abs (inR[off + i]));
             }
+            for (int j = 0; j < maxBands; ++j)
+                if (bands[(size_t) j].dyn) detect (bands[(size_t) j], dl, dr, len, j);
             for (auto& b : bands)
             {
                 updateBand (b);
@@ -512,7 +532,8 @@ namespace eq
                 }
                 soloMix = sm;
             }
-            // Output: gain (with AUTO GAIN), balance, and the power switch (bypass).
+            runCharacter (L, R, len);
+            // Output: gain (with AUTO GAIN), balance, and the bypass switch.
             const auto g0 = gain, p0 = pan, w0 = power, k = glide;
             gain += (tGain - gain) * k; pan += (tPan - pan) * k;
             if (std::abs (tGain - gain) < 1e-6) gain = tGain;
@@ -534,6 +555,62 @@ namespace eq
             auto prev = meters[(size_t) i].load (std::memory_order_relaxed);
             while (peaks[i] > prev && ! meters[(size_t) i].compare_exchange_weak (prev, peaks[i])) {}
         }
+    }
+
+    // DYNAMIC: the band's part of the input (as SOLO hears it), its level in dB
+    // (RMS, +3 dB so a sine reads its peak), attack and release; above
+    // THRESHOLD the gain moves 3/4 dB per dB (like a 4:1 compressor), at most RANGE.
+    void Engine::detect (BandState& b, const double* dl, const double* dr, int len, int index)
+    {
+        if (b.tShape != b.detShape || b.tf != b.detF || b.tq != b.detQ)
+        {
+            b.detShape = b.tShape; b.detF = b.tf; b.detQ = b.tq;
+            designSolo (b.tShape, b.tf, b.tq, fs, b.det);
+        }
+        double ms = 0;
+        for (int i = 0; i < len; ++i)
+        {
+            const auto y = runSections (&b.det, 1, b.detZ.data(), 0, (dl[i] + dr[i]) * 0.5);
+            ms += y * y;
+        }
+        ms /= len;
+        const auto time = ms > b.env ? b.att : b.rel;
+        const auto c = 1 - std::exp (-len / (std::max (0.1, time) * 0.001 * fs));
+        b.env += (ms - b.env) * c;
+        const auto level = 10 * std::log10 (b.env + 1e-12) + 3.0103, over = level - b.thresh;
+        double change = 0;
+        if (over > 0) change = (b.range < 0 ? -1 : 1) * std::min (std::abs (b.range), over * 0.75);
+        b.dynDb = change;
+        b.tg = b.staticG + change;
+        dynShown[(size_t) index].store ((float) change, std::memory_order_relaxed);
+    }
+
+    // CHARACTER: Subtle and Warm are soft saturation (unity gain for quiet sound,
+    // rounded peaks, a touch of even harmonics); Warm drives harder and rolls off
+    // the very top. A DC blocker follows; changes fade.
+    void Engine::runCharacter (double* L, double* R, int len)
+    {
+        if (charMix == 0 && tCharacter != character) { character = tCharacter; dcX.fill (0); dcY.fill (0); lpZ.fill (0); }
+        const double target = character == tCharacter && character != Character::clean ? 1 : 0;
+        if (charMix == 0 && target == 0) return;
+        const auto warm = character == Character::warm;
+        const auto d = warm ? 1.2 : 0.7, ev = warm ? 0.08 : 0.03;
+        const auto dcA = std::exp (-2 * pi * 8 / fs), lpA = warm ? std::exp (-2 * pi * 16000 / fs) : 0.0;
+        auto mix = charMix;
+        double* chans[2] = { L, R };
+        for (int i = 0; i < len; ++i)
+        {
+            if (mix != target) mix = mix < target ? std::min (1.0, mix + fadeStep) : std::max (0.0, mix - fadeStep);
+            for (size_t c = 0; c < 2; ++c)
+            {
+                const auto x = chans[c][i], t = std::tanh (d * x) / d, y = t + ev * t * t;
+                auto hp = y - dcX[c] + dcA * dcY[c];   // DC blocker
+                dcX[c] = y; dcY[c] = hp;
+                if (lpA > 0) { lpZ[c] = hp + lpA * (lpZ[c] - hp); hp = lpZ[c]; }
+                chans[c][i] = x + mix * (hp - x);
+            }
+        }
+        charMix = mix;
     }
 
     std::array<float, 4> Engine::takeMeters()
@@ -564,6 +641,11 @@ namespace eq
             { "Hum Remover", "b1=notch 50 0 12 12; b2=notch 100 0 12 12; b3=notch 150 0 12 12; b4=notch 200 0 12 12" },
             { "Wide Sides", "b1=lowcut 180 0 0.71 24 side; b2=highshelf 8000 3 0.71 12 side; b3=bell 200 1 1 12 mid" },
             { "Master Polish", "b1=lowcut 20 0 0.71 36; b2=lowshelf 90 1 0.71 12; b3=bell 300 -1 0.8; b4=highshelf 12000 1.5 0.71 6" },
+            { "De-Esser", "b1=lowcut 70 0 0.71 18; b2=bell 6500 0 3 12 stereo dyn:-8,-34,2,60" },
+            { "Bass Control", "b1=lowcut 30 0 0.71 24; b2=lowshelf 120 0 0.71 12 stereo dyn:-6,-22,15,180" },
+            { "Dynamic Air", "b1=highshelf 10000 0 0.71 12 stereo dyn:4,-40,20,300" },
+            { "Mud Tamer", "b1=bell 280 0 1.2 12 stereo dyn:-5,-26,10,150; b2=bell 4000 1 0.8" },
+            { "Tape Warmth", "b1=lowcut 25 0 0.71 12; b2=lowshelf 100 1.5 0.71 12; b3=highshelf 12000 -1.5 0.71 6; char=warm" },
         };
         return list;
     }
@@ -600,12 +682,24 @@ namespace eq
                 if (v.size() > 5)
                     for (int k = 0; k < numPlaces; ++k)
                         if (v[5] == placeKeys[k]) b.place = (Place) k;
-                if (v.size() > 6 && v[6] == "off") b.on = false;
+                for (size_t t = 6; t < v.size(); ++t)
+                {
+                    if (v[t] == "off") b.on = false;
+                    if (v[t].rfind ("dyn:", 0) == 0)
+                    {
+                        double r, th, at, re;
+                        if (std::sscanf (v[t].c_str() + 4, "%lf,%lf,%lf,%lf", &r, &th, &at, &re) == 4)
+                        { b.dyn = true; b.range = r; b.thresh = th; b.attack = at; b.release = re; }
+                    }
+                }
             }
             else if (key == "scale") p.gainScale = std::stod (v[0]);
             else if (key == "gain") p.outGain = std::stod (v[0]);
             else if (key == "pan") p.outPan = std::stod (v[0]);
             else if (key == "auto") p.autoGain = v[0] == "1";
+            else if (key == "char")
+                for (int k = 0; k < numCharacters; ++k)
+                    if (v[0] == characterKeys[k]) p.character = (Character) k;
         }
         return p;
     }
