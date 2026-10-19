@@ -2,5 +2,7 @@
   { "title": "Determination", "artist": "HydroGene", "file": "determination.mp3",
     "license": "CC0", "source": "https://opengameart.org/content/determination-anime-style-music" },
   { "title": "Anime-esque Intro-Outro Theme", "artist": "Cleyton Kauffman", "file": "anime-intro-outro.mp3",
-    "license": "CC0", "source": "https://opengameart.org/content/anime-esque-intro-outro-theme" }
+    "license": "CC0", "source": "https://opengameart.org/content/anime-esque-intro-outro-theme" },
+  { "title": "Symphony No. 6 “Pastoral”, III. Allegro", "artist": "Beethoven · Musopen", "file": "beethoven-pastoral-3.ogg", "fallback": "beethoven-pastoral-3.mp3",
+    "license": "Public domain", "source": "https://commons.wikimedia.org/wiki/File:Ludwig_van_Beethoven_-_symphony_no._6_in_f_major_%27pastoral%27,_op._68_-_iii._allegro.ogg" }
 ]

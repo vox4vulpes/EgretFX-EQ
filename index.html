@@ -1234,7 +1234,10 @@ if (typeof registerProcessor === 'function') {
   if (location.protocol !== 'file:' && window.fetch) {
     fetch('music/playlist.json').then(function(r){ return r.ok ? r.json() : []; }).then(function(list){
       (list || []).forEach(function(t){
-        if (t && t.file) player.tracks.push({ title: t.title || t.file, artist: t.artist || '', url: 'music/' + t.file, license: t.license, source: t.source });
+        if (!t || !t.file) return;
+        // Ogg where the browser plays it, the fallback (MP3) where it doesn't.
+        var file = /\.ogg$/i.test(t.file) && t.fallback && !player.audio.canPlayType('audio/ogg; codecs="vorbis"') ? t.fallback : t.file;
+        player.tracks.push({ title: t.title || t.file, artist: t.artist || '', url: 'music/' + file, license: t.license, source: t.source });
       });
       renderPlayer();
     }, function(){});
