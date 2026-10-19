@@ -204,7 +204,10 @@
   .bp-dyn[hidden]{display:none;}
   .bp-sel.is-on{border-color:var(--band, var(--acc)); color:var(--band, var(--acc)); font-weight:600;}
   .bp-sel.no-arrow::after{content:'';}
-  .sketch-btn{position:absolute; left:8px; bottom:calc(var(--plot-bottom, 20px) + 4px); z-index:3; width:28px; height:28px; justify-content:center; padding:0;
+  .piano-btn{position:absolute; left:8px; bottom:calc(var(--plot-bottom, 20px) + 4px); z-index:3; width:28px; height:28px; justify-content:center; padding:0;
+    background:var(--float); border:1px solid var(--float-border);}
+  .piano-btn.is-on{color:var(--acc); border-color:var(--acc);}
+  .sketch-btn{position:absolute; left:8px; bottom:calc(var(--plot-bottom, 20px) + 36px); z-index:3; width:28px; height:28px; justify-content:center; padding:0;
     background:var(--float); border:1px solid var(--float-border);}
   .sketch-btn.is-on{background:var(--acc); color:var(--on-acc); border-color:var(--acc);}
   .sketch-hint{position:absolute; left:8px; top:8px; z-index:3; font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--acc);
@@ -393,6 +396,7 @@
     <canvas id="meter" aria-hidden="true"></canvas>
     <button class="range-box" id="range-box" type="button" title="Display range">12 dB</button>
     <button class="tb sketch-btn" id="sketch-btn" type="button" aria-pressed="false" title="EQ Sketch: draw the curve you want, the bands follow (Esc to stop)"><svg viewBox="0 0 16 16"><path d="M2.5 13.5l1-3.5 7.5-7.5 2.5 2.5L6 12.5zM9.5 4l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+    <button class="tb piano-btn" id="piano-btn" type="button" aria-pressed="true" title="Piano keyboard under the display (the scale shows notes)"><svg viewBox="0 0 16 16"><path d="M2 3h12v10H2z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 3v6M8 3v10M11 3v6" stroke="currentColor" stroke-width="1.3"/><path d="M4 3h2v6H4zM10 3h2v6h-2z" fill="currentColor"/></svg></button>
     <div class="load-warn" id="load-warn" role="status" hidden>More than 24 bands: the EQ may use noticeably more CPU</div>
     <div class="sketch-hint" id="sketch-hint" hidden>Draw left to right, the curve follows; back to the left takes it back</div>
     <div class="band-tag" id="band-tag" hidden>
@@ -447,7 +451,7 @@
   <div class="band-list" id="band-list" role="listbox" aria-label="Bands"></div>
 </div>
 <p class="no-worklet" id="no-worklet" hidden>This browser can't run the EQ (it needs AudioWorklet). Try a current Chrome, Edge, Firefox or Safari.</p>
-<p class="help">Scroll over the frequency scale to zoom in around a frequency, double-click the scale for the whole range. Double-click the display to add a band (with none yet, a ghost shows the curve it would make; drag instead to draw the curve with the pencil, left to right, back to the left to take it back), drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source. The mode at the bottom left: Zero Latency, Natural Phase (the analog curves, a little latency) or Linear Phase (no phase change, more latency); cuts can be a brickwall there. A dynamic band can listen to the sidechain (<b>SC</b>, pick a sidechain in the player) and work frequency by frequency (<b>SPEC</b>).</p>
+<p class="help">Scroll over the frequency scale to zoom in around a frequency, double-click the scale for the whole range. Click the free screen to add the band its ghost shows (with a band selected, the first click deselects); with no bands yet, drag to draw the curve with the pencil, left to right, back to the left to take it back, drag a dot to move it (<kbd>Shift</kbd> for fine moves), scroll on it to change Q (the piano under the display shows its note), double-click it to switch it off, <kbd>Alt</kbd>-click or <kbd>Delete</kbd> to remove it. Hold the mouse still on the background to grab the spectrum: its peaks light up, pull one up or down to put a bell on it (sideways it moves only a little, for fine tuning). Drag across the background to select several dots (<kbd>Shift</kbd>-click adds or removes one) and move them together; right-click for copy, paste, duplicate and reset (<kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all). Click a value to type it. <kbd>Space</kbd> plays the source. The mode at the bottom left: Zero Latency, Natural Phase (the analog curves, a little latency) or Linear Phase (no phase change, more latency); cuts can be a brickwall there. A dynamic band can listen to the sidechain (<b>SC</b>, pick a sidechain in the player) and work frequency by frequency (<b>SPEC</b>).</p>
 </div>
 </div>
 
@@ -2385,7 +2389,7 @@ if (typeof registerProcessor === 'function') {
       item.addEventListener('dblclick', function(){ selected = i; setBand('On', !params[bandKey(i, 'On')]); });
       list.appendChild(item);
     });
-    if (!any) { var empty = document.createElement('span'); empty.className = 'bl-empty'; empty.textContent = 'No bands yet: double-click the display, or'; list.appendChild(empty); }
+    if (!any) { var empty = document.createElement('span'); empty.className = 'bl-empty'; empty.textContent = 'No bands yet: click the display, or'; list.appendChild(empty); }
     var add = document.createElement('button');
     add.type = 'button'; add.className = 'tb bl-add'; add.textContent = '+'; add.title = 'Add a band'; add.setAttribute('aria-label', 'Add a band');
     add.addEventListener('click', function(){ addBand(1000, 0, 'bell'); });
@@ -2464,6 +2468,7 @@ if (typeof registerProcessor === 'function') {
   });
   document.addEventListener('fullscreenchange', function(){ setTimeout(fitEq, 50); });
   function renderBars(){
+    $('piano-btn').classList.toggle('is-on', !!ui.piano); $('piano-btn').setAttribute('aria-pressed', ui.piano ? 'true' : 'false');
     renderPhase();
     $('ana-label').textContent = { off: 'Off', pre: 'Pre', post: 'Post', both: 'Pre+Post' }[ui.anaMode] + (freeze ? ' (frozen)' : '');
     $('range-box').textContent = ui.dispRange + ' dB';
@@ -3211,7 +3216,7 @@ if (typeof registerProcessor === 'function') {
     return best;
   }
   function setInfo(p){
-    if (!p || p.x > view.plotW) { $('eq-info').textContent = usedCount() ? '' : 'Double-click the display to add a band'; return; }
+    if (!p || p.x > view.plotW) { $('eq-info').textContent = usedCount() ? '' : 'Click the display to add a band'; return; }
     var f = xf(p.x);
     $('eq-info').textContent = fmtHz(f) + ' · ' + noteName(f) + ' · ' + fmt(KNOB_DEFS.gain, yg(p.y));
   }
@@ -3318,7 +3323,7 @@ if (typeof registerProcessor === 'function') {
       var col = Math.max(0, Math.min(cols - 1, Math.round(p.x))), cy = gy(Math.max(-ui.dispRange, Math.min(ui.dispRange, totalCurve[col])));
       if (Math.abs(p.y - cy) < 8) curveHover = { x: p.x, y: cy };
     }
-    ghost = usedCount() === 0 && h < 0 && p.x <= view.plotW && !sketch.on && !curveHover ? p : null;
+    ghost = h < 0 && p.x <= view.plotW && p.y < view.h - view.bottom && !sketch.on && !curveHover && hitArrow(p) < 0 && hitRange(p) < 0 ? p : null;
     if (ghost || g0 || curveHover || c0) requestDraw();
     var pp = p.x <= view.plotW ? p.x : -1, noteAt = function(x){ return x < 0 ? null : Math.round(midiOf(xf(x))); };
     if (ui.piano && noteAt(pp) !== noteAt(pianoPointer)) requestDraw();
@@ -3529,10 +3534,21 @@ if (typeof registerProcessor === 'function') {
     else { eg.moveTo(x - 7, iy - 3); eg.lineTo(x + 2, iy - 3); eg.lineTo(x + 6, iy + 4); }
     eg.strokeStyle = T.curve; eg.lineWidth = 1.5; eg.lineJoin = 'round'; eg.lineCap = 'round'; eg.globalAlpha = 0.85; eg.stroke(); eg.globalAlpha = 1;
   }
-  // No bands yet: over the empty screen, a ghost of the curve a band added there would make.
+  // A click where nothing is selected adds the band the ghost shows (on the curve, if it's at the curve).
+  var lastClickAdd = 0;
+  function clickAdd(x, y){
+    if (x > view.plotW) return;
+    var f = Math.min(FREQ_MAX, Math.max(FREQ_MIN, xf(x))), shape = shapeAt(f);
+    var g = Math.round(yg(curveHover ? curveHover.y : y) * 10) / 10;
+    curveHover = null; ghost = null;
+    lastClickAdd = performance.now();
+    addBand(f, params.gainScale > 0 ? g * 100 / params.gainScale : 0, shape);
+  }
+  // Over the free screen, a ghost of the curve a band added there would make (dashed while a band is selected).
   var ghost = null;
   function drawGhost(clip){
-    if (!ghost || drag || sketch.points || usedCount() || !colCos) return;
+    if (!ghost || drag || sketch.points || rubber || (grab && grab.active) || !colCos) return;
+    var dashed = selected >= 0;   // a band is selected: the first click only deselects
     var f = Math.min(FREQ_MAX, Math.max(FREQ_MIN, xf(ghost.x))), shape = f <= 25 ? 'lowcut' : f >= 18000 ? 'highcut' : 'bell';
     var g = shape === 'bell' ? Math.max(-ui.dispRange, Math.min(ui.dispRange, yg(ghost.y))) : 0;
     var band = { shape: shape, freq: f, gain: g, q: shape === 'bell' ? 1 : 0.71, slope: shape === 'bell' ? 12 : 24, gainQ: !!params.gainQ };
@@ -3555,12 +3571,16 @@ if (typeof registerProcessor === 'function') {
       }
     }
     var y0 = gy(0);
-    eg.beginPath(); eg.moveTo(0, y0);
-    for (k = 0; k < cols; k++) eg.lineTo(k, clip(db[k]));
-    eg.lineTo(cols - 1, y0); eg.closePath();
-    eg.globalAlpha = 0.06; eg.fillStyle = T.curve; eg.fill();
+    if (!dashed) {
+      eg.beginPath(); eg.moveTo(0, y0);
+      for (k = 0; k < cols; k++) eg.lineTo(k, clip(db[k]));
+      eg.lineTo(cols - 1, y0); eg.closePath();
+      eg.globalAlpha = 0.06; eg.fillStyle = T.curve; eg.fill();
+    }
     eg.beginPath(); for (k = 0; k < cols; k++) { if (k) eg.lineTo(k, clip(db[k])); else eg.moveTo(k, clip(db[k])); }
-    eg.globalAlpha = 0.35; eg.strokeStyle = T.curve; eg.lineWidth = 1.5; eg.shadowColor = T.curveGlow; eg.shadowBlur = 8; eg.stroke(); eg.shadowBlur = 0;
+    if (dashed) eg.setLineDash([5, 4]);
+    eg.globalAlpha = 0.35; eg.strokeStyle = T.curve; eg.lineWidth = 1.5; eg.shadowColor = T.curveGlow; eg.shadowBlur = dashed ? 0 : 8; eg.stroke(); eg.shadowBlur = 0;
+    eg.setLineDash([]);
     // a soft glow where the dot would be
     var gx = fx(f), gyy = shape === 'bell' ? gy(g) : y0, glow = eg.createRadialGradient(gx, gyy, 0, gx, gyy, 22);
     glow.addColorStop(0, T.eqLabel0); glow.addColorStop(1, 'rgba(0,0,0,0)');
@@ -3575,6 +3595,7 @@ if (typeof registerProcessor === 'function') {
     requestDraw();
   }
   $('sketch-btn').addEventListener('click', function(){ setSketch(!sketch.on); });
+  $('piano-btn').addEventListener('click', function(){ ui.piano = !ui.piano; uiChanged(); fitEq(); });
   // The drawn line is the curve wanted over the stretch it covers. What's
   // missing there (wanted minus what the EQ does now) is filled greedily:
   // at the biggest difference a bell as wide as that difference (or a shelf
@@ -3716,11 +3737,16 @@ if (typeof registerProcessor === 'function') {
     }
     if (rubber) {
       var r = rubber; rubber = null;
-      if (!r.moved && !r.add && r.detail < 2) select(-1);   // a plain click on the background
+      // a plain click on the background: with a band selected, deselects; with none, adds the ghost's band
+      if (!r.moved && !r.add && r.detail < 2) { if (selected >= 0) select(-1); else clickAdd(r.x0, r.y0); }
       requestDraw();
       return;
     }
-    if (sketch.points) { var pts = sketch.points; sketch.points = null; fitSketch(pts); endGesture(); requestDraw(); return; }
+    if (sketch.points) {
+      var pts = sketch.points; sketch.points = null;
+      if (pts.length < 2 && !sketch.on) { endGesture(); clickAdd(pts[0].x, pts[0].y); return; }   // a click, not a drawing
+      fitSketch(pts); endGesture(); requestDraw(); return;
+    }
     if (drag) { drag = null; endGesture(); requestDraw(); }
   }
   eqCanvas.addEventListener('pointerup', endDrag);
@@ -3735,6 +3761,7 @@ if (typeof registerProcessor === 'function') {
   });
   eqCanvas.addEventListener('dblclick', function(e){
     var p = localPos(e), i = hitBand(p);
+    if (performance.now() - lastClickAdd < 700) return;   // the click before already added it
     if (p.x > view.plotW) return;
     if (p.y >= view.h - view.bottom) { zoomAxis(0, 1e9); return; }   // double-click the scale: the whole range again
     if (i >= 0) { selected = i; setBand('On', !params[bandKey(i, 'On')]); return; }
