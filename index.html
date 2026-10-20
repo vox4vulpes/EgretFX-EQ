@@ -3066,14 +3066,20 @@ if (typeof registerProcessor === 'function') {
       spectrumPath(grab.max, false); eg.strokeStyle = T.curve; eg.globalAlpha = 0.9; eg.lineWidth = 1.5; eg.stroke(); eg.globalAlpha = 1;
       eg.font = '600 10px "IBM Plex Mono", monospace'; eg.textAlign = 'center'; eg.textBaseline = 'middle';
       grab.peaks.forEach(function(pk, n){
-        var hot = n === grab.hot, label = fmtHz(pk.freq), tw = eg.measureText(label).width + 10, ly = Math.max(10, pk.y - 16);
+        var hot = n === grab.hot, label = fmtHz(pk.freq), tw = eg.measureText(label).width + 10, ly = Math.max(hot ? 22 : 10, pk.y - 16);
         eg.beginPath(); eg.arc(pk.x, pk.y, hot ? 4.5 : 3.5, 0, 2 * Math.PI); eg.fillStyle = T.eqLabel0; eg.fill();
         eg.globalAlpha = hot ? 1 : 0.75; eg.fillStyle = T.eqLabel0;
         roundRect(eg, pk.x - tw / 2, ly - 8, tw, 16, 3); eg.fill();
         eg.globalAlpha = 1; eg.fillStyle = T.badgeText; eg.fillText(label, pk.x, ly + 0.5);
-        if (hot) { eg.strokeStyle = T.curve; eg.lineWidth = 1; roundRect(eg, pk.x - tw / 2, ly - 8, tw, 16, 3); eg.stroke(); }
+        if (hot) {   // the one picked: outlined, with an arrow over its label
+          eg.strokeStyle = T.curve; eg.lineWidth = 1; roundRect(eg, pk.x - tw / 2, ly - 8, tw, 16, 3); eg.stroke();
+          var ay0 = ly - 12;
+          eg.beginPath(); eg.moveTo(pk.x - 5, ay0 - 6); eg.lineTo(pk.x + 5, ay0 - 6); eg.lineTo(pk.x, ay0); eg.closePath();
+          eg.fillStyle = T.curve; eg.fill();
+        }
       });
     }
+    drawSoloEdges(bottom);
     drawCurveHover();
     eg.restore();
     drawVersion(eg);
@@ -3335,7 +3341,7 @@ if (typeof registerProcessor === 'function') {
     var pp = p.x <= view.plotW ? p.x : -1, noteAt = function(x){ return x < 0 ? null : Math.round(midiOf(xf(x))); };
     if (ui.piano && noteAt(pp) !== noteAt(pianoPointer)) requestDraw();
     pianoPointer = pp;
-    setInfo(p);
+    if (!grab) setInfo(p);   // in Spectrum Grab the bar says what to do
   });
   // ---------- Spectrum Grab ----------
   // Resting the pointer on the spectrum's shaded part for a moment, without a
@@ -3387,7 +3393,11 @@ if (typeof registerProcessor === 'function') {
   function hoverGrab(p){
     if (grab) {
       if (grab.made) return;
-      if (!underSpectrum({ x: p.x, y: p.y + 14 }, grab.max)) { endGrab(); return; }
+      // it ends only well above all of the held maxima (not on the line's dips)
+      if (p.x > view.plotW) { endGrab(); return; }
+      var topY = Infinity;
+      for (var gx = 0; gx <= view.plotW; gx += 4) topY = Math.min(topY, ay(spectrumLevelAt(grab.max, gx)));
+      if (p.y < topY - 40) { endGrab(); return; }
       grab.p = p; pickHot(p); requestDraw();
       return;
     }
@@ -3548,6 +3558,20 @@ if (typeof registerProcessor === 'function') {
   function endTagSolo(){ if (tagSolo === null) return; solo = tagSolo === tagBand ? -1 : tagSolo; tagSolo = null; $('bt-solo').classList.remove('is-held'); sendParams(); renderAll(); }
   $('bt-solo').addEventListener('pointerup', endTagSolo);
   $('bt-solo').addEventListener('pointercancel', endTagSolo);
+
+  // SOLO: the edges of what's heard, from the band's Q (a bell's bandwidth; a shelf's or cut's frequency).
+  function drawSoloEdges(bottom){
+    if (solo < 0 || !params[bandKey(solo, 'Used')]) return;
+    var b = bandOf(params, solo), edges;
+    if (b.shape === 'lowshelf' || b.shape === 'lowcut' || b.shape === 'highshelf' || b.shape === 'highcut') edges = [b.freq];
+    else {
+      var q = Math.max(0.3, b.q), bw = 2 / Math.LN2 * Math.asinh(1 / (2 * q)), k = Math.pow(2, bw / 2);   // octaves wide
+      edges = [b.freq / k, b.freq * k];
+    }
+    eg.strokeStyle = T.curve; eg.globalAlpha = 0.55; eg.lineWidth = 1;
+    edges.forEach(function(f){ var x = Math.round(fx(f)) + 0.5; eg.beginPath(); eg.moveTo(x, view.top); eg.lineTo(x, bottom); eg.stroke(); });
+    eg.globalAlpha = 1;
+  }
 
   // Near the curve: the dot a double-click there would make, and above it the
   // shape it would be (a bell, or a cut at the very ends).
@@ -3854,7 +3878,7 @@ if (typeof registerProcessor === 'function') {
   // ---------- easter egg: 翡翠 (kawasemi), the kingfisher ----------
   // A click on the bird also shows the version, big, in the middle of the screen:
   // it surfaces, floats a moment, then sinks below a water line, rings spreading.
-  var EGRET_VERSION = '1.2.1';   // this page's version: what the next release (EQ and VST) will be
+  var EGRET_VERSION = '1.2.2';   // this page's version: what the next release (EQ and VST) will be
   var versionSplash = -1;
   function drawVersion(g){
     if (versionSplash < 0) return;
