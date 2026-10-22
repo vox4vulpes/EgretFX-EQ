@@ -105,6 +105,7 @@
     border:4px solid transparent; border-bottom-color:var(--float-solid);
   }
   .bird-bubble.is-shown{opacity:1; transform:translate(-50%, 0);}
+  .bird-bubble .jp{font-family:'Noto Sans JP',sans-serif; letter-spacing:.06em;}
   @keyframes bird-dive{ 0%{transform:translateY(0)} 35%{transform:translateY(6px) rotate(25deg)} 70%{transform:translateY(-3px) rotate(-8deg)} 100%{transform:translateY(0)} }
   @media (prefers-reduced-motion:reduce){ .bird.is-diving{animation:none;} }
   .preset-nav{display:flex; align-items:center; gap:2px; min-width:0;}
@@ -391,7 +392,7 @@
             <path d="M11 17.6l-.4 2.6M12.6 17.7l.2 2.5" stroke="#d9452f" stroke-width=".9" stroke-linecap="round"/>
           </svg>
         </button>
-        <span class="bird-bubble" id="bird-bubble" role="status">Kingfisher</span>
+        <span class="bird-bubble" id="bird-bubble" role="status"><span class="jp" lang="ja">カワセミ</span> · Kingfisher</span>
       </span>
     </div>
     <button class="tb" id="undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo"><svg viewBox="0 0 16 16"><path d="M6 3L2 7l4 4M2.5 7H10a4 4 0 010 8H8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
